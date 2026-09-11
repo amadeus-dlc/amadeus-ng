@@ -111,6 +111,7 @@ macro_rules! contract_tests {
 }
 
 contract_tests!(
+    command_failures_survive_reopening_without_changing_authority,
     open_twice_yields_independent_empty_stores,
     reopen_reflects_the_writes_completed_before_it_was_reopened,
     round_trip,

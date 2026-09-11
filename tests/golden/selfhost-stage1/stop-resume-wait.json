@@ -1,0 +1,906 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "source_file": ".claude/tools/aidlc-lib.ts",
+  "source_sha256": "3b0ff3dda8abfbead8ff7e4a61b2ce334d1d3e78977995d1bd249668fc99db09",
+  "predicate_sha256": "16702c7fc4b78fcae3539ee598b09a5a139a889508c807ed23a7da0f3f26f3a7",
+  "capture_method": "固定本家parserとstateContentSha256はexport追加のみ。hasCurrentSharedResumeWaitのconst waiting式を原文抽出して実行。状態は非自律に固定し、IO/ロックはこの検査の外。",
+  "normalization": [],
+  "observations": [
+    {
+      "id": "valid-shared-wait",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "changed-state",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\nchanged\n",
+      "state_sha256": "eace46b927eb0eb9f14a780458f7e20b0b232638a2ba6492bba3432d9ce30175",
+      "waiting": false
+    },
+    {
+      "id": "null",
+      "marker": "null",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "array",
+      "marker": "[]",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "string",
+      "marker": "\"marker\"",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "empty-object",
+      "marker": "{}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "broken-json",
+      "marker": "{",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-version",
+      "marker": "{\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-stage",
+      "marker": "{\"version\":2,\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-state_sha256",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-project_sha256",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-intent_uuid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-state_present",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-owner_session",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-revision",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-owner_epoch",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-context_epoch",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-event_sequence",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-human_sequence",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-engine_sequence",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-conversation_sequence",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-stop_count",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-kind",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-delivery",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-needs_rehydrate",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-active_attempt",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-resume",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "negative-revision",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":-1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "negative-owner_epoch",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":-1,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "negative-context_epoch",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":-1,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "negative-event_sequence",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":-1,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "negative-human_sequence",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":-1,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "negative-engine_sequence",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":-1,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "negative-conversation_sequence",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":-1,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "negative-stop_count",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":-1,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "fractional-revision",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":0.5,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "integer-float-revision",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "large-integer-revision",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1e+30,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "string-revision",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":\"1\",\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "v1",
+      "marker": "{\"version\":1,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "v3",
+      "marker": "{\"version\":3,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "string-version",
+      "marker": "{\"version\":\"2\",\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "stage-trim",
+      "marker": "{\"version\":2,\"stage\":\"﻿code-generation\\n\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "stage-\"\"",
+      "marker": "{\"version\":2,\"stage\":\"\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "stage-\"1-stage\"",
+      "marker": "{\"version\":2,\"stage\":\"1-stage\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "stage-\"Stage\"",
+      "marker": "{\"version\":2,\"stage\":\"Stage\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "stage-\"stage_name\"",
+      "marker": "{\"version\":2,\"stage\":\"stage_name\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "stage-\"a/b\"",
+      "marker": "{\"version\":2,\"stage\":\"a/b\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "state-hash-uppercase",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8E72EE20FC0D39FEAC6A112A0406942E55080EFBEAED44C1D35E15E7B3611B6C\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "state-hash-short",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "state-hash-array",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":[\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\"],\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "state-hash-final-newline",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\\n\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "project-hash-array-coercion",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "project-hash-short",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "intent-string",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":\"\",\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "intent-number",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":1,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "present-false",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":false,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "present-number",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":1,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "owner-not-shared",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"session-1\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "owner-empty",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "rehydrate-true",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":true,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "rehydrate-number",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":0,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "unit-trim",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"unit\":\" Unit.One \"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "unit-opaque-nonempty",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"unit\":\"../opaque\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "unit-empty",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"unit\":\" \"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "unit-null",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"unit\":null}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "units-[]",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"units\":[]}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "units-[\"Unit.One\"]",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"units\":[\"Unit.One\"]}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "units-[\"9-unit\"]",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"units\":[\"9-unit\"]}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "units-[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"units\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "units-[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"units\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "units-[\"../unit\"]",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"units\":[\"../unit\"]}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "units-[null]",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"units\":[null]}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "units-\"unit\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"units\":\"unit\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "cursor-\"codex\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"cursor_harness\":\"codex\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "cursor-\"Claude_1\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"cursor_harness\":\"Claude_1\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "cursor-\"\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"cursor_harness\":\"\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "cursor-\"-claude\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"cursor_harness\":\"-claude\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "cursor-null",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"cursor_harness\":null}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "source-\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"code_generation_source_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "source-\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"code_generation_source_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "source-\"unbindable\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"code_generation_source_sha256\":\"unbindable\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "source-\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"code_generation_source_sha256\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "source-null",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"code_generation_source_sha256\":null}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "authority-zero",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"code_generation_authority_revision\":0}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "authority-negative",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"code_generation_authority_revision\":-1}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "kind-run",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"run-stage\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "kind-unknown",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"unknown\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "delivery-array-coercion",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":[\"issued\"],\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "delivery-unknown",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"unknown\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-attempt-command_kind",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-attempt-command_sha256",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-attempt-issued_state_sha256",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-attempt-session_id",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-attempt-owner_epoch",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-attempt-context_epoch",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-attempt-status",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "attempt-id-string",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"id\":\"\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "attempt-id-number",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"id\":1},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "attempt-command-array",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":[\"next\"],\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "attempt-command-unknown",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"unknown\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "attempt-shared-false",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"shared_attempt\":false},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "attempt-shared-number",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"shared_attempt\":0},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "attempt-claim_revision-valid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"claim_revision\":0},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "attempt-claim_revision-invalid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"claim_revision\":-1},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "attempt-result_revision-valid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"result_revision\":0},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "attempt-result_revision-invalid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"result_revision\":-1},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "attempt-resume_gate_revision-valid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"resume_gate_revision\":0},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "attempt-resume_gate_revision-invalid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"resume_gate_revision\":-1},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "attempt-cursor_input_sha256-valid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"cursor_input_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "attempt-cursor_input_sha256-invalid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"cursor_input_sha256\":\"wrong\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "attempt-result_sha256-valid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"result_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "attempt-result_sha256-invalid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\",\"result_sha256\":\"wrong\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-resume-status",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-resume-issuing_stage",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-resume-issuing_state_sha256",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-resume-issuing_session",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "missing-resume-issuing_intent_uuid",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\"}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "resume-selected",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"selected\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "resume-array-status",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":[\"waiting\"],\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "resume-state-hash-short",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"wrong\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null}}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "token-0",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"continue_token\":\"\",\"continue_token_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "token-5",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"continue_token\":\"token\",\"continue_token_sha256\":\"3c469e9d6c5875d37a43f353d4f88e61fcf812c66eee3457465a40b0da4153e0\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "token-5461",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"continue_token\":\"あああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ\",\"continue_token_sha256\":\"24e2d71598c871e2b0be1ca32daca6ce641a2279fde3859d8759d97492fde5af\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": true
+    },
+    {
+      "id": "token-5462",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"continue_token\":\"ああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ\",\"continue_token_sha256\":\"0bb2fde0db35117211dde482e87d61b42bb83ecffd540b39440b367544827c80\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "token-wrong-digest",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"continue_token\":\"token\",\"continue_token_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    },
+    {
+      "id": "token-null",
+      "marker": "{\"version\":2,\"stage\":\"code-generation\",\"state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"project_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"intent_uuid\":null,\"state_present\":true,\"owner_session\":\"sessionless:project\",\"revision\":1,\"owner_epoch\":0,\"context_epoch\":0,\"event_sequence\":0,\"human_sequence\":0,\"engine_sequence\":0,\"conversation_sequence\":0,\"stop_count\":0,\"kind\":\"ask\",\"delivery\":\"issued\",\"needs_rehydrate\":false,\"active_attempt\":{\"command_kind\":\"next\",\"command_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"issued_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"session_id\":\"\",\"owner_epoch\":0,\"context_epoch\":0,\"status\":\"pending\"},\"resume\":{\"status\":\"waiting\",\"issuing_stage\":\"code-generation\",\"issuing_state_sha256\":\"8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c\",\"issuing_session\":\"\",\"issuing_intent_uuid\":null},\"continue_token\":null,\"continue_token_sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}",
+      "state": "# State\n- **Construction Autonomy Mode**: gated\n",
+      "state_sha256": "8e72ee20fc0d39feac6a112a0406942e55080efbeaed44c1d35e15e7b3611b6c",
+      "waiting": false
+    }
+  ]
+}

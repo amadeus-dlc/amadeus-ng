@@ -1,0 +1,7 @@
+# native classic-scope probe（未実行）
+
+`native-probe.sh` は、固定本家 2.7.1（`git -C vendor/aidlc-workflows archive a277af218f0df7f325d3b8be7b6d90fce2c5bd40 dist/claude`。277 ファイル、マニフェスト `282b17c5…` を `verifySource` で照合してから使う）の配布シェルを使い捨て作業ツリーへ展開し、`target/debug/aidlc` を `bin/aidlc-orchestrate` 等の名前で置いて、classic scope の採取列の先頭（`next --scope classic` → `intent-create` → `next` → `continue <token>` → `next --stage contract-design` → `jump resolve --stage domain-design`）を流す。`compare.ts` が `tests/golden/upstream-a277af21/cli/` の対応ケースと、`<ROOT>` / `<CLONE>` / `<TS>` / 記録日付だけを正規化して突き合わせ、JSON はキーごとに差を出す（`continue_token` は実行ごとに変わるので長さだけ示す）。加えて、誕生直後の状態ファイル全文を `cli/intent-create/classic-scope/state-full.md` と、監査を同ケースの `audit.md` と diff する。
+
+2026-09-10、担当 `u2_step8_audit`（委任エージェント）は `.claude/hooks/aidlc-state-transition-guard.ts` に「Delegated agent "aidlc-developer-agent" cannot run dynamic executable beyond guard inspection」で実行を拒否された。ガードは意図どおり働いており、回避していない。**両出力の採取は主セッション（親）で `bash native-probe.sh` を実行して得ること。** 出力は `out/` へ落ちる（`compare.txt`、`state-full.diff`、`genesis-audit.diff`、各コマンドの stdout / stderr / exit）。使い捨て作業ツリーは `AIDLC_STEP8_PROBE_WORK` で場所を指定できる。
+
+この手順は Step 8 の「駆動できないままの必要ケース」のうち、前提が採取列の先頭にあって安価に再現できる 5 ケース（`next/no-active-intent`、`next/start` の全文、`continue/load-steering` の全文、`next/stage-jump-print`、`jump/resolve-forward` は前提が異なるので参考）だけを対象にする。`next/after-approval` 以降の連鎖（承認・jump・skip を挟む）は対象外である。

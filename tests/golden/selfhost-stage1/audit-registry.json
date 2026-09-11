@@ -1,0 +1,382 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "source_file": ".claude/tools/aidlc-audit.ts",
+  "source_sha256": "9483965dda464f6c7535da36b24300af47b3effffc08ba63605e944ab5c63868",
+  "declarations": "const VALID_EVENT_TYPES = new Set([\n  // Stage lifecycle\n  \"STAGE_STARTED\",\n  \"STAGE_AWAITING_APPROVAL\",\n  \"STAGE_REVISING\",\n  \"STAGE_COMPLETED\",\n  \"STAGE_JUMPED\",\n  \"STAGE_SKIPPED\",\n  // Phase lifecycle\n  \"PHASE_STARTED\",\n  \"PHASE_COMPLETED\",\n  \"PHASE_VERIFIED\",\n  \"PHASE_SKIPPED\",\n  // Workflow lifecycle\n  \"WORKFLOW_STARTED\",\n  \"WORKFLOW_COMPLETED\",\n  \"WORKFLOW_PARKED\",\n  \"WORKFLOW_UNPARKED\",\n  // Session events (hook-owned)\n  \"SESSION_STARTED\",\n  \"SESSION_RESUMED\",\n  \"SESSION_COMPACTED\",\n  \"SESSION_ENDED\",\n  // Human presence (hook-owned): one event per real human prompt turn. The\n  // approval/interview gate requires a HUMAN_TURN appended AFTER the last gate\n  // resolution (in ledger order) before it commits.\n  \"HUMAN_TURN\",\n  // Initialization events (fire IN ADDITION TO STAGE_COMPLETED)\n  \"WORKSPACE_SCAFFOLDED\",\n  \"WORKSPACE_SCANNED\",\n  \"WORKSPACE_INITIALISED\",\n  // User interaction\n  \"DECISION_RECORDED\",\n  \"GATE_APPROVED\",\n  \"GATE_REJECTED\",\n  \"QUESTION_ANSWERED\",\n  \"SUMMARY_CONFIRMATION_RECORDED\",\n  \"PLAN_APPROVAL_RECORDED\",\n  // Reviewer step (§12a) — REVIEW_REQUESTED on dispatch, REVIEW_COMPLETED when\n  // a verdict is read. Emitted by the tool actor `aidlc-log.ts review`. A\n  // reviewer-bearing stage cannot complete without a terminal REVIEW_COMPLETED\n  // in its audit tail (enforced by aidlc-state.ts in approve, advance, finalize,\n  // and complete-workflow).\n  \"REVIEW_REQUESTED\",\n  \"REVIEW_COMPLETED\",\n  // Ordered pipeline-link receipt. Emitted only by aidlc-log.ts link after a\n  // declared link returns; completion guards require the full current-attempt\n  // chain before a pipeline stage may enter or resolve approval.\n  \"PIPELINE_LINK_COMPLETED\",\n  // Unit-of-work lifecycle on INLINE per-unit Construction stages (for_each:\n  // unit-of-work, mode: inline) — emitted by `aidlc-state.ts unit\n  // start|pause|resume|complete`. UNIT_COMPLETED is the completion receipt the\n  // engine's coverage walk prefers over bare artifact existence (artifacts are\n  // evidence checked AT the receipt, never the transition itself); UNIT_PAUSED\n  // carries Reason + Next Action so a resumed session lands on the exact\n  // checkpoint. The autonomous swarm path keeps its own SWARM_UNIT_* ledger.\n  \"UNIT_STARTED\",\n  \"UNIT_PAUSED\",\n  \"UNIT_RESUMED\",\n  \"UNIT_COMPLETED\",\n  // Artifact events (hook-emitted)\n  \"ARTIFACT_CREATED\",\n  \"ARTIFACT_UPDATED\",\n  \"ARTIFACT_REUSED\",\n  // Subagent (hook-emitted)\n  \"SUBAGENT_COMPLETED\",\n  // Reviewer read-scope enforcement (hook-emitted): a per-unit reviewer's\n  // tool call was refused for reaching into sibling units' construction/ paths.\n  \"REVIEWER_SCOPE_BLOCKED\",\n  // Terminal-receipt write-freeze enforcement (hook-emitted): a declared\n  // produces-artifact write was refused because it would invalidate a fresh\n  // READY review receipt before the gate (stage-protocol-reviewer §12a terminal\n  // ordering). No bracket characters in this comment: t47 slices the array\n  // literal at the first closing bracket after the const name.\n  \"REVIEW_FREEZE_BLOCKED\",\n  // Plan-approval ordering enforcement (hook-emitted): a code-generation\n  // developer-agent dispatch was refused because no unit had an approved\n  // code-generation plan on disk (stage Steps 2-3 must precede Step 4).\n  \"PLAN_APPROVAL_BLOCKED\",\n  // DocumentKB (emitters wired by aidlc-knowledge.ts onboard/sync/associate).\n  // The customer-document store is a SPACE-level object, so all three land in\n  // the space-level audit shard even when the document is intent-scoped -- a\n  // scope change must never split one document's history across two shards.\n  \"DOCUMENT_INDEXED\",\n  \"DOCUMENT_UPDATED\",\n  \"DOCUMENT_REMOVED\",\n  // Health/system\n  \"HEALTH_CHECKED\",\n  \"SCOPE_DETECTED\",\n  \"SCOPE_CHANGED\",\n  // User-driven plugin selection changes enabled graph/scope surfaces.\n  \"PLUGIN_SELECTION_CHANGED\",\n  \"DEPTH_CHANGED\",\n  \"TEST_STRATEGY_CHANGED\",\n  // Per-run review-class override changed (config-change --review). The\n  // effective class each stage runs at is resolved at directive emission.\n  \"REVIEW_CLASS_CHANGED\",\n  // Adaptive composer: an in-flight plan re-shape (pending-stage suffix flips\n  // via the recompose verb). Emitted by aidlc-utility.ts handleRecompose.\n  \"RECOMPOSED\",\n  // Jump events owned by STAGE_JUMPED — JUMP_COMPLETED was deleted as a\n  // redundant alias.\n  // Error/Recovery\n  \"ERROR_LOGGED\",\n  \"RECOVERY_COMPLETED\",\n  // Construction Bolt execution\n  \"BOLT_STARTED\",\n  \"BOLT_COMPLETED\",\n  \"BOLT_FAILED\",\n  \"AUTONOMY_MODE_SET\",\n  \"UNIT_OWNERSHIP_SET\",\n  \"UNIT_GATE_RHYTHM_SET\",\n  \"UNIT_MERGED\",\n  // Worktree lifecycle:\n  //   WORKTREE_* emitted by aidlc-worktree.ts\n  //   STATE_*    emitted by aidlc-state.ts state-fork/state-merge\n  //   AUDIT_*    emitted by audit-fork/audit-merge handlers below\n  \"WORKTREE_CREATED\",\n  \"WORKTREE_MERGED\",\n  \"WORKTREE_DISCARDED\",\n  \"STATE_FORKED\",\n  \"STATE_MERGED\",\n  \"AUDIT_FORKED\",\n  \"AUDIT_MERGED\",\n  // Practices (stage events + runtime events)\n  \"PRACTICES_DISCOVERED\",\n  \"PRACTICES_AFFIRMED\",\n  \"PRACTICES_OVERRIDE\",\n  \"PRACTICES_SECTION_EMPTY\",\n  // Merge Dispatch (emitter wired via aidlc-bolt.ts dispatch-event)\n  \"MERGE_DISPATCH_INVOKED\",\n  \"MERGE_DISPATCH_RETURNED\",\n  \"MERGE_DISPATCH_FALLBACK\",\n  // Sensors (emitters wired by sensor dispatcher for SENSOR_*; doctor for\n  // GUARDRAIL_LOADED)\n  \"SENSOR_FIRED\",\n  \"SENSOR_PASSED\",\n  \"SENSOR_FAILED\",\n  \"SENSOR_BUDGET_OVERRIDE\",\n  \"GUARDRAIL_LOADED\",\n  // Learning Loop (MEMORY_EMPTY emitter wired by aidlc-runtime.ts compile;\n  // RULE_LEARNED + SENSOR_PROPOSED emitters wired by aidlc-learnings.ts persist)\n  \"MEMORY_EMPTY\",\n  \"RULE_LEARNED\",\n  \"SENSOR_PROPOSED\",\n  // Swarm lifecycle — all emit from the swarm referee aidlc-swarm.ts (the\n  // per-Unit pair + batch tally from `finalize`; SWARM_STARTED + SWARM_DEGRADED\n  // from `prepare`). See CHANGELOG + audit-format.md.\n  \"SWARM_STARTED\",\n  \"SWARM_UNIT_CONVERGED\",\n  \"SWARM_SOURCE_MERGED\",\n  \"SWARM_UNIT_FAILED\",\n  \"SWARM_BATON_RETURNED\",\n  \"SWARM_COMPLETED\",\n  \"SWARM_DEGRADED\",\n]);\nconst EVENT_HEADINGS: Record<string, string> = {\n  STAGE_STARTED: \"Stage Start\",\n  STAGE_AWAITING_APPROVAL: \"Stage Awaiting Approval\",\n  STAGE_REVISING: \"Stage Revising\",\n  STAGE_COMPLETED: \"Stage Completion\",\n  STAGE_JUMPED: \"Stage Jump\",\n  STAGE_SKIPPED: \"Stage Skip\",\n  PHASE_STARTED: \"Phase Start\",\n  PHASE_COMPLETED: \"Phase Completion\",\n  PHASE_VERIFIED: \"Phase Verification\",\n  PHASE_SKIPPED: \"Phase Skip\",\n  WORKFLOW_STARTED: \"Workflow Start\",\n  WORKFLOW_COMPLETED: \"Workflow Completion\",\n  WORKFLOW_PARKED: \"Workflow Parked\",\n  WORKFLOW_UNPARKED: \"Workflow Unparked\",\n  SESSION_STARTED: \"Session Start\",\n  SESSION_RESUMED: \"Session Resume\",\n  SESSION_COMPACTED: \"Session Compacted\",\n  SESSION_ENDED: \"Session End\",\n  HUMAN_TURN: \"Human Turn\",\n  WORKSPACE_SCAFFOLDED: \"Workspace Scaffolded\",\n  WORKSPACE_SCANNED: \"Workspace Scanned\",\n  WORKSPACE_INITIALISED: \"Workspace Initialised\",\n  DECISION_RECORDED: \"Decision Recorded\",\n  GATE_APPROVED: \"Gate Approved\",\n  GATE_REJECTED: \"Gate Rejected\",\n  QUESTION_ANSWERED: \"Question Answered\",\n  SUMMARY_CONFIRMATION_RECORDED: \"Summary Confirmation Recorded\",\n  PLAN_APPROVAL_RECORDED: \"Plan Approval Recorded\",\n  REVIEW_REQUESTED: \"Review Requested\",\n  REVIEW_COMPLETED: \"Review Completed\",\n  PIPELINE_LINK_COMPLETED: \"Pipeline Link Completed\",\n  UNIT_STARTED: \"Unit Started\",\n  UNIT_PAUSED: \"Unit Paused\",\n  UNIT_RESUMED: \"Unit Resumed\",\n  UNIT_COMPLETED: \"Unit Completed\",\n  ARTIFACT_CREATED: \"Artifact Created\",\n  ARTIFACT_UPDATED: \"Artifact Updated\",\n  ARTIFACT_REUSED: \"Artifact Reused\",\n  SUBAGENT_COMPLETED: \"Subagent Completed\",\n  REVIEWER_SCOPE_BLOCKED: \"Reviewer Scope Blocked\",\n  REVIEW_FREEZE_BLOCKED: \"Review Freeze Blocked\",\n  PLAN_APPROVAL_BLOCKED: \"Plan Approval Blocked\",\n  DOCUMENT_INDEXED: \"Document Indexed\",\n  DOCUMENT_UPDATED: \"Document Updated\",\n  DOCUMENT_REMOVED: \"Document Removed\",\n  HEALTH_CHECKED: \"Health Check\",\n  SCOPE_DETECTED: \"Scope Detection\",\n  SCOPE_CHANGED: \"Scope Change\",\n  PLUGIN_SELECTION_CHANGED: \"Plugin Selection Change\",\n  DEPTH_CHANGED: \"Depth Change\",\n  TEST_STRATEGY_CHANGED: \"Test Strategy Change\",\n  REVIEW_CLASS_CHANGED: \"Review Class Change\",\n  RECOMPOSED: \"Plan Recomposed\",\n  ERROR_LOGGED: \"Error Logged\",\n  RECOVERY_COMPLETED: \"Recovery Completed\",\n  BOLT_STARTED: \"Bolt Started\",\n  BOLT_COMPLETED: \"Bolt Completed\",\n  BOLT_FAILED: \"Bolt Failed\",\n  AUTONOMY_MODE_SET: \"Autonomy Mode Set\",\n  UNIT_OWNERSHIP_SET: \"Unit Ownership Set\",\n  UNIT_GATE_RHYTHM_SET: \"Unit Gate Rhythm Set\",\n  UNIT_MERGED: \"Unit Merged\",\n  WORKTREE_CREATED: \"Worktree Created\",\n  WORKTREE_MERGED: \"Worktree Merged\",\n  WORKTREE_DISCARDED: \"Worktree Discarded\",\n  STATE_FORKED: \"State Forked\",\n  STATE_MERGED: \"State Merged\",\n  AUDIT_FORKED: \"Audit Forked\",\n  AUDIT_MERGED: \"Audit Merged\",\n  PRACTICES_DISCOVERED: \"Practices Discovered\",\n  PRACTICES_AFFIRMED: \"Practices Affirmed\",\n  PRACTICES_OVERRIDE: \"Practices Override\",\n  PRACTICES_SECTION_EMPTY: \"Practices Section Empty\",\n  MERGE_DISPATCH_INVOKED: \"Merge Dispatch Invoked\",\n  MERGE_DISPATCH_RETURNED: \"Merge Dispatch Returned\",\n  MERGE_DISPATCH_FALLBACK: \"Merge Dispatch Fallback\",\n  SENSOR_FIRED: \"Sensor Fired\",\n  SENSOR_PASSED: \"Sensor Passed\",\n  SENSOR_FAILED: \"Sensor Failed\",\n  SENSOR_BUDGET_OVERRIDE: \"Sensor Budget Override\",\n  GUARDRAIL_LOADED: \"Guardrail Loaded\",\n  MEMORY_EMPTY: \"Memory Empty\",\n  RULE_LEARNED: \"Rule Learned\",\n  SENSOR_PROPOSED: \"Sensor Proposed\",\n  SWARM_STARTED: \"Swarm Started\",\n  SWARM_UNIT_CONVERGED: \"Swarm Unit Converged\",\n  SWARM_SOURCE_MERGED: \"Swarm Source Merged\",\n  SWARM_UNIT_FAILED: \"Swarm Unit Failed\",\n  SWARM_BATON_RETURNED: \"Swarm Baton Returned\",\n  SWARM_COMPLETED: \"Swarm Completed\",\n  SWARM_DEGRADED: \"Swarm Degraded\",\n};",
+  "declarations_sha256": "81c254a7a655d61b817dfee8d72923f0d53486aa4f52b4f2492f0d1ee67a73a7",
+  "capture_method": "固定本家のSetと見出し宣言を無変更でTypeScriptとして評価。入力なし。正規化なし。",
+  "normalization": [],
+  "entries": [
+    {
+      "event": "STAGE_STARTED",
+      "heading": "Stage Start"
+    },
+    {
+      "event": "STAGE_AWAITING_APPROVAL",
+      "heading": "Stage Awaiting Approval"
+    },
+    {
+      "event": "STAGE_REVISING",
+      "heading": "Stage Revising"
+    },
+    {
+      "event": "STAGE_COMPLETED",
+      "heading": "Stage Completion"
+    },
+    {
+      "event": "STAGE_JUMPED",
+      "heading": "Stage Jump"
+    },
+    {
+      "event": "STAGE_SKIPPED",
+      "heading": "Stage Skip"
+    },
+    {
+      "event": "PHASE_STARTED",
+      "heading": "Phase Start"
+    },
+    {
+      "event": "PHASE_COMPLETED",
+      "heading": "Phase Completion"
+    },
+    {
+      "event": "PHASE_VERIFIED",
+      "heading": "Phase Verification"
+    },
+    {
+      "event": "PHASE_SKIPPED",
+      "heading": "Phase Skip"
+    },
+    {
+      "event": "WORKFLOW_STARTED",
+      "heading": "Workflow Start"
+    },
+    {
+      "event": "WORKFLOW_COMPLETED",
+      "heading": "Workflow Completion"
+    },
+    {
+      "event": "WORKFLOW_PARKED",
+      "heading": "Workflow Parked"
+    },
+    {
+      "event": "WORKFLOW_UNPARKED",
+      "heading": "Workflow Unparked"
+    },
+    {
+      "event": "SESSION_STARTED",
+      "heading": "Session Start"
+    },
+    {
+      "event": "SESSION_RESUMED",
+      "heading": "Session Resume"
+    },
+    {
+      "event": "SESSION_COMPACTED",
+      "heading": "Session Compacted"
+    },
+    {
+      "event": "SESSION_ENDED",
+      "heading": "Session End"
+    },
+    {
+      "event": "HUMAN_TURN",
+      "heading": "Human Turn"
+    },
+    {
+      "event": "WORKSPACE_SCAFFOLDED",
+      "heading": "Workspace Scaffolded"
+    },
+    {
+      "event": "WORKSPACE_SCANNED",
+      "heading": "Workspace Scanned"
+    },
+    {
+      "event": "WORKSPACE_INITIALISED",
+      "heading": "Workspace Initialised"
+    },
+    {
+      "event": "DECISION_RECORDED",
+      "heading": "Decision Recorded"
+    },
+    {
+      "event": "GATE_APPROVED",
+      "heading": "Gate Approved"
+    },
+    {
+      "event": "GATE_REJECTED",
+      "heading": "Gate Rejected"
+    },
+    {
+      "event": "QUESTION_ANSWERED",
+      "heading": "Question Answered"
+    },
+    {
+      "event": "SUMMARY_CONFIRMATION_RECORDED",
+      "heading": "Summary Confirmation Recorded"
+    },
+    {
+      "event": "PLAN_APPROVAL_RECORDED",
+      "heading": "Plan Approval Recorded"
+    },
+    {
+      "event": "REVIEW_REQUESTED",
+      "heading": "Review Requested"
+    },
+    {
+      "event": "REVIEW_COMPLETED",
+      "heading": "Review Completed"
+    },
+    {
+      "event": "PIPELINE_LINK_COMPLETED",
+      "heading": "Pipeline Link Completed"
+    },
+    {
+      "event": "UNIT_STARTED",
+      "heading": "Unit Started"
+    },
+    {
+      "event": "UNIT_PAUSED",
+      "heading": "Unit Paused"
+    },
+    {
+      "event": "UNIT_RESUMED",
+      "heading": "Unit Resumed"
+    },
+    {
+      "event": "UNIT_COMPLETED",
+      "heading": "Unit Completed"
+    },
+    {
+      "event": "ARTIFACT_CREATED",
+      "heading": "Artifact Created"
+    },
+    {
+      "event": "ARTIFACT_UPDATED",
+      "heading": "Artifact Updated"
+    },
+    {
+      "event": "ARTIFACT_REUSED",
+      "heading": "Artifact Reused"
+    },
+    {
+      "event": "SUBAGENT_COMPLETED",
+      "heading": "Subagent Completed"
+    },
+    {
+      "event": "REVIEWER_SCOPE_BLOCKED",
+      "heading": "Reviewer Scope Blocked"
+    },
+    {
+      "event": "REVIEW_FREEZE_BLOCKED",
+      "heading": "Review Freeze Blocked"
+    },
+    {
+      "event": "PLAN_APPROVAL_BLOCKED",
+      "heading": "Plan Approval Blocked"
+    },
+    {
+      "event": "DOCUMENT_INDEXED",
+      "heading": "Document Indexed"
+    },
+    {
+      "event": "DOCUMENT_UPDATED",
+      "heading": "Document Updated"
+    },
+    {
+      "event": "DOCUMENT_REMOVED",
+      "heading": "Document Removed"
+    },
+    {
+      "event": "HEALTH_CHECKED",
+      "heading": "Health Check"
+    },
+    {
+      "event": "SCOPE_DETECTED",
+      "heading": "Scope Detection"
+    },
+    {
+      "event": "SCOPE_CHANGED",
+      "heading": "Scope Change"
+    },
+    {
+      "event": "PLUGIN_SELECTION_CHANGED",
+      "heading": "Plugin Selection Change"
+    },
+    {
+      "event": "DEPTH_CHANGED",
+      "heading": "Depth Change"
+    },
+    {
+      "event": "TEST_STRATEGY_CHANGED",
+      "heading": "Test Strategy Change"
+    },
+    {
+      "event": "REVIEW_CLASS_CHANGED",
+      "heading": "Review Class Change"
+    },
+    {
+      "event": "RECOMPOSED",
+      "heading": "Plan Recomposed"
+    },
+    {
+      "event": "ERROR_LOGGED",
+      "heading": "Error Logged"
+    },
+    {
+      "event": "RECOVERY_COMPLETED",
+      "heading": "Recovery Completed"
+    },
+    {
+      "event": "BOLT_STARTED",
+      "heading": "Bolt Started"
+    },
+    {
+      "event": "BOLT_COMPLETED",
+      "heading": "Bolt Completed"
+    },
+    {
+      "event": "BOLT_FAILED",
+      "heading": "Bolt Failed"
+    },
+    {
+      "event": "AUTONOMY_MODE_SET",
+      "heading": "Autonomy Mode Set"
+    },
+    {
+      "event": "UNIT_OWNERSHIP_SET",
+      "heading": "Unit Ownership Set"
+    },
+    {
+      "event": "UNIT_GATE_RHYTHM_SET",
+      "heading": "Unit Gate Rhythm Set"
+    },
+    {
+      "event": "UNIT_MERGED",
+      "heading": "Unit Merged"
+    },
+    {
+      "event": "WORKTREE_CREATED",
+      "heading": "Worktree Created"
+    },
+    {
+      "event": "WORKTREE_MERGED",
+      "heading": "Worktree Merged"
+    },
+    {
+      "event": "WORKTREE_DISCARDED",
+      "heading": "Worktree Discarded"
+    },
+    {
+      "event": "STATE_FORKED",
+      "heading": "State Forked"
+    },
+    {
+      "event": "STATE_MERGED",
+      "heading": "State Merged"
+    },
+    {
+      "event": "AUDIT_FORKED",
+      "heading": "Audit Forked"
+    },
+    {
+      "event": "AUDIT_MERGED",
+      "heading": "Audit Merged"
+    },
+    {
+      "event": "PRACTICES_DISCOVERED",
+      "heading": "Practices Discovered"
+    },
+    {
+      "event": "PRACTICES_AFFIRMED",
+      "heading": "Practices Affirmed"
+    },
+    {
+      "event": "PRACTICES_OVERRIDE",
+      "heading": "Practices Override"
+    },
+    {
+      "event": "PRACTICES_SECTION_EMPTY",
+      "heading": "Practices Section Empty"
+    },
+    {
+      "event": "MERGE_DISPATCH_INVOKED",
+      "heading": "Merge Dispatch Invoked"
+    },
+    {
+      "event": "MERGE_DISPATCH_RETURNED",
+      "heading": "Merge Dispatch Returned"
+    },
+    {
+      "event": "MERGE_DISPATCH_FALLBACK",
+      "heading": "Merge Dispatch Fallback"
+    },
+    {
+      "event": "SENSOR_FIRED",
+      "heading": "Sensor Fired"
+    },
+    {
+      "event": "SENSOR_PASSED",
+      "heading": "Sensor Passed"
+    },
+    {
+      "event": "SENSOR_FAILED",
+      "heading": "Sensor Failed"
+    },
+    {
+      "event": "SENSOR_BUDGET_OVERRIDE",
+      "heading": "Sensor Budget Override"
+    },
+    {
+      "event": "GUARDRAIL_LOADED",
+      "heading": "Guardrail Loaded"
+    },
+    {
+      "event": "MEMORY_EMPTY",
+      "heading": "Memory Empty"
+    },
+    {
+      "event": "RULE_LEARNED",
+      "heading": "Rule Learned"
+    },
+    {
+      "event": "SENSOR_PROPOSED",
+      "heading": "Sensor Proposed"
+    },
+    {
+      "event": "SWARM_STARTED",
+      "heading": "Swarm Started"
+    },
+    {
+      "event": "SWARM_UNIT_CONVERGED",
+      "heading": "Swarm Unit Converged"
+    },
+    {
+      "event": "SWARM_SOURCE_MERGED",
+      "heading": "Swarm Source Merged"
+    },
+    {
+      "event": "SWARM_UNIT_FAILED",
+      "heading": "Swarm Unit Failed"
+    },
+    {
+      "event": "SWARM_BATON_RETURNED",
+      "heading": "Swarm Baton Returned"
+    },
+    {
+      "event": "SWARM_COMPLETED",
+      "heading": "Swarm Completed"
+    },
+    {
+      "event": "SWARM_DEGRADED",
+      "heading": "Swarm Degraded"
+    }
+  ]
+}

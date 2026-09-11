@@ -9,7 +9,7 @@ use core_query_use_case::orchestration::{
 use super::read_model_store::ReadModelStore;
 
 /// 自然キー (`definition_id`, `stage_slug` — UNIQUE 索引 `read_definition_stage_key`)。
-const SELECT_STAGE: &str = "SELECT stage_slug, support_agents FROM read_definition_stage \
+const SELECT_STAGE: &str = "SELECT stage_slug, support_agents, name FROM read_definition_stage \
      WHERE definition_id = ?1 AND stage_slug = ?2";
 
 /// グラフのステージ 1 行を返す実装。
@@ -36,7 +36,11 @@ impl DefinitionStageDao for DefinitionStageDaoImpl {
     ) -> Result<Option<DefinitionStageView>, ReadModelReadError> {
         self.store
             .find_one(SELECT_STAGE, &[&definition_id, &stage_slug], |row| {
-                Ok(DefinitionStageView::new(row.get(0)?, row.get(1)?))
+                Ok(DefinitionStageView::new(
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                ))
             })
     }
 }

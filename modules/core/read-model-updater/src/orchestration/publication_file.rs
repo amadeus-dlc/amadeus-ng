@@ -17,16 +17,28 @@ pub struct PublicationFile {
 }
 
 impl PublicationFile {
+    /// 存在しない投影ファイルを作る。既存ファイルの上書き許可にはしない。
+    #[must_use]
+    pub fn creation(path: &Path, after: &str) -> Self {
+        Self::restored(
+            path.to_path_buf(),
+            None,
+            after.as_bytes().to_vec(),
+            false,
+            false,
+        )
+    }
+
     /// 読み取った状態・規則の変更前後から置換計画を作る。
     #[must_use]
     pub fn replacement(path: &Path, before: &str, after: &str) -> PublicationFile {
-        PublicationFile {
-            path: path.to_path_buf(),
-            before: Some(before.as_bytes().to_vec()),
-            after: after.as_bytes().to_vec(),
-            append: false,
-            memory: false,
-        }
+        Self::restored(
+            path.to_path_buf(),
+            Some(before.as_bytes().to_vec()),
+            after.as_bytes().to_vec(),
+            false,
+            false,
+        )
     }
 
     /// 監査の現在内容を取得し、ヘッダを含む追記後の内容を固定する。
@@ -40,21 +52,25 @@ impl PublicationFile {
             after.extend_from_slice(crate::workspace::SHARD_HEADER.as_bytes());
         }
         after.extend_from_slice(blocks.as_bytes());
-        Ok(PublicationFile {
-            path: path.to_path_buf(),
+        Ok(Self::restored(
+            path.to_path_buf(),
             before,
             after,
-            append: true,
-            memory: false,
-        })
+            true,
+            false,
+        ))
     }
 
     /// 利用者が編集する規則ファイルの置換計画。既存の失敗文言を保持する。
     #[must_use]
     pub fn memory(path: &Path, before: &str, after: &str) -> PublicationFile {
-        let mut file = Self::replacement(path, before, after);
-        file.memory = true;
-        file
+        Self::restored(
+            path.to_path_buf(),
+            Some(before.as_bytes().to_vec()),
+            after.as_bytes().to_vec(),
+            false,
+            true,
+        )
     }
 
     /// 計画が所有する書込先。

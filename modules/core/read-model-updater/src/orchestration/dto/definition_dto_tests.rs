@@ -57,6 +57,7 @@ pub(super) fn saturated_node() -> StageNode {
     .sensors(vec!["linter".to_string()])
     .scopes(vec!["feature".to_string()])
     .reviewer("architecture-reviewer".to_string())
+    .review_artifact("code-summary".to_string())
     .reviewer_max_iterations(2)
     .review_class(ReviewClass::Adversarial)
     .summary_confirmation("required".to_string())
@@ -69,6 +70,9 @@ pub(super) fn saturated_node() -> StageNode {
         "linter",
         "sensors/linter.md",
         Some("*.rs".to_string()),
+        Some("gate".to_string()),
+        Some("blocking".to_string()),
+        Some("quality".to_string()),
     )])
     .build()
 }
@@ -135,7 +139,7 @@ pub(super) fn redefined_event() -> WorkflowDefinitionEvent {
 /// 誕生行のワイヤ形式 (逐語)。
 const DEFINED_GOLDEN: &str = concat!(
     r#"{"Defined":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003","aggregate_id":"claude","revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","content":{"#,
-    r#""graph":[{"slug":"code-generation","number":"3.1","name":"Code Generation","phase":"Construction","execution":"Conditional","mode":"Mob","condition":"brownfield","lead_agent":"developer","support_agents":["quality"],"for_each":"unit","workspace_requires":true,"produces":["code"],"optional_produces":["notes"],"produces_kinds":{"code":["rust"]},"consumes":[{"artifact":"design","required":true,"conditional_on":"brownfield"}],"requires_stage":["domain-design"],"sensors":["linter"],"scopes":["feature"],"reviewer":"architecture-reviewer","reviewer_max_iterations":2,"review_class":"Adversarial","summary_confirmation":"required","plugin":"acme","enabled":false,"inputs":"design","outputs":"code","rules_in_context":[{"path":"org.md","scope":"Org"}],"sensors_applicable":[{"id":"linter","path":"sensors/linter.md","matches":"*.rs"}]}],"#,
+    r#""graph":[{"slug":"code-generation","number":"3.1","name":"Code Generation","phase":"Construction","execution":"Conditional","mode":"Mob","condition":"brownfield","lead_agent":"developer","support_agents":["quality"],"for_each":"unit","workspace_requires":true,"produces":["code"],"optional_produces":["notes"],"produces_kinds":{"code":["rust"]},"consumes":[{"artifact":"design","required":true,"conditional_on":"brownfield"}],"requires_stage":["domain-design"],"sensors":["linter"],"scopes":["feature"],"reviewer":"architecture-reviewer","review_artifact":"code-summary","reviewer_max_iterations":2,"review_class":"Adversarial","summary_confirmation":"required","plugin":"acme","enabled":false,"inputs":"design","outputs":"code","rules_in_context":[{"path":"org.md","scope":"Org"}],"sensors_applicable":[{"id":"linter","path":"sensors/linter.md","matches":"*.rs","fire_on":"gate","default_severity":"blocking","category":"quality"}]}],"#,
     r#""grid":{"feature":{"code-generation":"Execute"}},"#,
     r#""scopes":[{"name":"feature","depth":"standard","keywords":["api","endpoint"],"skeleton":"On","review_cap":"Advisory","freeform_default":true}]}}}"#,
 );
@@ -143,7 +147,7 @@ const DEFINED_GOLDEN: &str = concat!(
 /// 改訂行のワイヤ形式 (逐語 — b40 で誕生と同じく `id` / `aggregate_id` を持つ)。
 const REDEFINED_GOLDEN: &str = concat!(
     r#"{"Redefined":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003","aggregate_id":"claude","revision":"sha256:1111111111111111111111111111111111111111111111111111111111111111","content":{"#,
-    r#""graph":[{"slug":"code-generation","number":"3.1","name":"Code Generation","phase":"Construction","execution":"Conditional","mode":"Mob","condition":"brownfield","lead_agent":"developer","support_agents":["quality"],"for_each":"unit","workspace_requires":true,"produces":["code"],"optional_produces":["notes"],"produces_kinds":{"code":["rust"]},"consumes":[{"artifact":"design","required":true,"conditional_on":"brownfield"}],"requires_stage":["domain-design"],"sensors":["linter"],"scopes":["feature"],"reviewer":"architecture-reviewer","reviewer_max_iterations":2,"review_class":"Adversarial","summary_confirmation":"required","plugin":"acme","enabled":false,"inputs":"design","outputs":"code","rules_in_context":[{"path":"org.md","scope":"Org"}],"sensors_applicable":[{"id":"linter","path":"sensors/linter.md","matches":"*.rs"}]}],"#,
+    r#""graph":[{"slug":"code-generation","number":"3.1","name":"Code Generation","phase":"Construction","execution":"Conditional","mode":"Mob","condition":"brownfield","lead_agent":"developer","support_agents":["quality"],"for_each":"unit","workspace_requires":true,"produces":["code"],"optional_produces":["notes"],"produces_kinds":{"code":["rust"]},"consumes":[{"artifact":"design","required":true,"conditional_on":"brownfield"}],"requires_stage":["domain-design"],"sensors":["linter"],"scopes":["feature"],"reviewer":"architecture-reviewer","review_artifact":"code-summary","reviewer_max_iterations":2,"review_class":"Adversarial","summary_confirmation":"required","plugin":"acme","enabled":false,"inputs":"design","outputs":"code","rules_in_context":[{"path":"org.md","scope":"Org"}],"sensors_applicable":[{"id":"linter","path":"sensors/linter.md","matches":"*.rs","fire_on":"gate","default_severity":"blocking","category":"quality"}]}],"#,
     r#""grid":{"feature":{"code-generation":"Execute"}},"#,
     r#""scopes":[{"name":"feature","depth":"standard","keywords":["api","endpoint"],"skeleton":"On","review_cap":"Advisory","freeform_default":true}]}}}"#,
 );

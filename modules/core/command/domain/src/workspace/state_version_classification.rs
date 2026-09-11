@@ -18,6 +18,10 @@ pub struct StateVersionClassification {
 }
 
 impl StateVersionClassification {
+    const fn of_kind(kind: StateVersionKind, version: Option<String>) -> Self {
+        Self { kind, version }
+    }
+
     /// 4 分類の値。runtime と doctor はこの同一の判定を見る (W7)。
     #[must_use]
     pub const fn kind(&self) -> StateVersionKind {
@@ -38,10 +42,7 @@ impl StateVersionClassification {
     #[must_use]
     pub fn classify(state_content: &str) -> StateVersionClassification {
         StateVersionClassification::token_of(state_content).map_or_else(
-            || StateVersionClassification {
-                kind: StateVersionKind::Unparseable,
-                version: None,
-            },
+            || Self::of_kind(StateVersionKind::Unparseable, None),
             |token| StateVersionClassification::of(&token),
         )
     }
@@ -75,11 +76,11 @@ impl StateVersionClassification {
                 Ok(_) => StateVersionKind::Past,
             }
         };
-        StateVersionClassification {
+        Self::of_kind(
             kind,
-            version: matches!(kind, StateVersionKind::Past | StateVersionKind::Future)
+            matches!(kind, StateVersionKind::Past | StateVersionKind::Future)
                 .then(|| token.to_string()),
-        }
+        )
     }
 }
 

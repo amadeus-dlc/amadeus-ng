@@ -11,25 +11,53 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod autonomy_switch_request;
+mod capture_learnings_use_case;
 mod commit_error;
-mod commit_outcome;
 mod commit_verdict_use_case;
 mod create_intent_error;
 mod create_intent_use_case;
 mod define_workflow_error;
 mod define_workflow_use_case;
+mod health_check_error;
+mod learning_capture_error;
+mod memory_journal_error;
+mod observe_memory_journals_use_case;
 mod park_error;
 mod park_use_case;
 mod port;
 mod practices_promotion_request;
 mod promote_practices_error;
 mod promote_practices_use_case;
+mod record_health_check_use_case;
+mod synchronize_task_use_case;
+mod task_synchronization_error;
+pub use synchronize_task_use_case::SynchronizeTaskUseCase;
+pub use task_synchronization_error::TaskSynchronizationError;
 mod record_review_use_case;
+pub use capture_learnings_use_case::CaptureLearningsUseCase;
+pub use health_check_error::HealthCheckError;
+pub use learning_capture_error::LearningCaptureError;
+pub use memory_journal_error::MemoryJournalError;
+pub use observe_memory_journals_use_case::ObserveMemoryJournalsUseCase;
+pub use record_health_check_use_case::RecordHealthCheckUseCase;
+mod guard_review_freeze_use_case;
+pub use guard_review_freeze_use_case::GuardReviewFreezeUseCase;
+mod review_freeze_error;
+pub use review_freeze_error::ReviewFreezeError;
+mod guard_reviewer_scope_use_case;
+pub use guard_reviewer_scope_use_case::GuardReviewerScopeUseCase;
+mod reviewer_scope_cause;
+mod reviewer_scope_error;
+mod reviewer_scope_request;
+pub use reviewer_scope_cause::ReviewerScopeCause;
+pub use reviewer_scope_error::ReviewerScopeError;
+pub use reviewer_scope_request::ReviewerScopeRequest;
+#[cfg(test)]
+mod command_error_material_tests;
 mod record_single_stage_run_use_case;
 mod record_skeleton_stance_use_case;
 mod review_log_error;
 mod review_log_kind;
-mod review_log_outcome;
 mod review_log_request;
 mod single_stage_run_error;
 mod skeleton_stance_error;
@@ -69,8 +97,6 @@ pub use record_skeleton_stance_use_case::RecordSkeletonStanceUseCase;
 pub use switch_autonomy_use_case::SwitchAutonomyUseCase;
 
 // ユースケースの成功が運ぶ材料（逐語文言は出す側が組む）。
-pub use commit_outcome::CommitOutcome;
-pub use review_log_outcome::ReviewLogOutcome;
 
 // ユースケースの入力 VO（正規化済みの値で受ける — `coding-rules/use-case-rules.md`）。
 pub use autonomy_switch_request::AutonomySwitchRequest;
@@ -89,3 +115,101 @@ pub use review_log_error::ReviewLogError;
 pub use single_stage_run_error::SingleStageRunError;
 pub use skeleton_stance_error::SkeletonStanceError;
 pub use switch_autonomy_error::SwitchAutonomyError;
+
+mod interaction_command_error;
+pub use interaction_command_error::InteractionCommandError;
+mod record_decision_use_case;
+pub use record_decision_use_case::RecordDecisionUseCase;
+
+mod observe_prompt_use_case;
+pub use observe_prompt_use_case::ObservePromptUseCase;
+
+mod record_answer_use_case;
+pub use record_answer_use_case::RecordAnswerUseCase;
+
+mod issue_directive_use_case;
+pub use issue_directive_use_case::IssueDirectiveUseCase;
+
+pub use port::{ArtifactAuditRepository, HookHealthRepository, PlanApprovalRuntimeRepository};
+
+mod plan_approval_command_error;
+pub use plan_approval_command_error::PlanApprovalCommandError;
+mod prepare_plan_invalidation_use_case;
+pub use prepare_plan_invalidation_use_case::PreparePlanInvalidationUseCase;
+
+mod recover_plan_invalidation_use_case;
+pub use recover_plan_invalidation_use_case::RecoverPlanInvalidationUseCase;
+
+mod ensure_plan_approval_runtime_use_case;
+pub use ensure_plan_approval_runtime_use_case::EnsurePlanApprovalRuntimeUseCase;
+
+mod plan_decision_request;
+pub use plan_decision_request::PlanDecisionRequest;
+mod record_plan_decision_use_case;
+pub use record_plan_decision_use_case::RecordPlanDecisionUseCase;
+
+mod prepare_plan_response_use_case;
+pub use prepare_plan_response_use_case::PreparePlanResponseUseCase;
+mod record_prepared_plan_response_use_case;
+pub use record_prepared_plan_response_use_case::RecordPreparedPlanResponseUseCase;
+mod complete_plan_response_use_case;
+pub use complete_plan_response_use_case::CompletePlanResponseUseCase;
+
+mod plan_answer_request;
+pub use plan_answer_request::PlanAnswerRequest;
+
+mod record_plan_answer_use_case;
+pub use record_plan_answer_use_case::RecordPlanAnswerUseCase;
+
+mod deliver_plan_answer_use_case;
+pub use deliver_plan_answer_use_case::DeliverPlanAnswerUseCase;
+
+mod complete_plan_answer_use_case;
+pub use complete_plan_answer_use_case::CompletePlanAnswerUseCase;
+
+mod begin_generation_use_case;
+mod certify_generation_use_case;
+pub use begin_generation_use_case::BeginGenerationUseCase;
+pub use certify_generation_use_case::CertifyGenerationUseCase;
+
+mod artifact_audit_command_error;
+mod record_artifact_observation_use_case;
+pub use artifact_audit_command_error::ArtifactAuditCommandError;
+pub use record_artifact_observation_use_case::RecordArtifactObservationUseCase;
+mod continuation_command_error;
+mod record_continuation_use_case;
+mod settle_continuation_publication_use_case;
+pub use continuation_command_error::ContinuationCommandError;
+pub use port::WorkflowContinuationRepository;
+pub use record_continuation_use_case::RecordContinuationUseCase;
+pub use settle_continuation_publication_use_case::SettleContinuationPublicationUseCase;
+
+mod record_command_failure_use_case;
+pub use record_command_failure_use_case::RecordCommandFailureUseCase;
+
+mod record_pipeline_link_use_case;
+pub use record_pipeline_link_use_case::RecordPipelineLinkUseCase;
+mod pipeline_link_command_error;
+pub use pipeline_link_command_error::PipelineLinkCommandError;
+
+mod session_audit_command_error;
+pub use session_audit_command_error::SessionAuditCommandError;
+mod record_session_audit_use_case;
+pub use port::SessionAuditRepository;
+pub use record_session_audit_use_case::RecordSessionAuditUseCase;
+mod begin_single_stage_run_use_case;
+pub use begin_single_stage_run_use_case::BeginSingleStageRunUseCase;
+
+mod hook_health_command_error;
+pub use hook_health_command_error::HookHealthCommandError;
+mod record_hook_drop_use_case;
+pub use record_hook_drop_use_case::RecordHookDropUseCase;
+
+mod invalidate_directive_context_use_case;
+pub use invalidate_directive_context_use_case::InvalidateDirectiveContextUseCase;
+
+mod jump_use_case;
+pub use jump_use_case::JumpUseCase;
+
+mod jump_error;
+pub use jump_error::JumpError;

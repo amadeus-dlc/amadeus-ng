@@ -66,6 +66,8 @@ fn run_stage() -> RunStageView {
         "[]".to_string(),
         "[]".to_string(),
         "[]".to_string(),
+        "[]".to_string(),
+        "[]".to_string(),
         None,
         None,
         None,
@@ -624,6 +626,7 @@ impl JumpDao for FakeJumpDao {
             "intent-capture".to_string(),
             "backward".to_string(),
             None,
+            None,
         )))
     }
 
@@ -640,6 +643,7 @@ impl JumpDao for FakeJumpDao {
             "intent-capture".to_string(),
             "refused".to_string(),
             Some("not-running".to_string()),
+            None,
         )))
     }
 }
@@ -722,6 +726,10 @@ fn scope_view(scope: &str) -> ScopeView {
         Some(30),
         Some(20),
         Some(10),
+        Some(4),
+        Some(30),
+        Some(19),
+        Some(9),
         Some(4),
     )
 }

@@ -101,13 +101,14 @@ fn contract_next_answer<D: NextAnswerDao>(dao: &D) {
         "run-stage の答えには材料を指す FK が在る"
     );
 
-    // `--resume` の答えは再開メニューでステージを名指さない。
+    // 本家2.7.1の明示的な--resumeは再開を選択済みとして現在工程を返す。
+    // park中のunpark指示とは別の契約であり、工程・gate・参照先も検査する。
     let resume = dao.find(EXECUTION, "resume").unwrap().unwrap();
-    assert_eq!(resume.decision_kind(), "resume-menu");
-    assert_eq!(resume.stage_index(), None);
-    assert_eq!(resume.stage_slug(), None);
-    assert_eq!(resume.gate(), None);
-    assert_eq!(resume.run_stage_id(), None);
+    assert_eq!(resume.decision_kind(), "run-stage");
+    assert_eq!(resume.stage_index(), Some(1));
+    assert_eq!(resume.stage_slug(), Some("intent-capture"));
+    assert_eq!(resume.gate(), Some(GateField::Gated));
+    assert_eq!(resume.run_stage_id(), bare.run_stage_id());
 
     // 自由記述は新しい仕事の振り分けであって、いまの実行のステージではない。
     assert_eq!(
@@ -407,7 +408,14 @@ fn contract_steering_plan<D: SteeringPlanDao>(dao: &D, plan_id: &str) {
     let found = dao.find(plan_id).unwrap().unwrap();
     assert_eq!(found.id(), plan_id);
     assert_eq!(found.phase(), "ideation");
-    assert!(is_content_digest(found.bundle_digest()));
+    assert!(
+        found
+            .bundle_digest()
+            .strip_prefix("sha256:")
+            .is_some_and(is_content_digest),
+        "`bundle` は upstream の `sha256:` 前置の綴り: {}",
+        found.bundle_digest()
+    );
     assert_eq!(found.part_count(), 1, "この束は 1 部に収まる");
     assert_eq!(
         found.delivered_paths(),
@@ -574,6 +582,11 @@ fn contract_scope<D: ScopeDao>(dao: &D) {
     assert_eq!(classic.cost_execute(), Some(2), "EXECUTE は 3 段中 2 段");
     assert_eq!(classic.cost_gates(), Some(1), "ゲートを持つのは 1 段");
     assert_eq!(classic.cost_per_unit_stages(), Some(0));
+    // greenfield 向けの実効費用 — 合成定義に reverse-engineering は無いので名目値と同じ。
+    assert_eq!(classic.greenfield_cost_total(), Some(3));
+    assert_eq!(classic.greenfield_cost_execute(), Some(2));
+    assert_eq!(classic.greenfield_cost_gates(), Some(1));
+    assert_eq!(classic.greenfield_cost_per_unit_stages(), Some(0));
 
     // グリッド列を持たない scope — コスト 4 列がまとめて空になる。
     let express = dao.find(DEFINITION, "express").unwrap().unwrap();
@@ -588,6 +601,8 @@ fn contract_scope<D: ScopeDao>(dao: &D) {
     assert_eq!(express.cost_execute(), None);
     assert_eq!(express.cost_gates(), None);
     assert_eq!(express.cost_per_unit_stages(), None);
+    assert_eq!(express.greenfield_cost_total(), None);
+    assert_eq!(express.greenfield_cost_per_unit_stages(), None);
 
     assert_eq!(
         dao.find(DEFINITION, "feature").unwrap().unwrap().keywords(),

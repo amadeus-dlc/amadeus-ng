@@ -12,17 +12,25 @@ use core_infrastructure::collections::FirstClassCollection;
 /// (`coding-rules/module-visibility.md`)。
 ///
 /// [`ReviewAttempt`]: super::ReviewAttempt
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PendingIterations {
     items: BTreeSet<u32>,
 }
 
+impl Default for PendingIterations {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl PendingIterations {
+    // 検査済みの列・集合とその部分列は、この構築口で全状態を初期化する。
+    const fn of_items(items: BTreeSet<u32>) -> Self {
+        Self { items }
+    }
+
     /// まだ 1 件も依頼していない試行の集合。
     pub(crate) const fn empty() -> PendingIterations {
-        PendingIterations {
-            items: BTreeSet::new(),
-        }
+        PendingIterations::of_items(BTreeSet::new())
     }
 
     /// その通し番号を判定待ちに加える (既に待っていれば変化しない)。
@@ -64,14 +72,13 @@ impl PendingIterations {
 
     /// 条件に一致する通し番号の集合 (昇順のまま)。結果は空になり得る。
     pub(crate) fn filter(&self, mut predicate: impl FnMut(u32) -> bool) -> PendingIterations {
-        PendingIterations {
-            items: self
-                .items
+        PendingIterations::of_items(
+            self.items
                 .iter()
                 .filter(|iteration| predicate(**iteration))
                 .copied()
                 .collect(),
-        }
+        )
     }
 }
 

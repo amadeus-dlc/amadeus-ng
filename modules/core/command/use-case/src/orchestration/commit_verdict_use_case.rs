@@ -8,11 +8,11 @@ use core_command_domain::orchestration::{
 use core_command_domain::workflow_definition::{ReviewPolicy, StageSlug};
 
 use super::commit_error::CommitError;
-use super::commit_outcome::CommitOutcome;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::RepositoryError;
 use super::port::WorkflowDefinitionRepository;
+use core_command_domain::orchestration::ReportId;
 
 /// コンダクタが報告した結末（[`ReportRequest`]）を 1 つの遷移としてコミットする。
 ///
@@ -33,7 +33,7 @@ use super::port::WorkflowDefinitionRepository;
 ///   [`IntentExecution::report_dispatch`] が持つ。ここにあるのは「決まったとおりに打つ」
 ///   フロー制御だけである（`coding-rules/tell-dont-ask.md` — 判断は状態の所有者へ）。
 /// - **文言**。「Committed approve for "..."」のような逐語は合成ルート（U7）の Presenter が
-///   組む。ここが返すのは材料（[`CommitOutcome`]）だけである。
+///   組む。材料は報告イベントから投影した読取りモデルが持つ。
 /// - **リードモデルの更新**。`aidlc-state.md` と監査シャードを最新化する `ReadModelUpdater` を
 ///   起動するのは合成ルート（U7）である。コマンド側のユースケースはクエリ側を知らない
 ///   （`coding-rules/cqrs-boundaries.md` — 境界はクレート分離で物理強制されている）。
@@ -64,8 +64,8 @@ pub struct CommitVerdictUseCase<
 /// コミットしうる。
 #[derive(Debug)]
 enum AttemptOutcome {
-    /// 決着した — コミットしたか、何もコミットしない成功だった。
-    Settled(CommitOutcome),
+    /// 決着した — 遷移の有無にかかわらず報告事実を保存した。
+    Settled,
     /// 楽観 version が競合した。
     Conflicted {
         /// この試行が対象にしたステージ（再試行はこれを名指しする）。
@@ -112,18 +112,8 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
     /// 内部フローは ① 実行を再構成 → ② その `intent_id` で計画を引く → ③ 集約のクエリに
     /// 判断を訊く → ④ 決まった段を打つ → ⑤ `store`。
     ///
-    /// # 戻り値は「何をコミットしたか」の材料である
-    ///
-    /// b46 以前は CQS の Command の形（`Result<(), E>`）を採り、結果は投影後のリードモデルから
-    /// 読み直す前提だった。13 段ガードの逐語（`Committed <subs> for "<slug>" (scope: <scope>)` /
-    /// 拒否 12 形 / no-op 3 形）は**判断そのものが運ぶ材料**でしか組めないので、判断の答えを
-    /// 呼出側へ返す。CQS の Command 規則を曲げているのではなく、この動詞の答えが
-    /// 「状態の変化」ではなく「どの遷移を選んだか」だからである（集約コマンドが単一
-    /// イベントを返すのと同じ位置づけ — `coding-rules/aggregate-commands.md`）。
-    ///
-    /// **何もコミットしない成功が 3 つある** — 既に開いているゲートへの再報告、カーソル
-    /// 通過済みステージへの冪等な再報告（BR1.9）、完了済みワークフローへの再報告である。
-    /// どれも `Ok(CommitOutcome::NoOp { .. })` であり、区別は変種が運ぶ。
+    /// 成功は `()` のみ。表示用の結果は保存した報告をRMUが投影し、Queryから取得する。
+    /// no-opも報告事実を1件保存し、公開の遷移や監査は追加しない。
     ///
     /// # `Conflict` は 1 回だけ再試行する
     ///
@@ -146,17 +136,24 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
     pub async fn execute(
         &mut self,
         execution_id: &IntentExecutionId,
+        report_id: &ReportId,
         request: ReportRequest,
         occurred_at: DateTime<Utc>,
-    ) -> Result<CommitOutcome, CommitError> {
+    ) -> Result<(), CommitError> {
         // 1 回目。競合しなければここで決着する。
-        match self.attempt(execution_id, &request, occurred_at).await? {
-            AttemptOutcome::Settled(outcome) => Ok(outcome),
+        match self
+            .attempt(execution_id, report_id, &request, occurred_at)
+            .await?
+        {
+            AttemptOutcome::Settled => Ok(()),
             // 再試行は 1 回目が解決した対象を**名指しで**引き継ぐ（doc「対象ステージは…」）。
             AttemptOutcome::Conflicted { target, .. } => {
                 let retried = request.for_retry_at(target);
-                match self.attempt(execution_id, &retried, occurred_at).await? {
-                    AttemptOutcome::Settled(outcome) => Ok(outcome),
+                match self
+                    .attempt(execution_id, report_id, &retried, occurred_at)
+                    .await?
+                {
+                    AttemptOutcome::Settled => Ok(()),
                     AttemptOutcome::Conflicted { conflict, .. } => {
                         Err(CommitError::Repository(conflict))
                     }
@@ -175,6 +172,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
     async fn attempt(
         &mut self,
         execution_id: &IntentExecutionId,
+        report_id: &ReportId,
         request: &ReportRequest,
         occurred_at: DateTime<Utc>,
     ) -> Result<AttemptOutcome, CommitError> {
@@ -192,31 +190,70 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
             .find_for_execution(&aggregate)
             .await?;
 
-        // 13 段ガードのうち状態で決まる段はすべてここで決着する（判断は集約に閉じる）。
-        let (stage, steps, scope) = match aggregate.report_dispatch(&intent, request)? {
-            ReportDecision::NoOp { no_op, scope } => {
-                return Ok(AttemptOutcome::Settled(CommitOutcome::NoOp {
-                    stage: Self::no_op_stage(&no_op).clone(),
-                    scope,
-                    no_op,
-                }));
-            }
-            ReportDecision::Commit {
-                stage,
-                steps,
-                scope,
-            } => (stage, steps, scope),
+        // 状態の計算は先に行うが、pipeline根拠不足の拒否は本家と同じく
+        // ゲートのcheckbox/明示stage前提より先に返す（計算には副作用がない）。
+        let dispatched = aggregate.report_dispatch(&intent, request);
+        let definition = if request.requires_completion_evidence() {
+            Some(
+                self.workflow_definition_repository
+                    .find_for_intent(&intent)
+                    .await
+                    .map_err(CommitError::DefinitionRepository)?,
+            )
+        } else {
+            None
         };
-
-        // 段 11 のレビュー方針は **Approve 段のときだけ**引く（他の段は定義を読まない）。
-        let policy = if steps.contains(TransitionStep::Approve) {
-            self.review_policy(&intent, &stage).await?
+        let pipeline_error = definition.as_ref().and_then(|definition| {
+            aggregate
+                .require_pipeline_for_report(&intent, definition, request)
+                .err()
+        });
+        if let Some(
+            error @ core_command_domain::orchestration::CommandError::PipelineLinksMissing {
+                ..
+            },
+        ) = pipeline_error
+        {
+            return Err(CommitError::Pipeline(error));
+        }
+        let (stage, steps) = match dispatched? {
+            ReportDecision::NoOp { no_op, .. } => (Self::no_op_stage(&no_op).clone(), None),
+            ReportDecision::Commit { stage, steps, .. } => (stage, Some(steps)),
+        };
+        if let Some(error) = pipeline_error {
+            return Err(match error {
+                core_command_domain::orchestration::CommandError::UnknownStage(_) => {
+                    CommitError::UnknownDefinitionStage { stage }
+                }
+                error => CommitError::Transition {
+                    step: TransitionStep::GateStart,
+                    stage,
+                    error,
+                },
+            });
+        }
+        let policy = if steps
+            .as_ref()
+            .is_some_and(|steps| steps.contains(TransitionStep::Approve))
+        {
+            match definition.as_ref() {
+                Some(definition) => Self::review_policy(&intent, definition, &stage)?,
+                None => None,
+            }
         } else {
             None
         };
         let event = aggregate
-            .apply_report(&intent, request, &steps, policy.as_ref(), occurred_at)
+            .apply_report(
+                report_id.clone(),
+                &intent,
+                request,
+                policy.as_ref(),
+                occurred_at,
+            )
             .map_err(|error| match error {
+                ReportCommitError::InvalidResult(error) => CommitError::ReportResult(error),
+                ReportCommitError::Refused(error) => CommitError::Refused(error),
                 ReportCommitError::Transition { step, error } => CommitError::Transition {
                     step,
                     stage: stage.clone(),
@@ -232,11 +269,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
             .store(&event, &aggregate)
             .await
         {
-            Ok(()) => Ok(AttemptOutcome::Settled(CommitOutcome::Committed {
-                stage,
-                scope,
-                steps,
-            })),
+            Ok(()) => Ok(AttemptOutcome::Settled),
             Err(conflict @ RepositoryError::Conflict { .. }) => Ok(AttemptOutcome::Conflicted {
                 target: stage,
                 conflict,
@@ -254,18 +287,13 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
     ///
     /// 定義の再構成の失敗（`DefinitionRepository`）、定義がその slug を知らない
     /// （`UnknownDefinitionStage`）、壊れた `--review` 値（`CorruptReviewOverride`）。
-    async fn review_policy(
-        &self,
+    fn review_policy(
         intent: &Intent,
+        definition: &core_command_domain::workflow_definition::WorkflowDefinition,
         stage: &StageSlug,
     ) -> Result<Option<ReviewPolicy>, CommitError> {
-        let definition = self
-            .workflow_definition_repository
-            .find_for_intent(intent)
-            .await
-            .map_err(CommitError::DefinitionRepository)?;
         intent
-            .resolve_review_policy(&definition, stage)
+            .resolve_review_policy(definition, stage)
             .map_err(|error| match error {
                 IntentReviewError::UnknownStage => CommitError::UnknownDefinitionStage {
                     stage: stage.clone(),
@@ -310,7 +338,6 @@ mod tests {
     #![allow(clippy::panic)]
 
     use super::super::commit_error::CommitError;
-    use super::super::commit_outcome::CommitOutcome;
     use super::super::commit_verdict_use_case::CommitVerdictUseCase;
     use super::super::port::RepositoryError;
     use super::super::test_support::{
@@ -324,6 +351,7 @@ mod tests {
         ArtifactPaths, CommandError, Intent, IntentExecution, IntentExecutionEvent, ReportNoOp,
         ReportRefusal, ReportRequest, TransitionStep, Verdict,
     };
+    use core_command_domain::orchestration::{ReportId, ReportResult, ReportTransition};
     use core_command_domain::workflow_definition::{
         PhaseId, PlanAction, StageSlug, WorkflowDefinition,
     };
@@ -350,10 +378,18 @@ mod tests {
             &mut self,
             request: ReportRequest,
             occurred_at: DateTime<Utc>,
-        ) -> Result<CommitOutcome, CommitError> {
+        ) -> Result<ReportResult, CommitError> {
+            let report_id = ReportId::generate();
             self.use_case
-                .execute(&execution_id(), request, occurred_at)
-                .await
+                .execute(&execution_id(), &report_id, request, occurred_at)
+                .await?;
+            let IntentExecutionEvent::Reported(reported) =
+                only_committed(self.intent_execution_repository())
+            else {
+                panic!("Reportedを期待した")
+            };
+            assert_eq!(reported.report_id(), &report_id);
+            Ok(reported.result().clone())
         }
 
         const fn intent_execution_repository(&self) -> &InMemoryIntentExecutionRepository {
@@ -422,19 +458,59 @@ mod tests {
     }
 
     /// 成功が名指しした段の綴り。
-    fn steps_of(outcome: &CommitOutcome) -> Vec<&'static str> {
+    fn steps_of(outcome: &ReportResult) -> Vec<&'static str> {
         match outcome {
-            CommitOutcome::Committed { steps, .. } => {
+            ReportResult::Committed { steps, .. } => {
                 steps.fold_left(Vec::new(), |mut names, step| {
                     names.push(step.subcommand());
                     names
                 })
             }
-            CommitOutcome::NoOp { .. } => panic!("Committed を期待した: {outcome:?}"),
+            ReportResult::NoOp { .. } => panic!("Committed を期待した: {outcome:?}"),
         }
     }
 
     // ---- 経路ごとの結果（効果と戻り値の両方で観測する） ----
+
+    #[tokio::test]
+    async fn a_successful_no_op_persists_one_report_fact() {
+        let (intent, mut aggregate) = at_the_first_gate(3);
+        aggregate
+            .open_gate(&intent, ArtifactPaths::empty(), at())
+            .unwrap();
+        let mut subject = use_case((intent, aggregate), 2);
+        subject
+            .execute(
+                ReportRequest::new(Verdict::AwaitingApproval, None, None, None, true),
+                at(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            subject.intent_execution_repository().committed().len(),
+            1,
+            "遷移がなくても報告の結果を取得するための事実は1件保存する"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_transition_persists_its_result_as_one_report_fact() {
+        let mut subject = use_case(at_the_first_gate(3), 1);
+        subject
+            .execute(
+                ReportRequest::new(Verdict::AwaitingApproval, None, None, None, true),
+                at(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                only_committed(subject.intent_execution_repository()),
+                IntentExecutionEvent::Reported(_)
+            ),
+            "遷移とその結果を同じReported事実で保存する"
+        );
+    }
 
     #[tokio::test]
     async fn an_unrelated_definition_is_reported_with_its_cause_before_any_write() {
@@ -481,14 +557,17 @@ mod tests {
         assert_eq!(steps_of(&outcome), ["gate-start"]);
         assert!(matches!(
             &outcome,
-            CommitOutcome::Committed { stage, scope, .. } if *stage == slug(1) && scope == "classic"
+            ReportResult::Committed { stage, scope, .. } if *stage == slug(1) && scope == "classic"
         ));
-        let IntentExecutionEvent::GateOpened(opened) =
-            only_committed(subject.intent_execution_repository())
+        let ReportResult::Committed {
+            stage,
+            transition: ReportTransition::GateOpened { .. },
+            ..
+        } = &outcome
         else {
             panic!("GateOpened を期待した");
         };
-        assert_eq!(opened.stage(), &slug(1));
+        assert_eq!(stage, &slug(1));
     }
 
     #[tokio::test]
@@ -512,24 +591,23 @@ mod tests {
             .expect("既に開いているゲートへの再報告は成功扱い");
         assert!(matches!(
             &outcome,
-            CommitOutcome::NoOp {
-                stage,
-                no_op: ReportNoOp::AlreadyAwaiting { .. },
+            ReportResult::NoOp {
+                no_op: ReportNoOp::AlreadyAwaiting { stage },
                 ..
             } if *stage == slug(1)
         ));
-        assert!(subject.intent_execution_repository().committed().is_empty());
+        assert_eq!(subject.intent_execution_repository().committed().len(), 1);
         assert_eq!(
             subject.intent_execution_repository().store_attempts(),
-            0,
-            "書込を試みない"
+            1,
+            "報告事実を保存する"
         );
         assert_eq!(
             subject
                 .intent_execution_repository()
                 .version_of(&execution_id()),
-            Some(2),
-            "版も動かない"
+            Some(3),
+            "報告事実の保存で版が進む"
         );
     }
 
@@ -545,13 +623,16 @@ mod tests {
             .await
             .expect("ゲート付きステージは承認できる");
         assert_eq!(steps_of(&outcome), ["approve"]);
-        let IntentExecutionEvent::GateApproved(approved) =
-            only_committed(subject.intent_execution_repository())
+        let ReportResult::Committed {
+            stage,
+            transition: ReportTransition::GateApproved { user_input },
+            ..
+        } = &outcome
         else {
             panic!("GateApproved を期待した");
         };
-        assert_eq!(approved.stage(), &slug(1));
-        assert_eq!(approved.user_input(), Some("Approve"));
+        assert_eq!(stage, &slug(1));
+        assert_eq!(user_input.as_deref(), Some("Approve"));
     }
 
     #[tokio::test]
@@ -565,7 +646,7 @@ mod tests {
         assert_eq!(steps_of(&outcome), ["gate-start", "approve"]);
         assert!(matches!(
             only_committed(subject.intent_execution_repository()),
-            IntentExecutionEvent::GateApproved(_)
+            IntentExecutionEvent::Reported(_)
         ));
     }
 
@@ -586,12 +667,14 @@ mod tests {
             .await
             .expect("ゲート付きステージは差し戻せる");
         assert_eq!(steps_of(&outcome), ["reject"]);
-        let IntentExecutionEvent::GateRejected(rejected) =
-            only_committed(subject.intent_execution_repository())
+        let ReportResult::Committed {
+            transition: ReportTransition::GateRejected { feedback },
+            ..
+        } = &outcome
         else {
             panic!("GateRejected を期待した");
         };
-        assert_eq!(rejected.feedback(), Some("Sharpen the testing posture."));
+        assert_eq!(feedback.as_deref(), Some("Sharpen the testing posture."));
     }
 
     #[tokio::test]
@@ -609,12 +692,15 @@ mod tests {
             .await
             .expect("revising のステージはゲートへ再入できる");
         assert_eq!(steps_of(&outcome), ["revise"]);
-        let IntentExecutionEvent::StageRevised(revised) =
-            only_committed(subject.intent_execution_repository())
+        let ReportResult::Committed {
+            stage,
+            transition: ReportTransition::StageRevised,
+            ..
+        } = &outcome
         else {
             panic!("StageRevised を期待した");
         };
-        assert_eq!(revised.stage(), &slug(1));
+        assert_eq!(stage, &slug(1));
     }
 
     #[tokio::test]
@@ -639,13 +725,15 @@ mod tests {
             .await
             .expect("CONDITIONAL なステージは読み飛ばせる");
         assert_eq!(steps_of(&outcome), ["skip"]);
-        let IntentExecutionEvent::StageSkipped(skipped) =
-            only_committed(subject.intent_execution_repository())
+        let ReportResult::Committed {
+            transition: ReportTransition::StageSkipped { reason },
+            ..
+        } = &outcome
         else {
             panic!("StageSkipped を期待した");
         };
         // upstream も `flags.reason?.trim()` を渡す（ピン `:5620`）。
-        assert_eq!(skipped.reason(), "Not applicable");
+        assert_eq!(reason, "Not applicable");
     }
 
     // ---- 冪等・no-op ----
@@ -664,13 +752,13 @@ mod tests {
             .expect("通過済み completed への再報告は冪等な成功");
         assert!(matches!(
             &outcome,
-            CommitOutcome::NoOp {
+            ReportResult::NoOp {
                 no_op: ReportNoOp::AlreadyCompletedMovedOn { stage, current },
                 ..
             } if *stage == slug(1) && *current == slug(2)
         ));
-        assert!(subject.intent_execution_repository().committed().is_empty());
-        assert_eq!(subject.intent_execution_repository().store_attempts(), 0);
+        assert_eq!(subject.intent_execution_repository().committed().len(), 1);
+        assert_eq!(subject.intent_execution_repository().store_attempts(), 1);
     }
 
     #[tokio::test]
@@ -686,7 +774,7 @@ mod tests {
             .expect("完了済みへの再報告は冪等な成功");
         assert!(matches!(
             &outcome,
-            CommitOutcome::NoOp {
+            ReportResult::NoOp {
                 no_op: ReportNoOp::WorkflowAlreadyCompleted { stage },
                 scope,
                 ..
@@ -851,7 +939,7 @@ mod tests {
             InMemoryWorkflowDefinitionRepository::holding(definition(3)),
         );
         let err = use_case
-            .execute(&execution_id(), forward(), at())
+            .execute(&execution_id(), &ReportId::generate(), forward(), at())
             .await
             .expect_err("計画が無ければコミットできない");
         assert!(matches!(
@@ -892,7 +980,7 @@ mod tests {
             InMemoryWorkflowDefinitionRepository::holding(definition(3)),
         );
         let err = subject
-            .execute(&absent_execution(), forward(), at())
+            .execute(&absent_execution(), &ReportId::generate(), forward(), at())
             .await
             .expect_err("ストアに無い集約は再構成できない");
         assert!(matches!(
@@ -921,7 +1009,7 @@ mod tests {
         assert_eq!(steps_of(&outcome), ["gate-start", "approve"]);
         assert!(matches!(
             only_committed(subject.intent_execution_repository()),
-            IntentExecutionEvent::GateApproved(_)
+            IntentExecutionEvent::Reported(_)
         ));
         assert_eq!(
             subject.intent_execution_repository().store_attempts(),
@@ -966,19 +1054,19 @@ mod tests {
             .expect("通過済みになった報告は冪等な成功");
         assert!(matches!(
             &outcome,
-            CommitOutcome::NoOp {
+            ReportResult::NoOp {
                 no_op: ReportNoOp::AlreadyCompletedMovedOn { .. },
                 ..
             }
         ));
         assert!(
-            subject.intent_execution_repository().committed().is_empty(),
+            subject.intent_execution_repository().committed().len() == 1,
             "次ステージを勝手にコミットしない"
         );
         assert_eq!(
             subject.intent_execution_repository().store_attempts(),
-            1,
-            "書込は 1 回目の失敗だけ — 再試行は forward 表の no-op に畳まれる"
+            2,
+            "再試行も報告事実を保存するが、次ステージは進めない"
         );
     }
 
@@ -1022,7 +1110,7 @@ mod tests {
 
     /// 定義を読むのは **Approve 段だけ**である — 他の段は I/O を増やさない。
     #[tokio::test]
-    async fn only_the_approve_step_reads_the_definition() {
+    async fn completion_evidence_reads_the_definition_once_and_rejection_does_not() {
         // 差し戻し（Reject 段）は定義を読まない。
         let mut subject = use_case(at_the_first_gate(3), 7);
         subject

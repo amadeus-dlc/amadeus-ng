@@ -58,9 +58,10 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    ArtifactPaths, AutonomyMode, Created, EngineSignal, Intent, IntentEventId, IntentExecution,
-    IntentExecutionId, IntentId, NextRequest, ReviewVerdict, SkeletonStance, StageDisplay,
-    StageEntries, StageEntry, StageIndex, StageIndexSet, StartRequest, Status, WorkspaceScan,
+    ArtifactPaths, AutonomyMode, CommandError, Created, EngineSignal, Intent, IntentEventId,
+    IntentExecution, IntentExecutionId, IntentId, JumpScope, NextRequest, ReviewEvidenceError,
+    ReviewVerdict, SkeletonStance, StageDisplay, StageEntries, StageEntry, StageIndex,
+    StageIndexSet, StageSlugSet, StartRequest, Status, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction,
@@ -136,6 +137,11 @@ struct ModelState {
     /// `DRunStage` の対象ステージ (観測面の照合に使う)。
     directive_stage: Option<usize>,
     cursor: usize,
+    /// `synced` (v2.8) — 集約の `cursor_synchronized()` の射影。v2.8 より前の trace には無い。
+    synced: bool,
+    /// `foreign` (v2.9) — 集約の `cursor_foreign_scoped()` の射影。v2.9 より前の trace には
+    /// 無い (欄が無い = 別 scope 由来の跳躍をしていない、という正規の意味で読む)。
+    foreign: bool,
     status: String,
     parked_at: i64,
     autonomous: bool,
@@ -156,6 +162,9 @@ struct ModelState {
     /// `affirmed` — `practices_affirmed[practicesStage]`（他のステージは常に false）。
     affirmed: bool,
     plan: Vec<PlanAction>,
+    /// `foreignPlan` (v2.9) — 別 scope を名指した直接 execute が使う静的な列。v2.9 より前の
+    /// trace には無い (その trace は foreign_jump を含まないので、自計画の写しで読む)。
+    foreign_plan: Vec<PlanAction>,
     overlay: Vec<PlanAction>,
     conditional: Vec<bool>,
     checkbox: Vec<CheckboxState>,
@@ -173,6 +182,8 @@ fn parse_state(v: &Value) -> ModelState {
         directive_tag,
         directive_stage,
         cursor: usize::try_from(bigint(&v["cursor"])).unwrap(),
+        synced: v.get("synced").and_then(Value::as_bool).unwrap_or(false),
+        foreign: v.get("foreign").and_then(Value::as_bool).unwrap_or(false),
         status: tag(&v["status"]).to_string(),
         parked_at: bigint(&v["parkedAt"]),
         autonomous: v["autonomous"].as_bool().unwrap(),
@@ -185,6 +196,10 @@ fn parse_state(v: &Value) -> ModelState {
         practices_stage: bigint(&v["practicesStage"]),
         affirmed: v["affirmed"].as_bool().unwrap(),
         plan: map_to_vec(&v["plan"], n, plan_of),
+        foreign_plan: v.get("foreignPlan").map_or_else(
+            || map_to_vec(&v["plan"], n, plan_of),
+            |foreign| map_to_vec(foreign, n, plan_of),
+        ),
         overlay: map_to_vec(&v["overlay"], n, plan_of),
         conditional: map_to_vec(&v["conditional"], n, |b| b.as_bool().unwrap()),
         checkbox: map_to_vec(&v["checkbox"], n, checkbox_of),
@@ -321,6 +336,12 @@ fn assert_projection(agg: &IntentExecution, m: &ModelState, step: usize) {
         );
     }
     assert_eq!(agg.cursor().to_usize(), m.cursor, "step {step}: cursor");
+    assert_eq!(agg.cursor_synchronized(), m.synced, "step {step}: synced");
+    assert_eq!(
+        agg.cursor_foreign_scoped(),
+        m.foreign,
+        "step {step}: foreign"
+    );
     assert_eq!(
         agg.autonomy().is_autonomous(),
         m.autonomous,
@@ -422,9 +443,18 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
     assert_eq!(agg.seq_nr(), 1, "genesis の通番は 1 (BR2.1)");
     assert_projection(&agg, m0, 0);
 
+    // 呼び直し済みの (stage, 通し番号)。モデルの retry は回数無制限だが、集約は依頼 1 件につき
+    // pending-request retry を 1 回だけ許す (upstream `RetryAlreadyUsed`)。試行が空へ戻る
+    // (reqCount が 0 になる) と通し番号も振り直しになるので、その stage の記録を消す。
+    let mut retried = std::collections::BTreeSet::<(usize, u32)>::new();
     for (i, m) in states.iter().enumerate().skip(1) {
         seen.insert(m.last_action.clone());
         let prev = &states[i - 1];
+        for s in 0..m.req_count.len() {
+            if m.req_count[s] == 0 && prev.req_count[s] > 0 {
+                retried.retain(|(stage, _)| *stage != s);
+            }
+        }
         match m.last_action.as_str() {
             // 観測アクション (状態不変)。集約の判断をモデルの directive と突き合わせる
             // (観測面)。frame 等価 (観測は状態を動かさない) は末尾の assert_projection が担う。
@@ -469,11 +499,55 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             }
             "jump_forward" | "jump_backward" => {
                 let target = index(&agg, m.cursor);
-                agg.jump(&intent, target, at()).unwrap();
+                agg.jump(
+                    &intent,
+                    target,
+                    core_command_domain::orchestration::IntentExecutionEventId::generate(),
+                    core_command_domain::orchestration::JumpDirection::of(
+                        agg.cursor().to_usize(),
+                        (target).to_usize(),
+                    ),
+                    None,
+                    None,
+                    at(),
+                )
+                .unwrap();
+            }
+            "foreign_jump" => {
+                // 別 scope を名指した直接 execute (v2.9)。モデルは到達可否を foreignPlan で
+                // 見るので、trace の foreign plan から EXECUTE の slug 集合を集めて
+                // `JumpScope` として渡す。合成計画 (自分の scope) の組み直しは変えない。
+                let target = index(&agg, m.cursor);
+                let executes = (0..m.foreign_plan.len())
+                    .filter(|&s| m.foreign_plan[s] == PlanAction::Execute)
+                    .map(|s| slug_at(m.practices_stage, s));
+                let scope = JumpScope::new("foreign".to_string(), StageSlugSet::new(executes));
+                agg.jump(
+                    &intent,
+                    target,
+                    core_command_domain::orchestration::IntentExecutionEventId::generate(),
+                    core_command_domain::orchestration::JumpDirection::Forward,
+                    None,
+                    Some(scope),
+                    at(),
+                )
+                .unwrap();
             }
             "jump_redo" => {
                 let target = index(&agg, prev.cursor);
-                agg.jump(&intent, target, at()).unwrap();
+                agg.jump(
+                    &intent,
+                    target,
+                    core_command_domain::orchestration::IntentExecutionEventId::generate(),
+                    core_command_domain::orchestration::JumpDirection::of(
+                        agg.cursor().to_usize(),
+                        (target).to_usize(),
+                    ),
+                    None,
+                    None,
+                    at(),
+                )
+                .unwrap();
             }
             "park" => {
                 // 再スタンプ (park 済みへの park) はモデルでも `lastAction == "park"` なので、
@@ -487,6 +561,11 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
             }
             "unpark" => {
                 agg.unpark(&intent, at()).unwrap();
+            }
+            "task_sync" => {
+                // モデルは対象を nondet に選ぶ — 到達点 = 遷移後のカーソルである。
+                agg.synchronize_task(&slug_at(m.practices_stage, m.cursor), at())
+                    .unwrap();
             }
             "recompose" => {
                 // モデルの actRecompose は 1 ステージ反転 — 要素数 1 の recompose に対応 (BR2.5)。
@@ -502,6 +581,10 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                 // よってテスト側は固定の非 init ステージを打てば十分である。索引 1 を選ぶ
                 // 理由は「合成計画で必ず存在する最小の非 init ステージ」だからで、
                 // 合成計画での名前を渡せば、対象解決と非 init のガードを必ず通る。
+                // 完了は開始境界 (`SingleStageRunStarted`) を要求する — `next --single` が
+                // 打つ手と同じ順で開いてから閉じる。どちらも本流の状態変数を動かさない。
+                agg.begin_single_stage_run(&intent, &slug_at(m.practices_stage, 1), at())
+                    .unwrap();
                 agg.record_single_stage_run(&intent, &slug_at(m.practices_stage, 1), at())
                     .unwrap();
             }
@@ -529,29 +612,55 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                     "r",
                     m.req_count[s],
                     false,
+                    &review_test_fixture::documents("r", m.req_count[s], None),
                     at(),
                 )
                 .unwrap();
             }
             "retry_review" => {
                 // 呼び直しはフレーム空 — モデルは (s, i) を nondet に選ぶが、選ばれた値は
-                // 状態のどこにも現れない (`review_frame` が不変を固定する)。判定待ちが
-                // 在るステージを 1 つ選び、その最小の通し番号を打てば十分である。
-                let s = (0..prev.pending.len())
-                    .find(|&s| !prev.pending[s].is_empty())
-                    .unwrap();
-                let iteration = prev.pending[s][0];
+                // 状態のどこにも現れない (`review_frame` が不変を固定する)。判定待ちのうち
+                // まだ呼び直していない (s, i) を 1 つ打てば十分である。全部が呼び直し済みなら、
+                // 集約は 2 回目を `RetryAlreadyUsed` で拒否し状態を動かさない — それも
+                // フレーム空なので、モデルの遷移と射影は一致する。
+                let candidates: Vec<(usize, u32)> = (0..prev.pending.len())
+                    .flat_map(|s| prev.pending[s].iter().map(move |&i| (s, i)))
+                    .collect();
+                let (s, iteration, fresh) = match candidates
+                    .iter()
+                    .copied()
+                    .find(|pair| !retried.contains(pair))
+                {
+                    Some((s, i)) => (s, i, true),
+                    None => (candidates[0].0, candidates[0].1, false),
+                };
                 let policy = policy_of(m, s);
-                agg.request_review(
+                let before = agg.clone();
+                let outcome = agg.request_review(
                     &intent,
                     &slug_at(m.practices_stage, s),
                     Some(&policy),
                     "r",
                     iteration,
                     true,
+                    &review_test_fixture::documents("r", iteration, None),
                     at(),
-                )
-                .unwrap();
+                );
+                if fresh {
+                    outcome.unwrap();
+                    retried.insert((s, iteration));
+                } else {
+                    assert!(
+                        matches!(
+                            outcome,
+                            Err(CommandError::ReviewEvidence(
+                                ReviewEvidenceError::RetryAlreadyUsed
+                            ))
+                        ),
+                        "step {i}: 2 回目の呼び直しは RetryAlreadyUsed"
+                    );
+                    assert_eq!(agg, before, "step {i}: 拒否は状態を動かさない");
+                }
             }
             "record_verdict" => {
                 // 判定待ちが 1 つ減ったステージと、その消えた通し番号が対象である。
@@ -578,6 +687,7 @@ fn replay(path: &std::path::Path, seen: &mut std::collections::BTreeSet<String>)
                     "r",
                     iteration,
                     verdict,
+                    &review_test_fixture::documents("r", iteration, Some(verdict)),
                     at(),
                 )
                 .unwrap();
@@ -660,6 +770,12 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
         // `not(w_approved_practices)`（practices-discovery のゲートの実際の承認）で
         // 狙い撃ちして採取した経路を持つ。
         "promote_practices",
+        // v2.8 (U2 裁定 task-update-contract Q1 = A) で追加した 1 アクション。trace-0x909 が
+        // `not(w_task_sync)` で狙い撃ちして採取した経路を持つ。
+        "task_sync",
+        // v2.9 (裁定 jump-contract Q1 = A の foreign-scope 部分) で追加した 1 アクション。
+        // trace-0xa0a が `not(w_foreign_jump)` で狙い撃ちして採取した経路を持つ。
+        "foreign_jump",
     ] {
         assert!(
             seen.contains(action),
@@ -667,3 +783,6 @@ fn intent_conforms_to_every_committed_engine_loop_trace() {
         );
     }
 }
+
+#[path = "../../../../../tests/support/review_fixture.rs"]
+mod review_test_fixture;

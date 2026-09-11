@@ -21,6 +21,10 @@ pub struct StageGraph {
 }
 
 impl StageGraph {
+    const fn of_nodes(nodes: Vec<StageNode>, index: BTreeMap<StageSlug, usize>) -> Self {
+        Self { nodes, index }
+    }
+
     /// 条件に一致するノードを文書順で保持し、索引を振り直す。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(&StageNode) -> bool) -> Self {
@@ -35,7 +39,7 @@ impl StageGraph {
             .enumerate()
             .map(|(position, node)| (node.slug().clone(), position))
             .collect();
-        Self { nodes, index }
+        Self::of_nodes(nodes, index)
     }
 
     /// ノードを変換し、文書順を保って新しいグラフを検証する。
@@ -71,7 +75,7 @@ impl StageGraph {
             }
             index.insert(node.slug().clone(), position);
         }
-        Ok(StageGraph { nodes, index })
+        Ok(Self::of_nodes(nodes, index))
     }
 
     /// ノードが宣言するプラグイン名の集合 (`plugin` を持つノードだけ)。
@@ -96,10 +100,7 @@ impl StageGraph {
                 Some(_) => node.clone().with_enabled(Some(false)),
             })
             .collect();
-        StageGraph {
-            nodes,
-            index: self.index.clone(),
-        }
+        Self::of_nodes(nodes, self.index.clone())
     }
 
     /// **文書順**のノード列 (`stage-graph.json` の配列順そのもの)。

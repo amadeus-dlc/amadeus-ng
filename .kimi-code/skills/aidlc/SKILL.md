@@ -195,6 +195,7 @@ Source of truth: one file per scope under `.kimi-code/scopes/aidlc-<name>.md` (i
 | poc            | Minimal       | (default)    | 8 / 33          |
 | refactor       | Minimal       | (default)    | 10 / 33         |
 | security-patch | Minimal       | (default)    | 10 / 33         |
+| selfhost-stage1 | Minimal       | Standard     | 11 / 33         |
 | workshop       | Standard      | Minimal      | 26 / 33         |
 
 <!-- END: compiled scope grid -->

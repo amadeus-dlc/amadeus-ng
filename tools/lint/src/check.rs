@@ -125,6 +125,23 @@ pub(crate) struct Finding {
     pub(crate) help: &'static str,
 }
 
+impl Finding {
+    /// 所見の全材料を一度に初期化する。
+    pub(crate) fn new(
+        rule: &'static str,
+        line: usize,
+        message: String,
+        help: &'static str,
+    ) -> Self {
+        Self {
+            rule,
+            line,
+            message,
+            help,
+        }
+    }
+}
+
 /// 1 ファイル分の検査。`path` はリポジトリルートからの相対パス (区切りは `/`)。
 ///
 /// # Errors
@@ -132,13 +149,13 @@ pub(crate) struct Finding {
 /// `source` が Rust ファイルとして構文解析できないとき `syn::Error` を返す。
 pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn::Error> {
     let path = path.replace('\\', "/");
-    // テストコードは全ルールの対象外。Tell, Don't Ask はプロダクトコードの設計規律であり、
-    // テストは意図的に内部状態を覗く (fixture 構築・網羅性検査) 場所だから。
-    if is_test_path(&path) {
-        return Ok(Vec::new());
-    }
-
     let file = syn::parse_file(source)?;
+    // setter-methodはテスト配置/cfg(test)でも検査し、抑制フィルタを通さない。
+    let setters = crate::setter_methods::check(&file);
+    // 既存の内部参照等のルールだけがテストの観測・fixtureを除外する。
+    if is_test_path(&path) {
+        return Ok(setters);
+    }
     let mut visitor = Visitor {
         checkbox_rule: !path.ends_with(CHECKBOX_OWNER),
         dao_rule: path.starts_with(QUERY_ADAPTER_SCOPE),
@@ -156,6 +173,7 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
         .into_iter()
         .filter(|finding| !is_suppressed(&lines, finding))
         .collect();
+    findings.extend(setters);
     findings.sort_by_key(|finding| (finding.line, finding.rule));
     Ok(findings)
 }
@@ -233,14 +251,9 @@ fn one_public_type_findings(file: &syn::File) -> Vec<Finding> {
     };
     surplus
         .iter()
-        .map(|(line, name)| Finding {
-            rule: RULE_ONE_PUBLIC_TYPE,
-            line: *line,
-            message: format!(
+        .map(|(line, name)| Finding::new(RULE_ONE_PUBLIC_TYPE,*line,format!(
                 "ファイル 2 つ目以降の公開型 `{name}` — 1 ファイル 1 公開型 (最初の公開型は `{first}`)"
-            ),
-            help: ONE_PUBLIC_TYPE_HELP,
-        })
+            ),ONE_PUBLIC_TYPE_HELP))
         .collect()
 }
 
@@ -293,15 +306,10 @@ struct Visitor {
 impl Visitor {
     fn push_checkbox(&mut self, line: usize, variants: &BTreeSet<String>) {
         let listed: Vec<&str> = variants.iter().map(String::as_str).collect();
-        self.findings.push(Finding {
-            rule: RULE_CHECKBOX_VOCABULARY,
-            line,
-            message: format!(
+        self.findings.push(Finding::new(RULE_CHECKBOX_VOCABULARY,line,format!(
                 "CheckboxState の変種を呼出側で列挙している ({}) — 分類語彙の再実装 (Tell, Don't Ask 違反)",
                 listed.join(" | ")
-            ),
-            help: CHECKBOX_HELP,
-        });
+            ),CHECKBOX_HELP));
     }
 
     /// R5: SQL テキスト 1 つ分を検査し、違反なら所見を積む。
@@ -310,12 +318,12 @@ impl Visitor {
             return;
         }
         if let Some(message) = dao_single_table_message(sql) {
-            self.findings.push(Finding {
-                rule: RULE_DAO_SINGLE_TABLE,
+            self.findings.push(Finding::new(
+                RULE_DAO_SINGLE_TABLE,
                 line,
                 message,
-                help: DAO_SINGLE_TABLE_HELP,
-            });
+                DAO_SINGLE_TABLE_HELP,
+            ));
         }
     }
 
@@ -327,16 +335,11 @@ impl Visitor {
         if name.ends_with(side.suffix()) {
             return;
         }
-        self.findings.push(Finding {
-            rule: RULE_PORT_NAMING,
-            line,
-            message: format!(
+        self.findings.push(Finding::new(RULE_PORT_NAMING,line,format!(
                 "use-case 層の pub trait `{name}` が `{}` で終わらない — {} (gateway-taxonomy 違反)",
                 side.suffix(),
                 side.expectation()
-            ),
-            help: PORT_NAMING_HELP,
-        });
+            ),PORT_NAMING_HELP));
     }
 
     /// R7: I/O 経路 1 つ分を報告する。同じ行の 2 件目以降は捨てる。
@@ -344,26 +347,26 @@ impl Visitor {
         if !self.io_rule || !self.io_lines.insert(line) {
             return;
         }
-        self.findings.push(Finding {
-            rule: RULE_COMMAND_SIDE_IO,
+        self.findings.push(Finding::new(
+            RULE_COMMAND_SIDE_IO,
             line,
-            message: format!(
+            format!(
                 "コマンド側の `{label}` — fs / 乱数 / プロセス / ネットワークの I/O は \
 Repository 実装 (`*_repository_impl.rs`) だけに置く (gateway-taxonomy §1 違反)"
             ),
-            help: COMMAND_SIDE_IO_HELP,
-        });
+            COMMAND_SIDE_IO_HELP,
+        ));
     }
 
     fn push_public_field(&mut self, line: usize, name: &str) {
-        self.findings.push(Finding {
-            rule: RULE_NO_PUBLIC_FIELDS,
+        self.findings.push(Finding::new(
+            RULE_NO_PUBLIC_FIELDS,
             line,
-            message: format!(
+            format!(
                 "struct の pub フィールド `{name}` — 内部構造の直接公開 (field-visibility 違反)"
             ),
-            help: NO_PUBLIC_FIELDS_HELP,
-        });
+            NO_PUBLIC_FIELDS_HELP,
+        ));
     }
 }
 

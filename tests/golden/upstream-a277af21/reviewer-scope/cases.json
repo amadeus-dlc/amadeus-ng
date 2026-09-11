@@ -1,0 +1,1532 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-reviewer-scope.ts",
+    "/private/tmp/claude-501/-Users-j5ik2o-orca-workspaces-amadeus-ng-stage1/9066110a-1655-41d7-b3db-924e89f60ca9/scratchpad/revscope/pinned/dist/claude",
+    "tests/golden/upstream-a277af21/reviewer-scope/cases.json"
+  ],
+  "subject": ".claude/hooks/aidlc-reviewer-scope.ts :: evaluateReviewerScope",
+  "dispatch": {
+    "reviewer": "aidlc-architecture-reviewer-agent",
+    "stage": "functional-design",
+    "unit": "u1-alpha",
+    "exempt": [
+      "/r/inception/requirements-analysis/requirements.md",
+      "/r/construction/u2-beta/functional-design/entities.md",
+      "construction/u3-gamma/contract.md"
+    ]
+  },
+  "context": {
+    "recordRoot": "/r",
+    "cwd": "/w"
+  },
+  "normalization": [],
+  "block_reasons": [
+    {
+      "target": "/r/construction/u2-beta/design.md",
+      "text": "This review cannot open \"/r/construction/u2-beta/design.md\" because it belongs to another unit; the current review covers u1-alpha. Use the files supplied with the review and the files under this unit's construction path. If the design depends on another unit, note that integration point in the findings instead of opening its files. Write u1-alpha literally in shell paths because variables cannot be checked, and keep searches inside the current unit."
+    },
+    {
+      "target": ".",
+      "text": "This review cannot open \".\" because it belongs to another unit; the current review covers u1-alpha. Use the files supplied with the review and the files under this unit's construction path. If the design depends on another unit, note that integration point in the findings instead of opening its files. Write u1-alpha literally in shell paths because variables cannot be checked, and keep searches inside the current unit."
+    },
+    {
+      "target": "construction/*/design.md",
+      "text": "This review cannot open \"construction/*/design.md\" because it belongs to another unit; the current review covers u1-alpha. Use the files supplied with the review and the files under this unit's construction path. If the design depends on another unit, note that integration point in the findings instead of opening its files. Write u1-alpha literally in shell paths because variables cannot be checked, and keep searches inside the current unit."
+    }
+  ],
+  "observations": [
+    {
+      "id": "case-001",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/u1-alpha/functional-design/entities.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-002",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/u2-beta/functional-design/entities.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-003",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/u2-beta/contract.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/contract.md"
+    },
+    {
+      "id": "case-004",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/inception/requirements-analysis/requirements.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-005",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "construction/u2-beta/a.md"
+      },
+      "block": true,
+      "target": "construction/u2-beta/a.md"
+    },
+    {
+      "id": "case-006",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "construction/u1-alpha/a.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-007",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "construction/U2-BETA/a.md"
+      },
+      "block": true,
+      "target": "construction/U2-BETA/a.md"
+    },
+    {
+      "id": "case-008",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "construction/U1-ALPHA/a.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-009",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "CONSTRUCTION/u2-beta/a.md"
+      },
+      "block": true,
+      "target": "CONSTRUCTION/u2-beta/a.md"
+    },
+    {
+      "id": "case-010",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction"
+      },
+      "block": true,
+      "target": "/r/construction"
+    },
+    {
+      "id": "case-011",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/"
+      },
+      "block": true,
+      "target": "/r/construction/"
+    },
+    {
+      "id": "case-012",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "construction"
+      },
+      "block": true,
+      "target": "construction"
+    },
+    {
+      "id": "case-013",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "construction/"
+      },
+      "block": true,
+      "target": "construction/"
+    },
+    {
+      "id": "case-014",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/u1-alpha/../u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u1-alpha/../u2-beta/design.md"
+    },
+    {
+      "id": "case-015",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/u1-alpha/../u1-alpha/design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-016",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "../construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "../construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-017",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/*/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/*/design.md"
+    },
+    {
+      "id": "case-018",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/u?-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u?-beta/design.md"
+    },
+    {
+      "id": "case-019",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/constr*/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/constr*/u2-beta/design.md"
+    },
+    {
+      "id": "case-020",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/*/u2-beta/design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-021",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/w/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/w/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-022",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/elsewhere/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/elsewhere/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-023",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "C:\\r\\construction\\u2-beta\\design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-024",
+      "tool": "Read",
+      "tool_input": {
+        "notebook_path": "/r/construction/u2-beta/nb.ipynb"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/nb.ipynb"
+    },
+    {
+      "id": "case-025",
+      "tool": "Read",
+      "tool_input": {
+        "path": "/r/construction/u2-beta/x.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/x.md"
+    },
+    {
+      "id": "case-026",
+      "tool": "Read",
+      "tool_input": {
+        "paths": [
+          "/r/construction/u1-alpha/a.md",
+          "/r/construction/u2-beta/b.md"
+        ]
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/b.md"
+    },
+    {
+      "id": "case-027",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": ""
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-028",
+      "tool": "Read",
+      "tool_input": {},
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-029",
+      "tool": "NotebookRead",
+      "tool_input": {
+        "notebook_path": "/r/construction/u2-beta/nb.ipynb"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/nb.ipynb"
+    },
+    {
+      "id": "case-030",
+      "tool": "Write",
+      "tool_input": {
+        "file_path": "/r/construction/u2-beta/out.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/out.md"
+    },
+    {
+      "id": "case-031",
+      "tool": "Edit",
+      "tool_input": {
+        "file_path": "/r/construction/u2-beta/out.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/out.md"
+    },
+    {
+      "id": "case-032",
+      "tool": "MultiEdit",
+      "tool_input": {
+        "file_path": "/r/construction/u2-beta/out.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/out.md"
+    },
+    {
+      "id": "case-033",
+      "tool": "NotebookEdit",
+      "tool_input": {
+        "notebook_path": "/r/construction/u2-beta/nb.ipynb"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/nb.ipynb"
+    },
+    {
+      "id": "case-034",
+      "tool": "LS",
+      "tool_input": {
+        "path": "/r/construction"
+      },
+      "block": true,
+      "target": "/r/construction"
+    },
+    {
+      "id": "case-035",
+      "tool": "LS",
+      "tool_input": {
+        "path": "/r/construction/u1-alpha"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-036",
+      "tool": "LS",
+      "tool_input": {
+        "path": "/r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-037",
+      "tool": "LS",
+      "tool_input": {
+        "path": "/r"
+      },
+      "block": true,
+      "target": "/r"
+    },
+    {
+      "id": "case-038",
+      "tool": "LS",
+      "tool_input": {
+        "path": "/w"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-039",
+      "tool": "LS",
+      "tool_input": {
+        "path": "."
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-040",
+      "tool": "LS",
+      "tool_input": {
+        "path": "/elsewhere"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-041",
+      "tool": "LS",
+      "tool_input": {},
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-042",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "construction/*/design.md"
+      },
+      "block": true,
+      "target": "construction/*/design.md"
+    },
+    {
+      "id": "case-043",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "construction/u1-alpha/**/*.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-044",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "construction/u2-beta/**/*.md"
+      },
+      "block": true,
+      "target": "construction/u2-beta/**/*.md"
+    },
+    {
+      "id": "case-045",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "**/*.md"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-046",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "*.md"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-047",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "construction/u1-alpha/**/*.md",
+        "path": "/r"
+      },
+      "block": true,
+      "target": "/r"
+    },
+    {
+      "id": "case-048",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "*.md",
+        "path": "/r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-049",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "*.md",
+        "path": "/r/construction/u1-alpha"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-050",
+      "tool": "Glob",
+      "tool_input": {
+        "path": "/r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-051",
+      "tool": "Glob",
+      "tool_input": {},
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-052",
+      "tool": "Grep",
+      "tool_input": {
+        "glob": "construction/*/design.md"
+      },
+      "block": true,
+      "target": "construction/*/design.md"
+    },
+    {
+      "id": "case-053",
+      "tool": "Grep",
+      "tool_input": {
+        "glob": "*.md",
+        "path": "/r/construction/u1-alpha"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-054",
+      "tool": "Grep",
+      "tool_input": {
+        "glob": "*.md",
+        "path": "/r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-055",
+      "tool": "Grep",
+      "tool_input": {
+        "glob": "construction/u1-alpha/*.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-056",
+      "tool": "Grep",
+      "tool_input": {
+        "path": "/r/construction/u1-alpha"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-057",
+      "tool": "Grep",
+      "tool_input": {},
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-058",
+      "tool": "Grep",
+      "tool_input": {
+        "pattern": "construction/u2-beta"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-059",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-060",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u1-alpha/design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-061",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "head -n 5 /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-062",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "tail -n 5 construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-063",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "less /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-064",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "more /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-065",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "ls /r/construction"
+      },
+      "block": true,
+      "target": "/r/construction"
+    },
+    {
+      "id": "case-066",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "ls -la /r/construction/u1-alpha"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-067",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "ls"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-068",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "ls -la"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-069",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "grep -r foo /r/construction"
+      },
+      "block": true,
+      "target": "/r/construction"
+    },
+    {
+      "id": "case-070",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "grep -r foo /r/construction/u1-alpha"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-071",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "grep -r foo /r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-072",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "grep -rn foo"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-073",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "grep -e foo -e bar /r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-074",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "grep -f patterns.txt /r/construction/u1-alpha"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-075",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "egrep foo /r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-076",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "fgrep foo /r"
+      },
+      "block": true,
+      "target": "/r"
+    },
+    {
+      "id": "case-077",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg foo"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-078",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg foo /r/construction/u1-alpha"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-079",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg foo /r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-080",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg -g 'construction/u1-alpha/**' foo"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-081",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg -g 'construction/*/**' foo"
+      },
+      "block": true,
+      "target": "construction/*/**"
+    },
+    {
+      "id": "case-082",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg --glob=construction/u1-alpha/** foo"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-083",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg --glob=construction/u2-beta/** foo"
+      },
+      "block": true,
+      "target": "construction/u2-beta/**"
+    },
+    {
+      "id": "case-084",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg --glob construction/u1-alpha/x.md foo"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-085",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "ripgrep foo"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-086",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "find /r/construction -name '*.md'"
+      },
+      "block": true,
+      "target": "/r/construction"
+    },
+    {
+      "id": "case-087",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "find /r/construction/u1-alpha -name '*.md'"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-088",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "find . -name '*.md'"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-089",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "find -name '*.md'"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-090",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cd /r/construction/u2-beta && cat design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-091",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cd /r/construction/u1-alpha && cat design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-092",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cd /r/construction/u1-alpha; cat ../u2-beta/design.md"
+      },
+      "block": true,
+      "target": "../u2-beta/design.md"
+    },
+    {
+      "id": "case-093",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cd - && cat design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-094",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cd && ls"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-095",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "wc -l /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-096",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "wc -l /r/construction/u1-alpha/design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-097",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "diff /r/construction/u1-alpha/a.md /r/construction/u2-beta/b.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/b.md"
+    },
+    {
+      "id": "case-098",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "echo hello"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-099",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/inception/requirements-analysis/requirements.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-100",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u2-beta/functional-design/entities.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-101",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u3-gamma/contract.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-102",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u3-gamma/other.md"
+      },
+      "block": true,
+      "target": "/r/construction/u3-gamma/other.md"
+    },
+    {
+      "id": "case-103",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "ls /r/construction/u3-gamma"
+      },
+      "block": true,
+      "target": "/r/construction/u3-gamma"
+    },
+    {
+      "id": "case-104",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat \"/r/construction/u2 beta/design.md\""
+      },
+      "block": true,
+      "target": "/r/construction/u2 beta/design.md"
+    },
+    {
+      "id": "case-105",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat '/r/construction/u2-beta/design.md'"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-106",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u2-beta/design.md | head"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-107",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "true && cat /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-108",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "(cat /r/construction/u2-beta/design.md)"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-109",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/*/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/*/design.md"
+    },
+    {
+      "id": "case-110",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u1-alpha/../u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u1-alpha/../u2-beta/design.md"
+    },
+    {
+      "id": "case-111",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "sed -n 1p /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-112",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "git log construction/u2-beta"
+      },
+      "block": true,
+      "target": "construction/u2-beta"
+    },
+    {
+      "id": "case-113",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cargo test -p aidlc"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-114",
+      "tool": "Bash",
+      "tool_input": {
+        "command": ""
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-115",
+      "tool": "Bash",
+      "tool_input": {},
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-116",
+      "tool": "Task",
+      "tool_input": {
+        "file_path": "/r/construction/u2-beta/design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-117",
+      "tool": "WebFetch",
+      "tool_input": {
+        "path": "/r/construction/u2-beta/design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-118",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat \\/r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-119",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u2-beta/de\\ sign.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/de sign.md"
+    },
+    {
+      "id": "case-120",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat \"/r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-121",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat '/r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-122",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u1-alpha/a.md > /r/construction/u2-beta/out.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/out.md"
+    },
+    {
+      "id": "case-123",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat>/r/construction/u2-beta/design.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-124",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rm x 2>&1; cat /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-125",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "echo a & cat /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-126",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "echo \"\" && cat /r/construction/u1-alpha/x.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-127",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat ''"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-128",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat $'/r/construction/u2-beta/design.md'"
+      },
+      "block": true,
+      "target": "$/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-129",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat \"/r/construction/u2-beta/desi\\\"gn.md\""
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/desi\"gn.md"
+    },
+    {
+      "id": "case-130",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "nohup cat /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-131",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "sudo cat /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-132",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "xargs cat < /r/construction/u2-beta/list.txt"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/list.txt"
+    },
+    {
+      "id": "case-133",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "for f in /r/construction/u2-beta/*.md; do cat $f; done"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/*.md"
+    },
+    {
+      "id": "case-134",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat -- /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-135",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat - /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-136",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "grep foo -- /r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-137",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "ls /r/construction/u1-alpha /r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-138",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat\t/r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-139",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "  cat   /r/construction/u2-beta/design.md  "
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-140",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat /r/construction/u2-beta/design.md\ncat /r/construction/u1-alpha/x.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-141",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "/usr/bin/cat /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-142",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "/usr/bin/ls"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-143",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "CAT /r/construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-144",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "LS"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-145",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat construction"
+      },
+      "block": true,
+      "target": "construction"
+    },
+    {
+      "id": "case-146",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat constr*"
+      },
+      "block": true,
+      "target": "constr*"
+    },
+    {
+      "id": "case-147",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat ."
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-148",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cat .."
+      },
+      "block": true,
+      "target": ".."
+    },
+    {
+      "id": "case-149",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "ls .."
+      },
+      "block": true,
+      "target": ".."
+    },
+    {
+      "id": "case-150",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "find /r/construction/u2-beta ! -name x"
+      },
+      "block": true,
+      "target": "/r/construction/u2-beta"
+    },
+    {
+      "id": "case-151",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "find -L /r/construction/u2-beta"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-152",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg -g construction/u1-alpha/** -g construction/u2-beta/** foo"
+      },
+      "block": true,
+      "target": "construction/u2-beta/**"
+    },
+    {
+      "id": "case-153",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg --glob= foo"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-154",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "rg -g '' foo"
+      },
+      "block": true,
+      "target": "."
+    },
+    {
+      "id": "case-155",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cd /r; cat construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r"
+    },
+    {
+      "id": "case-156",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cd /r && cd construction && cat u2-beta/design.md"
+      },
+      "block": true,
+      "target": "/r"
+    },
+    {
+      "id": "case-157",
+      "tool": "Bash",
+      "tool_input": {
+        "command": "cd /nowhere && cat construction/u2-beta/design.md"
+      },
+      "block": true,
+      "target": "construction/u2-beta/design.md"
+    },
+    {
+      "id": "case-158",
+      "tool": "Grep",
+      "tool_input": {
+        "glob": "construction/u3-gamma/contract.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-159",
+      "tool": "Grep",
+      "tool_input": {
+        "glob": "construction/u1-alpha/x.md",
+        "path": "/r/construction/u1-alpha"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-160",
+      "tool": "Glob",
+      "tool_input": {
+        "pattern": "construction/u3-gamma/contract.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-161",
+      "tool": "LS",
+      "tool_input": {
+        "path": "/r/construction/u3-gamma/contract.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-162",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/u3-gamma"
+      },
+      "block": true,
+      "target": "/r/construction/u3-gamma"
+    },
+    {
+      "id": "case-163",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/r/construction/u3-gamma/contract.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-164",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "construction/u3-gamma/contract.md"
+      },
+      "block": false,
+      "target": null
+    },
+    {
+      "id": "case-165",
+      "tool": "Read",
+      "tool_input": {
+        "file_path": "/w/construction/u3-gamma/contract.md"
+      },
+      "block": false,
+      "target": null
+    }
+  ]
+}

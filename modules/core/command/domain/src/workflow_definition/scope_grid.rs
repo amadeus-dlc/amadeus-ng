@@ -16,11 +16,16 @@ use super::stage_graph::StageGraph;
 use super::stage_slug::StageSlug;
 
 /// scope 名 → (stage slug → `PlanAction`)。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeGrid {
     columns: BTreeMap<String, BTreeMap<StageSlug, PlanAction>>,
 }
 
+impl Default for ScopeGrid {
+    fn default() -> Self {
+        Self::new(BTreeMap::new())
+    }
+}
 impl ScopeGrid {
     /// セル数。宣言済みの空列は数に含めない。
     #[must_use]
@@ -122,7 +127,7 @@ impl ScopeGrid {
             }
             columns.insert(name.to_string(), column);
         }
-        ScopeGrid { columns }
+        Self::new(columns)
     }
 
     /// 列を 1 つ足した (同名があれば差し替えた) 写し (scope 登記 —

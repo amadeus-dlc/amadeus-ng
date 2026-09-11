@@ -12,11 +12,16 @@ pub struct SpaceName(String);
 /// default space (ディスクに何もなくても常に有効 — upstream 特例)。
 impl Default for SpaceName {
     fn default() -> SpaceName {
-        SpaceName("default".to_string())
+        Self::of_name("default".to_string())
     }
 }
 
 impl SpaceName {
+    // 検査済みの名前、または規定のdefault名だけを包む。
+    const fn of_name(name: String) -> Self {
+        Self(name)
+    }
+
     /// # Errors
     ///
     /// 空・先頭非 `[a-z]`・`[a-z0-9-]` 以外の文字を拒否する。
@@ -32,7 +37,7 @@ impl SpaceName {
                 return Err(SpaceNameError::InvalidChar(c));
             }
         }
-        Ok(SpaceName(s.to_string()))
+        Ok(Self::of_name(s.to_string()))
     }
 
     /// 検証済みのパスセグメント — `join()` に渡してよい唯一の形。

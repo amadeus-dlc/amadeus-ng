@@ -406,24 +406,22 @@ async fn a_configuration_change_without_a_scope_names_config_change() {
     assert!(message.contains("--test-strategy minimal"), "{message}");
 }
 
-/// `--resume` は再開メニューを問う。
+/// `--resume` は現在ステージの規則束から再開する（固定本家 2.7.1）。
 #[tokio::test]
-async fn resume_asks_the_resume_menu() {
+async fn resume_delivers_the_current_stage() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
 
     let directive = workspace.next(&["--resume"]).await;
 
-    assert_eq!(kind(&directive), "ask");
-    assert!(
-        field(&directive, "question").starts_with("An existing workflow was found"),
-        "{directive:?}"
-    );
+    assert_eq!(kind(&directive), "load-steering");
+    assert_eq!(field(&directive, "stage"), "domain-design");
 }
 
-/// `--stage` は自分で跳ばず、跳ぶための命令を名指す。
+/// `--stage` は自分で跳ばず、方向と scope を解決した `execute` を名指す
+/// (本家 `emitJumpDirective`。逐語は `classic_corpus_contract.rs` が固定する)。
 #[tokio::test]
-async fn a_stage_jump_names_the_resolve_command() {
+async fn a_stage_jump_names_the_execute_command() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
 
@@ -431,7 +429,9 @@ async fn a_stage_jump_names_the_resolve_command() {
 
     assert_eq!(kind(&directive), "print");
     assert!(
-        field(&directive, "message").contains("--stage contract-design"),
+        field(&directive, "message").contains(
+            "aidlc-jump.ts execute --target contract-design --direction forward --scope classic"
+        ),
         "{directive:?}"
     );
 }
@@ -476,7 +476,7 @@ async fn a_phase_jump_names_the_first_stage_of_that_phase() {
 
     assert_eq!(kind(&directive), "print");
     assert!(
-        field(&directive, "message").contains("--stage "),
+        field(&directive, "message").contains("aidlc-jump.ts execute --target "),
         "{directive:?}"
     );
 }
@@ -826,11 +826,24 @@ impl Workspace {
 async fn an_invalid_active_space_names_the_cursor_file_to_fix() {
     let workspace = Workspace::create();
     workspace.mint("classic").await;
+    // セッションの有効な binding は共有カーソルより優先される。このケースは
+    // binding のない引当で不正な active-space を拒否する契約を固定する。
+    let sessions = workspace.path("aidlc/.aidlc-sessions");
+    if sessions.exists() {
+        fs::remove_dir_all(sessions).expect("一時 workspace のセッション binding を除去");
+    }
     let before = workspace.journal_rows();
     // record は解決できるが空間名が通らない状態にする（定義の下準備ではなく、引当の口を
     // 開く段で止まることを見るため）。
     let escaped = workspace.path("aidlc/escape/intents");
-    fs::create_dir_all(&escaped).expect("escaped intents");
+    // カーソルは `aidlc-state.md` を持つ記録を名指して初めて記録として解決される
+    // (`Layout::shared`、upstream `activeIntent` と同じ判定)。
+    fs::create_dir_all(escaped.join("260904-demo-abcd1234")).expect("escaped record");
+    fs::write(
+        escaped.join("260904-demo-abcd1234/aidlc-state.md"),
+        "# AI-DLC State\n",
+    )
+    .expect("escaped state");
     fs::write(escaped.join("active-intent"), "260904-demo-abcd1234\n").expect("カーソル");
     fs::write(workspace.path("aidlc/active-space"), "../escape\n").expect("space カーソル");
 
@@ -1005,3 +1018,45 @@ async fn the_first_next_prepares_the_definition_only_once() {
         "2 回目も同じ答えになる"
     );
 }
+
+/// 実プロセス環境をControllerが観測し、初回nextのscope解決へ渡す。
+#[test]
+fn process_invalid_default_scope_reaches_the_next_validator() {
+    let workspace = Workspace::create();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_aidlc"))
+        .args(["next", "--project-dir"])
+        .arg(workspace.project_dir())
+        .current_dir(workspace.project_dir())
+        .env_clear()
+        .envs(coverage_profile_env())
+        .env("HOME", workspace.project_dir())
+        .env("PATH", "/usr/bin:/bin")
+        .env("AWS_AIDLC_DEFAULT_SCOPE", "unavailable")
+        .output()
+        .expect("native next");
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let directive = parse(std::str::from_utf8(&output.stdout).expect("UTF-8")).expect("JSON");
+    assert_eq!(kind(&directive), "error", "{directive:?}");
+    assert_eq!(
+        field(&directive, "message"),
+        "Invalid AWS_AIDLC_DEFAULT_SCOPE \"unavailable\". Valid scopes: classic, express."
+    );
+}
+
+/// 実在recordが複数ありactive-intentカーソルが無いcloneでは新規作成せず選択を求める。
+#[tokio::test]
+async fn multiple_records_without_cursor_are_not_overwritten_by_next() {
+    let workspace = Workspace::create();
+    let intents = workspace.path("aidlc/spaces/default/intents");
+    for record in ["bugfix-aaaaaaaa", "bugfix-bbbbbbbb"] {
+        fs::create_dir_all(intents.join(record)).expect("record");
+    }
+    let directive = workspace.next(&["bugfix"]).await;
+    assert_eq!(kind(&directive), "ask", "{directive:?}");
+    assert!(!intents.join("active-intent").exists());
+}
+
+#[path = "../../../../tests/support/coverage_profile_env.rs"]
+mod coverage_profile_env;
+use coverage_profile_env::coverage_profile_env;

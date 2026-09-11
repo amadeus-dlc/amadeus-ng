@@ -21,7 +21,7 @@
 //! でもあった (`Intent::from_material` と同じ誤りの形)。dist の 3 入力を読むのは
 //! 書込ユースケースの取込境界であって、この集約の再構成経路ではない。
 //!
-//! # 観測可能契約 (レポート §6.1 — 逸脱台帳行き)
+//! # 観測可能契約 (本家 `aidlc-graph.ts` の同名関数と同じ非対称。切替条件 2 の記録対象)
 //!
 //! - **未知スコープの非対称**: `subgraph_for_scope` だけが `Err(UnknownScope)`。
 //!   `first_in_scope_stage_of_phase` / `stages_in_scope` は同じ未知スコープに対して
@@ -49,6 +49,7 @@ use std::collections::BTreeMap;
 use chrono::DateTime;
 use chrono::Utc;
 
+use super::brownfield_greenfield::BrownfieldGreenfield;
 use super::compiled_definition::CompiledDefinition;
 use super::definition_revision::DefinitionRevision;
 use super::lineage_mismatch::LineageMismatch;
@@ -73,8 +74,16 @@ use super::workflow_definition_event::WorkflowDefinitionEvent;
 use super::workflow_definition_event_id::WorkflowDefinitionEventId;
 use super::workflow_definition_id::WorkflowDefinitionId;
 
-/// 反復軸の観測値 (upstream `PER_UNIT_FOR_EACH` — Published Language の値、逐語)。
-const PER_UNIT_FOR_EACH: &str = "unit-of-work";
+// 反復軸の観測値 (upstream `PER_UNIT_FOR_EACH` — Published Language の値、逐語) は
+// `for_each` を所有する [`StageNode`] 側に置く。
+use super::stage_node::PER_UNIT_FOR_EACH;
+
+/// greenfield のワークスペースでは grid が EXECUTE と言っていても SKIP に畳まれるステージ
+/// (upstream `intent-create` の greenfield 調整 — `aidlc-utility.ts:5784-5793` @a277af21、
+/// 費用の同じ調整は `aidlc-orchestrate.ts:1369-1381` `effectiveScopeCostSummary`)。
+/// upstream は slug のリテラルで持ち、定義は「どのステージが既存資産を要するか」を宣言しない
+/// ので、ここも定義集約の定数として持つ (`PRACTICES_DISCOVERY_SLUG` と同じ扱い)。
+const GREENFIELD_ADJUSTED_STAGE: &str = "reverse-engineering";
 
 /// `for_each` の誤記に備えた既知の per-unit ステージ (upstream `KNOWN_PER_UNIT_STAGES`、逐語)。
 const KNOWN_PER_UNIT_STAGES: [&str; 5] = [
@@ -424,19 +433,39 @@ impl WorkflowDefinition {
             .collect()
     }
 
-    /// スコープ 1 列の費用 (upstream `gridCostSummary`)。列が無ければ `None`。
+    /// greenfield 調整の対象か — grid が EXECUTE と言う `reverse-engineering` である
+    /// (upstream `adjustedMapping["reverse-engineering"] === "EXECUTE"` — `aidlc-utility.ts:5785`
+    /// @a277af21)。grid が SKIP と言うステージは調整の対象ではない (`infra` scope がその例)。
+    #[must_use]
+    pub fn is_greenfield_adjusted(&self, scope: &str, slug: &StageSlug) -> bool {
+        slug.as_str() == GREENFIELD_ADJUSTED_STAGE
+            && self.grid.action(scope, slug) == Some(PlanAction::Execute)
+    }
+
+    /// スコープ 1 列の費用 (upstream `gridCostSummary` — `aidlc-lib.ts:22033-22054` @a277af21)。
+    /// 列が無ければ `None`。
+    ///
+    /// `project_kind` が greenfield なら、`intent-create` が状態ファイルへ書くのと同じ
+    /// 調整 (`reverse-engineering` を SKIP に畳む) を適用した実効費用を返す (upstream
+    /// `effectiveScopeCostSummary` — `aidlc-orchestrate.ts:1369-1381`)。brownfield は名目値
+    /// そのものである。
     ///
     /// EXECUTE のうち `phase != initialization` を承認ゲート、`for_each == "unit-of-work"`
     /// または既知の per-unit ステージを unit 反復に数える。グリッドに在ってグラフに無い slug は
     /// total / execute には数え、gates / per-unit には数えない (upstream と同じ防御)。
     #[must_use]
-    pub fn scope_cost(&self, scope: &str) -> Option<ScopeCost> {
+    pub fn scope_cost(&self, scope: &str, project_kind: BrownfieldGreenfield) -> Option<ScopeCost> {
         let column = self.grid.column(scope)?;
         let mut execute = 0usize;
         let mut gates = 0usize;
         let mut per_unit_stages = 0usize;
         for (slug, action) in column {
             if *action != PlanAction::Execute {
+                continue;
+            }
+            if project_kind == BrownfieldGreenfield::Greenfield
+                && self.is_greenfield_adjusted(scope, slug)
+            {
                 continue;
             }
             execute += 1;
@@ -457,6 +486,24 @@ impl WorkflowDefinition {
             execute,
             gates,
             per_unit_stages,
+        ))
+    }
+
+    /// 別 scope を名指した直接 execute の実効計画材料。列が無ければ `None`。
+    ///
+    /// 本家 2.7.1 どおり静的な列 (`scope-grid.json` の EXECUTE 行) だけを参照し、
+    /// recompose サフィックスは合成しない。
+    #[must_use]
+    pub fn jump_scope(&self, scope: &str) -> Option<crate::orchestration::JumpScope> {
+        let column = self.grid.column(scope)?;
+        Some(crate::orchestration::JumpScope::new(
+            scope.to_string(),
+            crate::orchestration::StageSlugSet::new(
+                column
+                    .iter()
+                    .filter(|(_, action)| **action == PlanAction::Execute)
+                    .map(|(slug, _)| slug.clone()),
+            ),
         ))
     }
 
@@ -1203,7 +1250,9 @@ mod tests {
         let definition = WorkflowDefinition::define(id("claude"), &cost_bundle(), at())
             .unwrap()
             .0;
-        let express = definition.scope_cost("express").unwrap();
+        let express = definition
+            .scope_cost("express", BrownfieldGreenfield::Brownfield)
+            .unwrap();
         assert_eq!(
             (
                 express.total(),
@@ -1213,7 +1262,9 @@ mod tests {
             ),
             (4, 2, 1, 1)
         );
-        let classic = definition.scope_cost("classic").unwrap();
+        let classic = definition
+            .scope_cost("classic", BrownfieldGreenfield::Brownfield)
+            .unwrap();
         assert_eq!(
             (
                 classic.total(),
@@ -1225,9 +1276,80 @@ mod tests {
             "グラフに無い slug は総数と EXECUTE には入るが、ゲートと per-unit には入らない"
         );
         assert_eq!(
-            definition.scope_cost("gridless"),
+            definition.scope_cost("gridless", BrownfieldGreenfield::Brownfield),
             None,
             "グリッド列を持たない scope に費用は無い"
+        );
+    }
+
+    /// greenfield の実効費用は `reverse-engineering` を 1 段 (と 1 ゲート) ぶん畳む — grid が
+    /// EXECUTE と言う列だけで、SKIP と言う列 (`infra` 相当) は名目値のままである。
+    #[test]
+    fn the_greenfield_cost_folds_only_a_grid_execute_reverse_engineering() {
+        let graph = StageGraph::new(vec![
+            node("state-init", "0.1", PhaseId::Initialization, &[]),
+            node("reverse-engineering", "2.1", PhaseId::Inception, &[]),
+            node("domain-design", "2.6", PhaseId::Inception, &[]),
+        ])
+        .unwrap();
+        let cell = |name: &str, action: PlanAction| (slug(name), action);
+        let grid = ScopeGrid::new(
+            [
+                (
+                    "classic".to_string(),
+                    [
+                        cell("state-init", PlanAction::Execute),
+                        cell("reverse-engineering", PlanAction::Execute),
+                        cell("domain-design", PlanAction::Execute),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                (
+                    "infra".to_string(),
+                    [
+                        cell("state-init", PlanAction::Execute),
+                        cell("reverse-engineering", PlanAction::Skip),
+                        cell("domain-design", PlanAction::Execute),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let definition = WorkflowDefinition::define(
+            id("claude"),
+            &bundle("claude", graph, grid, registry(&["classic", "infra"])),
+            at(),
+        )
+        .unwrap()
+        .0;
+        let reverse_engineering = slug("reverse-engineering");
+        assert!(definition.is_greenfield_adjusted("classic", &reverse_engineering));
+        assert!(!definition.is_greenfield_adjusted("infra", &reverse_engineering));
+        assert!(!definition.is_greenfield_adjusted("classic", &slug("domain-design")));
+
+        let nominal = definition
+            .scope_cost("classic", BrownfieldGreenfield::Brownfield)
+            .unwrap();
+        let effective = definition
+            .scope_cost("classic", BrownfieldGreenfield::Greenfield)
+            .unwrap();
+        assert_eq!(
+            (nominal.total(), nominal.execute(), nominal.gates()),
+            (3, 3, 2)
+        );
+        assert_eq!(
+            (effective.total(), effective.execute(), effective.gates()),
+            (3, 2, 1),
+            "総数は変わらず、EXECUTE とゲートが 1 つずつ減る"
+        );
+        assert_eq!(
+            definition.scope_cost("infra", BrownfieldGreenfield::Greenfield),
+            definition.scope_cost("infra", BrownfieldGreenfield::Brownfield),
+            "grid が SKIP と言う列は greenfield でも変わらない"
         );
     }
 

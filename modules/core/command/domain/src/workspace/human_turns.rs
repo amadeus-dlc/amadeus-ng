@@ -22,12 +22,17 @@ use super::ordered_audit_events::OrderedAuditEvents;
 /// （追跡が有効でなく、人間の turn も 1 つも無い）を表し、モデル駆動のテストのためにある。
 ///
 /// [`human_acted_since_gate`]: crate::orchestration::IntentExecution::human_acted_since_gate
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HumanTurns {
     latest: Option<DateTime<Utc>>,
     tracked: bool,
 }
 
+impl Default for HumanTurns {
+    fn default() -> Self {
+        Self::find_in("")
+    }
+}
 impl HumanTurns {
     /// 連結済みの台帳バッファから証拠を読み取る（唯一の構築子 — upstream
     /// `humanActedSinceGate` の走査部（`aidlc-lib.ts:3801-3818`）の写し）。

@@ -1,11 +1,11 @@
 //! 監査ブロック描画の**ゴールデン逐語一致** (FR1.1 / W9)。
 //!
-//! `tests/golden/upstream-3c3146cf/**/audit.md` は upstream の実バイトである（U1 採取）。
+//! `tests/golden/upstream-a277af21/**/audit.md` は本家2.7.1から採取した表示用バイトである。
 //! 各ファイルをブロックへ切り、フィールドを読み取ってから [`render_audit_block`] で描き直し、
 //! **元のバイトと 1 バイトも違わない**ことを検査する。
 //!
-//! 描き直しが通るということは、見出し 86 語・フィールド順・行終端・区切りのすべてが upstream と
-//! 一致しているということである。ゴールデンの `<TS>` は採取時の正規化なので、こちらの出力にも
+//! 描き直しが通る範囲は、採取データに含まれる27語の見出し・フィールド順・行終端・区切りである。
+//! 全91語のイベント発生処理を検証したとは扱わない。`<TS>` は採取時の正規化なので、こちらの出力にも
 //! 同じ正規化（`normalization.json` の ISO 8601 規則）を当ててから比べる。
 //!
 //! ゴールデンはコマンド 1 回が**追記した分**（デルタ）である。したがって空のシャードを新規に
@@ -33,7 +33,7 @@ const RENDER_AT: &str = "2026-08-22T13:43:00Z";
 const BLOCK_TERMINATOR: &str = "\n---\n";
 
 fn golden_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/upstream-3c3146cf")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/upstream-a277af21")
 }
 
 /// `**<key>**: <value>` 形のフィールド行を 1 本読む。
@@ -167,7 +167,7 @@ fn every_upstream_audit_block_is_reproduced_byte_for_byte() {
     }
 
     // 検査した中身そのものを固定しておく — ゴールデンが減ったのに緑のまま、を防ぐ。
-    assert_eq!(blocks_checked, 70, "検査したブロック数");
+    assert_eq!(blocks_checked, 106, "2.7.1の採取データに含まれるブロック数");
     assert_eq!(
         headers_seen, 1,
         "ヘッダ行を持つのは空シャードを作った 1 ケースだけ"
@@ -187,6 +187,9 @@ fn every_upstream_audit_block_is_reproduced_byte_for_byte() {
             "PHASE_VERIFIED",
             "PRACTICES_AFFIRMED",
             "RECOMPOSED",
+            "SENSOR_FAILED",
+            "SENSOR_FIRED",
+            "SENSOR_PASSED",
             "STAGE_AWAITING_APPROVAL",
             "STAGE_COMPLETED",
             "STAGE_JUMPED",
@@ -200,6 +203,6 @@ fn every_upstream_audit_block_is_reproduced_byte_for_byte() {
             "WORKSPACE_SCAFFOLDED",
             "WORKSPACE_SCANNED",
         ],
-        "ゴールデンが実際に固定しているイベント型 (86 語中 24 語)"
+        "ゴールデンが実際に固定しているイベント型 (91語中27語)"
     );
 }

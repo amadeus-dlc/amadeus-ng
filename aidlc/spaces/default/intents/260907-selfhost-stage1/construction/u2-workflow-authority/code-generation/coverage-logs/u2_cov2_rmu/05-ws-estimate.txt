@@ -1,0 +1,172 @@
+estimated ws uncovered: before 345 after 182
+  56 ->   46  src/workspace/projection.rs
+        fn@400:1 -> [564, 569]
+        fn@727:1 -> [757]
+        fn@777:1 -> [848]
+        fn@1140:28 -> [1140]
+        fn@1246:17 -> [1246]
+        fn@1312:49 -> [1312]
+        fn@1328:48 -> [1328]
+        fn@1329:46 -> [1329]
+        fn@1497:1 -> [1552]
+        fn@1777:1 -> [1795, 1822]
+        fn@1840:67 -> [1855]
+        fn@1850:93 -> [1850, 1851, 1852, 1853, 1854, 1855]
+        fn@2025:1 -> [2033]
+        fn@2109:52 -> [2109]
+        fn@2170:47 -> [2170]
+        fn@2184:47 -> [2184]
+        fn@2871:5 -> [2879]
+        fn@2955:5 -> [2970]
+        fn@2975:5 -> [2992, 2997]
+        fn@3049:5 -> [3092, 3110]
+        fn@3220:5 -> [3270, 3285]
+        fn@3447:5 -> [3461]
+        fn@3481:5 -> [3541, 3549]
+        fn@3786:5 -> [3805]
+        fn@3862:5 -> [3909, 3916, 3926]
+        fn@3932:5 -> [3943]
+        fn@3951:5 -> [3972]
+        fn@3978:5 -> [4000]
+        fn@4208:5 -> [4254]
+        fn@4320:5 -> [4345]
+        fn@4410:5 -> [4455, 4462, 4469]
+  33 ->   23  src/orchestration/hook_health_reader.rs
+        fn@65:5 -> [204, 209, 261]
+        fn@76:26 -> [76]
+        fn@102:32 -> [102]
+        fn@132:30 -> [132]
+        fn@142:34 -> [142]
+        fn@144:26 -> [144]
+        fn@178:26 -> [178]
+        fn@182:26 -> [182]
+        fn@200:59 -> [200, 201, 202, 203]
+        fn@205:58 -> [205, 206, 207, 208]
+        fn@217:26 -> [217]
+        fn@222:28 -> [222]
+        fn@259:38 -> [259, 260, 261]
+  13 ->   12  src/orchestration/runtime_graph_read_model_updater.rs
+        fn@120:35 -> [140]
+        fn@135:83 -> [135, 136, 137, 138, 139, 140]
+        fn@162:33 -> [164]
+        fn@213:1 -> [240]
+        fn@286:34 -> [288]
+        fn@326:41 -> [328]
+        fn@353:37 -> [355]
+  12 ->   12  src/read_tables/jump_result_row.rs
+        fn@28:5 -> [44, 51, 119]
+        fn@43:35 -> [43, 44]
+        fn@47:84 -> [47, 48, 49, 50, 51]
+        fn@118:39 -> [118, 119]
+  22 ->    9  src/read_tables/sql.rs
+        fn@534:1 -> [552]
+        fn@551:66 -> [551]
+        fn@1027:66 -> [1027]
+        fn@1031:1 -> [1040]
+        fn@1059:66 -> [1059]
+        fn@1083:66 -> [1083]
+        fn@1383:74 -> [1383]
+        fn@1395:74 -> [1395]
+        fn@1433:37 -> [1433]
+  10 ->    9  src/orchestration/workflow_continuation_read_model_updater.rs
+        fn@135:5 -> [204]
+        fn@185:38 -> [185]
+        fn@189:34 -> [189]
+        fn@202:19 -> [202, 203, 204]
+        fn@236:364 -> [236]
+        fn@236:444 -> [236]
+        fn@238:202 -> [238]
+  27 ->    8  src/orchestration/read_model_updater.rs
+        fn@191:75 -> [286, 355, 421]
+        fn@351:38 -> [351, 352, 353, 354, 355]
+  38 ->    7  src/orchestration/journal_reader_impl.rs
+        fn@299:5 -> [355]
+        fn@830:1 -> [856, 857, 858, 859, 860]
+        fn@997:5 -> [1007]
+   6 ->    6  src/orchestration/publication_store.rs
+        fn@104:52 -> [104]
+        fn@123:18 -> [123]
+        fn@237:1 -> [281]
+        fn@312:24 -> [312]
+        fn@360:56 -> [360]
+        fn@388:1 -> [436]
+   5 ->    5  src/workspace/state_file_write_error.rs
+        fn@38:1 -> [47, 48, 49, 50, 57]
+   4 ->    4  src/orchestration/steering_source.rs
+        fn@208:5 -> [237, 238, 239]
+        fn@338:5 -> [349]
+   4 ->    4  src/orchestration/plan_approval_journal_reader_impl.rs
+        fn@81:32 -> [81]
+        fn@86:30 -> [86]
+        fn@102:26 -> [102]
+        fn@135:28 -> [135]
+   4 ->    3  src/workspace/audit_shard.rs
+        fn@48:1 -> [54]
+        fn@64:30 -> [64]
+        fn@67:26 -> [67]
+   3 ->    3  src/read_tables/artifact_audit_row.rs
+        fn@24:5 -> [49]
+        fn@48:43 -> [48, 49]
+  10 ->    3  src/orchestration/plan_approval_files.rs
+        fn@20:1 -> [66]
+        fn@39:47 -> [39]
+        fn@41:72 -> [41]
+   3 ->    3  src/orchestration/intent_registry.rs
+        fn@7:1 -> [37]
+        fn@88:32 -> [88]
+        fn@113:22 -> [113]
+   3 ->    3  src/read_tables/session_audit_row.rs
+        fn@30:5 -> [56]
+        fn@55:35 -> [55, 56]
+   3 ->    3  src/read_tables/execution_row.rs
+        fn@53:75 -> [59, 61, 63]
+   3 ->    3  src/orchestration/publication_file.rs
+        fn@177:5 -> [200, 216]
+        fn@251:1 -> [259]
+   2 ->    2  src/orchestration/projection_targets.rs
+        fn@50:5 -> [56]
+        fn@195:1 -> [212]
+   2 ->    2  src/workspace/audit_redaction.rs
+        fn@50:33 -> [50]
+        fn@93:1 -> [100]
+   2 ->    2  src/orchestration/catch_up_error.rs
+        fn@96:5 -> [98, 99]
+   2 ->    2  src/orchestration/shared_projection.rs
+        fn@119:71 -> [119]
+        fn@125:86 -> [125]
+   2 ->    2  src/orchestration/dto/definition_dto_tests.rs
+        fn@221:1 -> [287]
+        fn@315:1 -> [335]
+   1 ->    1  src/read_tables/spelling.rs
+        fn@46:1 -> [52]
+   1 ->    1  src/workspace/initial_state.rs
+        fn@147:1 -> [169]
+   1 ->    1  src/orchestration/dto/plan_answer_input_dto.rs
+        fn@40:34 -> [40]
+   1 ->    1  src/orchestration/dto/active_directive_dto.rs
+        fn@81:34 -> [81]
+   1 ->    1  src/workspace/active_directive.rs
+        fn@12:1 -> [45]
+   1 ->    1  src/orchestration/dto/definition_content_dto.rs
+        fn@521:5 -> [547]
+   2 ->    0  src/orchestration/dto/directive_context_invalidated_dto.rs
+   1 ->    0  src/orchestration/dto/jumped_dto.rs
+   2 ->    0  src/orchestration/dto/review_completed_dto.rs
+   2 ->    0  src/orchestration/dto/review_requested_dto.rs
+   3 ->    0  src/orchestration/dto/prompt_observed_dto.rs
+   2 ->    0  src/orchestration/dto/plan_answer_logged_dto.rs
+   5 ->    0  src/orchestration/dto/intent_dto.rs
+   3 ->    0  src/orchestration/dto/reported_dto.rs
+   2 ->    0  src/orchestration/dto/health_checked_dto.rs
+   4 ->    0  src/orchestration/dto/plan_approval_runtime_dto.rs
+  24 ->    0  src/orchestration/dto/intent_execution_event_dto.rs
+   1 ->    0  src/orchestration/dto/review_completion_dto.rs
+   3 ->    0  src/orchestration/dto/answer_recorded_dto.rs
+   3 ->    0  src/orchestration/dto/decision_recorded_dto.rs
+   1 ->    0  src/orchestration/dto/source_baseline_dto.rs
+   2 ->    0  src/orchestration/dto/directive_issued_dto.rs
+   3 ->    0  src/orchestration/session_event_dto.rs
+   1 ->    0  src/orchestration/dto/review_binding_dto.rs
+   2 ->    0  src/orchestration/dto/plan_response_preparation_dto.rs
+   2 ->    0  src/orchestration/dto/pipeline_link_completed_dto.rs
+   2 ->    0  src/orchestration/dto/command_failed_dto.rs

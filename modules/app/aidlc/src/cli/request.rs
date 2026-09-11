@@ -1,19 +1,20 @@
 //! 型付きの要求（Controller の入口）と、起動名・引数からの解決。
 //!
-//! # b29 で実装していない `next` の文法
+//! # `next` の入力の所有
 //!
-//! upstream `parseNextFlags`（`aidlc-orchestrate.ts:710`）は plugin / knowledge / workspace
-//! コマンド、読み取り専用フラグ（`--status` 等）とその `--doctor` 専用引数、そして
-//! **先頭位置引数の scope 剥がし**（`next bugfix "Fix duplicate todos"`）も持つ。ここでは
-//! [`NextTurnInput`](core_query_use_case::orchestration::NextTurnInput) が表現できる分だけを
-//! 写しており、位置引数はすべて freeform として渡る。scope 剥がしには「妥当な scope 名の
-//! 一覧」= 定義が要り、それを読むのはラダーが I/O を遅延させている段より手前になるので、
-//! 素直には差し込めない。**後続 Bolt の課題**として残す。
+//! 先頭のworkspace/plugin/knowledge名詞が、その後のフラグを含むargv全体を所有する。
+//! 文中の同じ語や `--` より後の語は自由記述である。本家2.7.1の`parseNextFlags`に対応する。
+//! 名詞の構文から終端コマンドへの変換は `turn` が担い、状態を読んで判断しない。
+//! 通常位置引数は `freeform` として渡し、定義を要するscope照合は後段のルーティングで行う。
+//! `--doctor` 専用追加引数等の未接続面はU2の残作業である。
 
-use core_query_use_case::orchestration::NextTurnInput;
+use core_query_use_case::orchestration::{NextTurnInput, NounFamily, NounToken, ReadOnlyVerb};
 
 use super::face::Face;
 use super::intent_create_args::{IntentCreateArgs, parse_intent_create};
+use super::interaction_args::{InteractionArgs, parse_interaction};
+use super::learnings_args::{LearningsArgs, parse_learnings};
+use super::link_args::{LinkArgs, parse_link};
 use super::promote_args::{PromoteArgs, parse_promote};
 use super::report_args::{ReportArgs, parse_report};
 use super::review_args::{ReviewArgs, parse_review};
@@ -22,6 +23,18 @@ use super::set_autonomy_args::{SetAutonomyArgs, parse_set_autonomy};
 /// 型付きの要求。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Request {
+    /// 本家jump面の引数列。
+    Jump(Vec<String>),
+    /// テスト契約の公開入口。
+    TestingPosture {
+        /// 本家の動詞/フラグ列。
+        args: Vec<String>,
+    },
+    /// Claudeフックの接続入口。
+    Hook {
+        /// 接続するフック名。
+        name: String,
+    },
     /// `next` — 観測を畳んだ入力を運ぶ。
     Next(Box<NextTurnInput>),
     /// `continue <token>` — 位置引数 1 つ。
@@ -47,11 +60,12 @@ pub enum Request {
     },
     /// `aidlc-log review` — フラグ一式。
     LogReview(ReviewArgs),
-    /// `aidlc-log <decision|answer|link>` — **この build に無い**（自己防衛拒否）。
-    LogNotWired {
-        /// 認識はしているが配線されていない動詞。
-        verb: String,
-    },
+    /// 通常の質問提示。
+    LogDecision(InteractionArgs),
+    /// 通常質問への回答。
+    LogAnswer(InteractionArgs),
+    /// 宣言されたpipelineの引継ぎ完了。
+    LogLink(LinkArgs),
     /// 記録面の未知動詞 — 同上。
     UnknownLogVerb {
         /// 与えられた動詞（無ければ `None`）。
@@ -78,6 +92,17 @@ pub enum Request {
     },
     /// Bolt 面の未知動詞 — 同上。
     UnknownBoltVerb {
+        /// 与えられた動詞（無ければ `None`）。
+        given: Option<String>,
+    },
+    /// `aidlc-learnings surface` — 学びの候補を並べる読取面。
+    LearningsSurface(LearningsArgs),
+    /// `aidlc-learnings persist` — 確定した学びを正本へ書く更新面。
+    LearningsPersist(LearningsArgs),
+    /// `aidlc-learnings --help`。
+    LearningsHelp,
+    /// 学びの面の未知動詞 — 同上。
+    UnknownLearningsVerb {
         /// 与えられた動詞（無ければ `None`）。
         given: Option<String>,
     },
@@ -133,6 +158,13 @@ pub fn parse(face: Face, args: &[String]) -> Request {
     let verb = args.first().map(String::as_str);
     let rest = args.get(1..).unwrap_or_default();
     match (face, verb) {
+        (Face::Jump, _) => Request::Jump(args.to_vec()),
+        (Face::TestingPosture, _) => Request::TestingPosture {
+            args: args.to_vec(),
+        },
+        (Face::Orchestrate, Some("hook")) => Request::Hook {
+            name: rest.first().cloned().unwrap_or_default(),
+        },
         (Face::Orchestrate, Some("next")) => Request::Next(Box::new(parse_next(rest))),
         (Face::Orchestrate, Some("continue")) => Request::Continue {
             // 引数の個数違いもトークン不正と同じ fail-closed に落とすので、ここでは
@@ -154,12 +186,10 @@ pub fn parse(face: Face, args: &[String]) -> Request {
         (Face::Utility, given) => Request::UnknownUtilityVerb {
             given: given.map(str::to_string),
         },
+        (Face::Log, Some("answer")) => Request::LogAnswer(parse_interaction(rest)),
+        (Face::Log, Some("decision")) => Request::LogDecision(parse_interaction(rest)),
         (Face::Log, Some("review")) => Request::LogReview(parse_review(rest)),
-        // 認識はする 3 動詞。upstream にはあるが本 build には無い（b46 の「not wired in this
-        // build」層と同じ扱い — 未知動詞の逐語に混ぜると「綴りが違う」と読まれる）。
-        (Face::Log, Some(verb @ ("decision" | "answer" | "link"))) => Request::LogNotWired {
-            verb: verb.to_string(),
-        },
+        (Face::Log, Some("link")) => Request::LogLink(parse_link(rest)),
         (Face::Log, given) => Request::UnknownLogVerb {
             given: given.map(str::to_string),
         },
@@ -183,11 +213,29 @@ pub fn parse(face: Face, args: &[String]) -> Request {
         (Face::Bolt, given) => Request::UnknownBoltVerb {
             given: given.map(str::to_string),
         },
+        (Face::Learnings, Some("surface")) => Request::LearningsSurface(parse_learnings(rest)),
+        (Face::Learnings, Some("persist")) => Request::LearningsPersist(parse_learnings(rest)),
+        (Face::Learnings, Some("--help" | "-h")) => Request::LearningsHelp,
+        (Face::Learnings, given) => Request::UnknownLearningsVerb {
+            given: given.map(str::to_string),
+        },
     }
 }
 
 /// `next` のフラグを [`NextTurnInput`] へ畳む。
 fn parse_next(args: &[String]) -> NextTurnInput {
+    if args.len() == 1 && args.first().is_some_and(|arg| arg == "help" || arg == "-h") {
+        return NextTurnInput::new().with_read_only(ReadOnlyVerb::Help);
+    }
+    let family = match args.first().map(String::as_str) {
+        Some("space" | "space-create" | "intent") => Some(NounFamily::Workspace),
+        Some("plugin" | "plugin-create") => Some(NounFamily::Plugin),
+        Some("knowledge") => Some(NounFamily::Knowledge),
+        _ => None,
+    };
+    if let Some(family) = family {
+        return NextTurnInput::new().with_noun_token(NounToken::new(family, args.to_vec()));
+    }
     let mut input = NextTurnInput::new();
     let mut freeform: Vec<String> = Vec::new();
     let mut literal = false;
@@ -201,6 +249,10 @@ fn parse_next(args: &[String]) -> NextTurnInput {
         }
         match arg.as_str() {
             "--" => literal = true,
+            "--status" => input = input.with_read_only(ReadOnlyVerb::Status),
+            "--help" => input = input.with_read_only(ReadOnlyVerb::Help),
+            "--doctor" => input = input.with_read_only(ReadOnlyVerb::Doctor),
+            "--version" => input = input.with_read_only(ReadOnlyVerb::Version),
             // 先頭の `compose` だけが動詞。文中の "compose" は自由記述のままにする。
             "compose" if index == 0 => input = input.with_compose(),
             "--resume" => input = input.with_resume(),
@@ -258,7 +310,6 @@ fn parse_next(args: &[String]) -> NextTurnInput {
     }
     if !freeform.is_empty() {
         let text = freeform.join(" ");
-        // `--new-intent` は記述を自分の欄で運ぶ（分岐 4a が空白を拒否する）。
         input = if input.new_intent().is_some() {
             input.with_new_intent(text)
         } else {
@@ -674,6 +725,27 @@ mod tests {
         assert_eq!(
             parse(Face::Utility, &argv(&[])),
             Request::UnknownUtilityVerb { given: None }
+        );
+    }
+    #[test]
+    fn next_preserves_leading_workspace_noun_and_following_tokens() {
+        let input = expect_next(parse(
+            Face::Orchestrate,
+            &argv(&["next", "intent", "list", "--status"]),
+        ));
+        let noun = input.noun_token().expect("名詞");
+        assert_eq!(noun.family(), NounFamily::Workspace);
+        assert_eq!(
+            noun.tokens(),
+            &[
+                "intent".to_string(),
+                "list".to_string(),
+                "--status".to_string()
+            ]
+        );
+        assert!(
+            input.read_only().is_none(),
+            "後続フラグも名詞側の引数である"
         );
     }
 }

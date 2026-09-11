@@ -1,0 +1,32 @@
+id	exit	stdout_bytes	stdout_sha256	bundle_sha256	stage	blocks	updated_keys	stderr
+40-path-needs-a-separator-before-stages	0	28035	eb9414990cd6bacc90fd4bc3c07bbd845527616c02e189f6c4673d891b6e7822	b503b83fe1f6fa4ff265bb123e34ed5cf82e4de706481934eb1827909747700e	code-generation	1	subagent_type|prompt	-
+41-path-with-a-leading-slash-resolves	0	27873	cfcaba832999921fad981a7660d652d5c6d08c8cc293882e279da45960e4dd1f	d82253d617cc3fe90d927197a5151d8e7eb59ae7d9f20704c3d1cc3c4d08d37a	intent-capture	1	subagent_type|prompt	-
+42-path-at-the-very-start-resolves	0	27880	518a0dc06053231a7f75bfcf2f0c632ee8a8d5832290efc78c774b252531b01d	d82253d617cc3fe90d927197a5151d8e7eb59ae7d9f20704c3d1cc3c4d08d37a	intent-capture	1	subagent_type|prompt	-
+43-backslash-separators-resolve	0	27877	6e46407bd0a278dc39ece026305665f95e5de1985016178c5423563e267c53b8	d82253d617cc3fe90d927197a5151d8e7eb59ae7d9f20704c3d1cc3c4d08d37a	intent-capture	1	subagent_type|prompt	-
+44-mixed-separators-resolve	0	27875	41982bcee85275339a71085593725ecb0250cf08a882e3e1cda3077c2323508c	d82253d617cc3fe90d927197a5151d8e7eb59ae7d9f20704c3d1cc3c4d08d37a	intent-capture	1	subagent_type|prompt	-
+45-mdx-suffix-is-rejected	0	28038	733351ab2788b27c4670f8e33df8249559cc1561e958988a83dd6d6e7f8f3127	b503b83fe1f6fa4ff265bb123e34ed5cf82e4de706481934eb1827909747700e	code-generation	1	subagent_type|prompt	-
+46-uppercase-phase-still-matches-but-slug-must-be-exact	0	27874	e97e7909dc614ec822870bf5853d878766c19768676ecd94e992e3548baedb6d	d82253d617cc3fe90d927197a5151d8e7eb59ae7d9f20704c3d1cc3c4d08d37a	intent-capture	1	subagent_type|prompt	-
+47-unknown-phase-directory-is-rejected	0	28042	a32c704979435c7c86af139b7b0e65ee02c19b522a95f1ded408f903b32d8a35	b503b83fe1f6fa4ff265bb123e34ed5cf82e4de706481934eb1827909747700e	code-generation	1	subagent_type|prompt	-
+48-first-path-in-the-prompt-wins	0	27917	edbf88e7915a4a81833e8100a535e49c10eb4b0b653b820b02e0b6fc779974c6	d82253d617cc3fe90d927197a5151d8e7eb59ae7d9f20704c3d1cc3c4d08d37a	intent-capture	1	subagent_type|prompt	-
+49-dotted-basename-is-rejected	0	28043	3fbab11ed38eb61451fa3ce725cbec97a0d1d70591f2c965cbaac006c03a3494	b503b83fe1f6fa4ff265bb123e34ed5cf82e4de706481934eb1827909747700e	code-generation	1	subagent_type|prompt	-
+50-subagent-two-stages-two-different-bundles	0	55775	11b4829a90ea915e4aa76f5756221cd0bf216413acc484b7a3b654f3f542f034	5059e0882b2d5ece63d1adfe7cd906e2e7bfc3c2aabacd853056da0da75dfb2c	domain-design	2	stages	-
+51-run-in-background-false-is-a-normal-dispatch	0	28028	525cd01ead72a92bc1e7ac70c5f4c1478a18aac3c296380109dc1f7f66dd3b60	b503b83fe1f6fa4ff265bb123e34ed5cf82e4de706481934eb1827909747700e	code-generation	1	subagent_type|prompt|run_in_background	-
+52-stateless-project-dir-missing-rules-is-exit-2	2	0	-	-	-	0	-	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (ENOENT: no such file or directory, open '/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/aidlc/spaces/default/memory/org.m
+53-stateless-project-dir-unique-slug-resolves	0	15920	ef5c80358a103830ce768e1837bdee0117318735dbf258230987e2fb6c1dd9f2	e27b1768d2c4aaee92fd5af7d9562d2b753492081ab185d641d619c63bf4dc94	intent-capture	1	subagent_type|prompt	-
+54-stateless-two-slugs-is-ambiguous-and-binds-nothing	0	0	-	-	-	0	-	-
+55-stateless-no-slug-binds-nothing	0	0	-	-	-	0	-	-
+56-stateless-slug-adjacent-word-char-is-not-a-mention	0	0	-	-	-	0	-	-
+57-stateless-slug-adjacent-hyphen-is-not-a-mention	0	0	-	-	-	0	-	-
+58-stateless-slug-adjacent-underscore-is-a-boundary	0	15922	cfca3cc9854f7c6b155217cde533fddd512dabbb2e77805553d28befe44b7ad4	e27b1768d2c4aaee92fd5af7d9562d2b753492081ab185d641d619c63bf4dc94	intent-capture	1	subagent_type|prompt	-
+59-stateless-slug-uppercase-still-matches	0	15920	5100514b9cf29ab4092da0d51ca6a91ee4498b8e8df87cd27e828360909ba4d3	e27b1768d2c4aaee92fd5af7d9562d2b753492081ab185d641d619c63bf4dc94	intent-capture	1	subagent_type|prompt	-
+60-stateless-explicit-path-still-outranks	0	16049	b453b0825ff42e43feab0b95823704ec645204cc0bc5569e0df454cb545b6d51	cc9801ee4b4c48b6785b45446bc3881a5c5e936a5325d49e11dd2ac212c9e7ab	domain-design	1	subagent_type|prompt	-
+61-malformed-json-is-exit-0	0	0	-	-	-	0	-	-
+62-empty-stdin-is-exit-0	0	0	-	-	-	0	-	-
+63-json-array-stdin	0	0	-	-	-	0	-	-
+64-json-null-stdin	1	0	-	-	-	0	-	TypeError: null is not an object (evaluating 'parsed.cwd') at aidlc-deliver-stage-rules.ts:315
+
+# 52 の stderr は次の 1 行が全文である（TSV では 200 バイトで切っている）。
+# Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (ENOENT: no such file or directory, open '/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/aidlc/spaces/default/memory/org.md'). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+#
+# 64 は本家の未処理例外である。`JSON.parse("null")` は成功し、続く `parsed.cwd` が投げる。
+# stdout は空、exit 1、stderr は bun のスタックトレース。詳細は verification 本文へ。

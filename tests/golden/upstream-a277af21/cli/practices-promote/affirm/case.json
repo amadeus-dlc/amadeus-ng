@@ -1,0 +1,13 @@
+{
+  "id": "cli/practices-promote/affirm",
+  "family": "cli",
+  "verb": "practices-promote",
+  "case": "affirm",
+  "description": "承認の前提。affirm したプラクティスを team.md / project.md へ昇格し PRACTICES_AFFIRMED を記録する",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

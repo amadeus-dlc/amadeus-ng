@@ -52,6 +52,7 @@ impl StageNodeBuilder {
                 sensors: Vec::new(),
                 scopes: Vec::new(),
                 reviewer: None,
+                review_artifact: None,
                 reviewer_max_iterations: None,
                 review_class: None,
                 summary_confirmation: None,
@@ -156,6 +157,13 @@ impl StageNodeBuilder {
     #[must_use]
     pub fn reviewer(mut self, reviewer: String) -> StageNodeBuilder {
         self.node.reviewer = Some(reviewer);
+        self
+    }
+
+    /// レビュー本文の所有成果物を載せる。
+    #[must_use]
+    pub fn review_artifact(mut self, artifact: String) -> StageNodeBuilder {
+        self.node.review_artifact = Some(artifact);
         self
     }
 

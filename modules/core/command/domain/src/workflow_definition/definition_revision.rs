@@ -190,6 +190,7 @@ fn project_node(node: &StageNode) -> JsonValue {
     members.insert("sensors", texts(node.sensors()));
     members.insert("scopes", texts(node.scopes()));
     members.insert("reviewer", optional_text(node.reviewer()));
+    members.insert("review_artifact", optional_text(node.review_artifact()));
     members.insert(
         "reviewer_max_iterations",
         node.reviewer_max_iterations().map_or(JsonValue::Null, |n| {
@@ -235,6 +236,9 @@ fn project_node(node: &StageNode) -> JsonValue {
                     entry.insert("id", text(sensor.id()));
                     entry.insert("path", text(sensor.path()));
                     entry.insert("matches", optional_text(sensor.matches()));
+                    entry.insert("fire_on", optional_text(sensor.fire_on()));
+                    entry.insert("default_severity", optional_text(sensor.default_severity()));
+                    entry.insert("category", optional_text(sensor.category()));
                     JsonValue::Object(entry)
                 })
                 .collect(),
@@ -421,6 +425,47 @@ mod content_tests {
         )]
         .into_iter()
         .collect()
+    }
+
+    #[test]
+    fn review_owner_and_sensor_metadata_each_change_the_content_revision() {
+        use crate::workflow_definition::SensorRef;
+
+        let revision = |artifact: &str, fire_on: &str, severity: &str, category: &str| {
+            let node = StageNodeBuilder::new(
+                StageSlug::parse("state-init").expect("slug"),
+                StageNumber::parse("0.1").expect("番号"),
+                "State Init".to_string(),
+                PhaseId::Initialization,
+                ExecutionKind::Always,
+                StageMode::Inline,
+            )
+            .review_artifact(artifact.to_string())
+            .sensors_applicable(vec![SensorRef::new(
+                "linter",
+                "sensors/linter.md",
+                None,
+                Some(fire_on.to_string()),
+                Some(severity.to_string()),
+                Some(category.to_string()),
+            )])
+            .build();
+            let graph = StageGraph::new(vec![node]).expect("グラフ");
+            DefinitionRevision::of_content(
+                &graph,
+                &ScopeGrid::from_graph(&graph),
+                &scopes_under("classic"),
+            )
+        };
+        let baseline = revision("plan", "gate", "blocking", "quality");
+        for changed in [
+            revision("summary", "gate", "blocking", "quality"),
+            revision("plan", "write", "blocking", "quality"),
+            revision("plan", "gate", "advisory", "quality"),
+            revision("plan", "gate", "blocking", "security"),
+        ] {
+            assert_ne!(baseline, changed);
+        }
     }
 
     #[test]

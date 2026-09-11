@@ -9,7 +9,7 @@ pub struct TokenVersion(u32);
 
 impl TokenVersion {
     /// 現行の版 (v1)。
-    pub const CURRENT: TokenVersion = TokenVersion(1);
+    pub const CURRENT: TokenVersion = Self::from_raw(1);
 
     /// ワイヤ生値から復元する (互換判定は `is_supported`)。
     #[must_use]

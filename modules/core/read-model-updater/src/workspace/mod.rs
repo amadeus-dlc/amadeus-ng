@@ -12,6 +12,7 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 mod audit_block;
+mod audit_redaction;
 mod audit_shard;
 mod memory_faces;
 mod projection;
@@ -30,6 +31,8 @@ pub use resolved_plan::{PlannedStage, ResolvedPlan};
 
 // 監査ブロックの描画（W9 の逐語契約。投影の行もフックの直接行も同じ描き手を通る）
 pub use audit_block::{SHARD_HEADER, render_audit_block};
+// 監査値の project dir を伏せる規則（upstream `renderAuditBlock` の `redactProjectDirPrefix`）
+pub use audit_redaction::AuditRedaction;
 
 // 投影ライタ（リードモデルをディスクへ落とす 2 面。状態ファイルは置換、シャードは追記）
 pub use audit_shard::{
@@ -43,3 +46,7 @@ pub use state_writers::{
     FieldNotFound, find_field, with_field, with_field_if_present, with_field_or_insert,
     without_field,
 };
+
+pub(crate) mod initial_state;
+
+mod active_directive;

@@ -39,7 +39,7 @@ use crate::workflow_definition::PlanAction;
 use crate::workflow_definition::UnknownScope;
 use crate::workflow_definition::WorkflowDefinition;
 use crate::workflow_definition::WorkflowDefinitionId;
-use crate::workflow_definition::{ReviewCapValue, ReviewPolicy, StageSlug};
+use crate::workflow_definition::{BrownfieldGreenfield, ReviewCapValue, ReviewPolicy, StageSlug};
 
 /// 静的な intent — 実行が何回起きても変わらない側 (Always Valid)。
 ///
@@ -62,6 +62,25 @@ pub struct Intent {
 }
 
 impl Intent {
+    /// 実行対象として解決されたステージの件数。
+    #[must_use]
+    pub fn in_scope_count(&self) -> usize {
+        self.stages
+            .filter(|stage| stage.plan_action() == crate::workflow_definition::PlanAction::Execute)
+            .len()
+    }
+    /// 初期化後に実行する最初のステージ。
+    #[must_use]
+    pub fn first_post_initialization(&self) -> Option<StageEntry> {
+        self.stages
+            .filter(|stage| {
+                stage.plan_action() == crate::workflow_definition::PlanAction::Execute
+                    && stage.phase() != crate::workflow_definition::PhaseId::Initialization
+            })
+            .at(0)
+            .cloned()
+    }
+
     /// intent のスコープと override に従い、対象ステージのレビュー方針を決める。
     ///
     /// # Errors
@@ -118,6 +137,10 @@ impl Intent {
         scan: WorkspaceScan,
         occurred_at: DateTime<Utc>,
     ) -> Result<(Intent, IntentEvent), IntentError> {
+        let start_request = match definition.scope_metadata(start_request.scope()) {
+            Some(metadata) => start_request.with_scope_defaults(metadata),
+            None => start_request,
+        };
         let scope = start_request.scope();
         if !definition.is_valid_scope(scope) {
             let valid = definition
@@ -148,13 +171,24 @@ impl Intent {
                 // 索引一致が崩れるのはグラフが壊れている場合だけ (防御的)。
                 None => return Err(IntentError::Empty),
             };
-            stages.push(StageEntry::new(
+            let entry = StageEntry::new(
                 slug.clone(),
                 phase,
                 action.unwrap_or(PlanAction::Skip),
                 conditional,
                 display,
-            ));
+            );
+            // greenfield 調整 (upstream `intent-create` `aidlc-utility.ts:5784-5793` @a277af21):
+            // 既存資産の無いワークスペースでは reverse-engineering を SKIP に畳む。どのステージが
+            // 対象かは定義集約が答える (`is_greenfield_adjusted`)。
+            let entry = if scan.project_kind() == BrownfieldGreenfield::Greenfield
+                && definition.is_greenfield_adjusted(scope, slug)
+            {
+                entry.adjusted_for_greenfield()
+            } else {
+                entry
+            };
+            stages.push(entry);
         }
         let created = Created::new(
             IntentEventId::generate(),
@@ -220,6 +254,18 @@ impl Intent {
     #[must_use]
     pub fn scope(&self) -> &str {
         self.start_request.scope()
+    }
+
+    /// 保存・投影境界へ渡す、開始時に確定したソース比較基準。
+    #[must_use]
+    pub const fn source_baseline(&self) -> Option<&super::SourceBaseline> {
+        self.start_request.source_baseline()
+    }
+
+    /// 公開記録の識別名。
+    #[must_use]
+    pub const fn record_name(&self) -> Option<&super::IntentRecordName> {
+        self.start_request.record_name()
     }
 
     /// 人間の要求 (逐語保持)。
@@ -642,6 +688,117 @@ mod tests {
                 slug: "state-init".to_string(),
             })
         );
+    }
+
+    /// 3 ステージ (initialization / reverse-engineering / domain-design) の定義 — greenfield 調整を
+    /// 見るため、reverse-engineering はグリッドで EXECUTE かつ CONDITIONAL。
+    fn reverse_engineering_definition() -> WorkflowDefinition {
+        let node = |name: &str, number: &str, phase: PhaseId, execution: ExecutionKind| {
+            StageNodeBuilder::new(
+                StageSlug::parse(name).unwrap(),
+                StageNumber::parse(number).unwrap(),
+                name.to_string(),
+                phase,
+                execution,
+                StageMode::Inline,
+            )
+            .scopes(vec!["classic".to_string()])
+            .build()
+        };
+        let graph = StageGraph::new(vec![
+            node(
+                "state-init",
+                "0.1",
+                PhaseId::Initialization,
+                ExecutionKind::Always,
+            ),
+            node(
+                "reverse-engineering",
+                "2.1",
+                PhaseId::Inception,
+                ExecutionKind::Conditional,
+            ),
+            node(
+                "domain-design",
+                "2.6",
+                PhaseId::Inception,
+                ExecutionKind::Always,
+            ),
+        ])
+        .unwrap();
+        let grid = ScopeGrid::from_graph(&graph);
+        let scopes: BTreeMap<String, ScopeMetadata> = [(
+            "classic".to_string(),
+            ScopeMetadata::new("classic").unwrap(),
+        )]
+        .into_iter()
+        .collect();
+        WorkflowDefinition::define(
+            def_id(),
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                graph,
+                grid,
+                scopes,
+            )
+            .0,
+            defined_at(),
+        )
+        .unwrap()
+        .0
+    }
+
+    /// greenfield のワークスペースでは、グリッドが EXECUTE と言う reverse-engineering を SKIP に
+    /// 畳んで計画を解決する (upstream `intent-create` の greenfield 調整)。brownfield では
+    /// グリッドどおりに EXECUTE のままである。
+    #[test]
+    fn create_folds_reverse_engineering_only_for_a_greenfield_workspace() {
+        let definition = reverse_engineering_definition();
+        let reverse_engineering = StageSlug::parse("reverse-engineering").unwrap();
+
+        let (greenfield, _) = Intent::create(
+            id(),
+            &definition,
+            StartRequest::new("classic", "build it"),
+            scan(),
+            defined_at(),
+        )
+        .unwrap();
+        let folded = greenfield
+            .stages()
+            .at(greenfield
+                .stages()
+                .position_of(&reverse_engineering)
+                .unwrap())
+            .unwrap();
+        assert_eq!(folded.plan_action(), PlanAction::Skip);
+        assert!(folded.is_greenfield_adjusted());
+        assert!(folded.is_conditional());
+        assert_eq!(
+            greenfield
+                .first_post_initialization()
+                .map(|entry| entry.slug().as_str().to_string()),
+            Some("domain-design".to_string()),
+            "着地先は畳んだ次の in-scope ステージ"
+        );
+
+        let (brownfield, _) = Intent::create(
+            id(),
+            &definition,
+            StartRequest::new("classic", "build it"),
+            WorkspaceScan::new(BrownfieldGreenfield::Brownfield, "Rust", "", "cargo").unwrap(),
+            defined_at(),
+        )
+        .unwrap();
+        let kept = brownfield
+            .stages()
+            .at(brownfield
+                .stages()
+                .position_of(&reverse_engineering)
+                .unwrap())
+            .unwrap();
+        assert_eq!(kept.plan_action(), PlanAction::Execute);
+        assert!(!kept.is_greenfield_adjusted());
     }
 
     #[test]

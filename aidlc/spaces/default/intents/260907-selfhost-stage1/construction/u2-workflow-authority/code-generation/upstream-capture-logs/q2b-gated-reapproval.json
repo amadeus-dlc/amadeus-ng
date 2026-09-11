@@ -1,0 +1,1058 @@
+{
+  "question": "Q2: MEMORY_EMPTY の重複抑止の鍵（ゲート段での再承認）",
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459",
+    "verified_manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "rust_binary": {
+    "path": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/target/debug/aidlc",
+    "sha256": "f60a3d6316ca19e9bad87d81c9620295b66b80fa6c632f8101d8fb2b293e2dae"
+  },
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/upstream-capture-logs/capture-q2b-gated-reapproval.ts",
+    "/private/tmp/claude-501/-Users-j5ik2o-orca-workspaces-amadeus-ng-stage1/9066110a-1655-41d7-b3db-924e89f60ca9/scratchpad/upstream/dist/claude",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/target/debug/aidlc",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/upstream-capture-logs/q2b-gated-reapproval.json"
+  ],
+  "normalization": "一時 workspace の絶対パス・ISO 時刻・sha256・intent 名のみ",
+  "comparison": [
+    {
+      "step": "01-next",
+      "note": "初期化を畳む",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [ ] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": null,
+        "checkbox": "- [ ] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "same_total": true
+    },
+    {
+      "step": "02-jump-forward",
+      "note": "requirements-analysis まで進める",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "same_total": true
+    },
+    {
+      "step": "03-first-answer",
+      "note": "要約確認を記録する",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "same_total": true
+    },
+    {
+      "step": "03-first-review-request",
+      "note": "レビューを起こす",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "same_total": true
+    },
+    {
+      "step": "03-first-review-complete",
+      "note": "READY の受領証を記録する",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "same_total": true
+    },
+    {
+      "step": "03-first-awaiting",
+      "note": "ゲートを提示する",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [?] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "same_total": true
+    },
+    {
+      "step": "03-first-approved",
+      "note": "人の Approve を記録して承認する",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [x] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "same_total": true
+    },
+    {
+      "step": "04-compile-1",
+      "note": "1 回目の compile — ここで初めて記録されるはず",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [x] requirements-analysis — EXECUTE",
+        "memory_empty_total": 1
+      },
+      "same_total": false
+    },
+    {
+      "step": "05-compile-2",
+      "note": "2 回目の compile — 同じ承認なので増えないはず",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [x] requirements-analysis — EXECUTE",
+        "memory_empty_total": 1
+      },
+      "same_total": false
+    },
+    {
+      "step": "06-jump-redo-immediate",
+      "note": "requirements-analysis へ再跳躍（間を置かない）",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 1
+      },
+      "same_total": false
+    },
+    {
+      "step": "07-second-answer",
+      "note": "要約確認を記録する",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 1
+      },
+      "same_total": false
+    },
+    {
+      "step": "07-second-review-request",
+      "note": "レビューを起こす",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 1
+      },
+      "same_total": false
+    },
+    {
+      "step": "07-second-review-complete",
+      "note": "READY の受領証を記録する",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 1
+      },
+      "same_total": false
+    },
+    {
+      "step": "07-second-awaiting",
+      "note": "ゲートを提示する",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [?] requirements-analysis — EXECUTE",
+        "memory_empty_total": 1
+      },
+      "same_total": false
+    },
+    {
+      "step": "07-second-approved",
+      "note": "人の Approve を記録して承認する",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [x] requirements-analysis — EXECUTE",
+        "memory_empty_total": 1
+      },
+      "same_total": false
+    },
+    {
+      "step": "08-compile-after-immediate",
+      "note": "間を置かない再承認のあとの compile",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [x] requirements-analysis — EXECUTE",
+        "memory_empty_total": 2
+      },
+      "same_total": false
+    },
+    {
+      "step": "09-jump-redo-after-gap",
+      "note": "requirements-analysis へ再跳躍（2 秒あけて）",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 2
+      },
+      "same_total": false
+    },
+    {
+      "step": "10-third-answer",
+      "note": "要約確認を記録する",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 2
+      },
+      "same_total": false
+    },
+    {
+      "step": "10-third-review-request",
+      "note": "レビューを起こす",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 2
+      },
+      "same_total": false
+    },
+    {
+      "step": "10-third-review-complete",
+      "note": "READY の受領証を記録する",
+      "upstream": {
+        "exit": 1,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 2
+      },
+      "same_total": false
+    },
+    {
+      "step": "10-third-awaiting",
+      "note": "ゲートを提示する",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [?] requirements-analysis — EXECUTE",
+        "memory_empty_total": 2
+      },
+      "same_total": false
+    },
+    {
+      "step": "10-third-approved",
+      "note": "人の Approve を記録して承認する",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [x] requirements-analysis — EXECUTE",
+        "memory_empty_total": 2
+      },
+      "same_total": false
+    },
+    {
+      "step": "11-compile-after-gap",
+      "note": "★ 時刻が進んだ再承認のあとの compile — ここが答え",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [x] requirements-analysis — EXECUTE",
+        "memory_empty_total": 3
+      },
+      "same_total": false
+    },
+    {
+      "step": "12-compile-filled",
+      "note": "日誌が埋まった位置は対象外",
+      "upstream": {
+        "exit": 0,
+        "checkbox": "- [-] requirements-analysis — EXECUTE",
+        "memory_empty_total": 0
+      },
+      "rust": {
+        "exit": 0,
+        "checkbox": "- [x] requirements-analysis — EXECUTE",
+        "memory_empty_total": 3
+      },
+      "same_total": false
+    }
+  ],
+  "observations": {
+    "upstream": {
+      "impl": "upstream",
+      "steps": [
+        {
+          "step": "01-next",
+          "note": "初期化を畳む",
+          "exit": 0,
+          "stdout": "{\"kind\":\"load-steering\",\"stage\":\"reverse-engineering\",\"bundle\":\"sha256:<HASH>\",\"part\":1,\"parts\":1,\"rules_content\":[{\"path\":\"aidlc/spaces/default/memory/org.md\",\"text\":\"# Org-Level Rules\\n\\n> Framework defaults. Read with `team.md` and `project.md` from the active\\n> space. The resolver loads every applicable layer; narrower layers add\\n> specialisation and must not contradict broader policy.\\n\\n\"},{\"path\":\"aidlc/spaces/default/memory/org.md\",\"text\":\"## Way of Working\\n\\nWe use **trunk-based deve",
+          "stderr": "",
+          "checkbox": "- [ ] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "02-jump-forward",
+          "note": "requirements-analysis まで進める",
+          "exit": 0,
+          "stdout": "{\"direction\":\"forward\",\"target\":\"requirements-analysis\",\"target_phase\":\"INCEPTION\",\"stages_skipped\":[\"reverse-engineering\"],\"stages_reset\":[],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-answer",
+          "note": "要約確認を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record the summary choice because no matching unanswered summary question exists for this stage and work item. Record the question before presenting it, then wait for the human's choice.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-review-request",
+          "note": "レビューを起こす",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot start review for \\\"requirements-analysis\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\"Looks correct\\\" after the human responds.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-review-complete",
+          "note": "READY の受領証を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record a verdict for review iteration 1 on \\\"requirements-analysis\\\" because no pending request with that number exists. Start or retry that review first.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-awaiting",
+          "note": "ゲートを提示する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"error\",\"message\":\"Could not update the approval status for \\\"requirements-analysis\\\": {\\\"error\\\":\\\"Refusing to complete \\\\\\\"requirements-analysis\\\\\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\\\\\"Looks correct\\\\\\\" after the human responds.\\\"}\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-approved",
+          "note": "人の Approve を記録して承認する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"error\",\"message\":\"Could not complete \\\"requirements-analysis\\\": {\\\"error\\\":\\\"Refusing to complete \\\\\\\"requirements-analysis\\\\\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\\\\\"Looks correct\\\\\\\" after the human responds.\\\"}\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "04-compile-1",
+          "note": "1 回目の compile — ここで初めて記録されるはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "05-compile-2",
+          "note": "2 回目の compile — 同じ承認なので増えないはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "06-jump-redo-immediate",
+          "note": "requirements-analysis へ再跳躍（間を置かない）",
+          "exit": 0,
+          "stdout": "{\"direction\":\"redo\",\"target\":\"requirements-analysis\",\"target_phase\":\"INCEPTION\",\"stages_skipped\":[],\"stages_reset\":[\"requirements-analysis\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "07-second-answer",
+          "note": "要約確認を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record the summary choice because no matching unanswered summary question exists for this stage and work item. Record the question before presenting it, then wait for the human's choice.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "07-second-review-request",
+          "note": "レビューを起こす",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot start review for \\\"requirements-analysis\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\"Looks correct\\\" after the human responds.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "07-second-review-complete",
+          "note": "READY の受領証を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record a verdict for review iteration 1 on \\\"requirements-analysis\\\" because no pending request with that number exists. Start or retry that review first.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "07-second-awaiting",
+          "note": "ゲートを提示する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"error\",\"message\":\"Could not update the approval status for \\\"requirements-analysis\\\": {\\\"error\\\":\\\"Refusing to complete \\\\\\\"requirements-analysis\\\\\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\\\\\"Looks correct\\\\\\\" after the human responds.\\\"}\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "07-second-approved",
+          "note": "人の Approve を記録して承認する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"error\",\"message\":\"Could not complete \\\"requirements-analysis\\\": {\\\"error\\\":\\\"Refusing to complete \\\\\\\"requirements-analysis\\\\\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\\\\\"Looks correct\\\\\\\" after the human responds.\\\"}\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "08-compile-after-immediate",
+          "note": "間を置かない再承認のあとの compile",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "09-jump-redo-after-gap",
+          "note": "requirements-analysis へ再跳躍（2 秒あけて）",
+          "exit": 0,
+          "stdout": "{\"direction\":\"redo\",\"target\":\"requirements-analysis\",\"target_phase\":\"INCEPTION\",\"stages_skipped\":[],\"stages_reset\":[\"requirements-analysis\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "10-third-answer",
+          "note": "要約確認を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record the summary choice because no matching unanswered summary question exists for this stage and work item. Record the question before presenting it, then wait for the human's choice.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "10-third-review-request",
+          "note": "レビューを起こす",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot start review for \\\"requirements-analysis\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\"Looks correct\\\" after the human responds.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "10-third-review-complete",
+          "note": "READY の受領証を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record a verdict for review iteration 1 on \\\"requirements-analysis\\\" because no pending request with that number exists. Start or retry that review first.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "10-third-awaiting",
+          "note": "ゲートを提示する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"error\",\"message\":\"Could not update the approval status for \\\"requirements-analysis\\\": {\\\"error\\\":\\\"Refusing to complete \\\\\\\"requirements-analysis\\\\\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\\\\\"Looks correct\\\\\\\" after the human responds.\\\"}\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "10-third-approved",
+          "note": "人の Approve を記録して承認する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"error\",\"message\":\"Could not complete \\\"requirements-analysis\\\": {\\\"error\\\":\\\"Refusing to complete \\\\\\\"requirements-analysis\\\\\\\": no fresh human-backed consolidated summary confirmation is recorded. Present the summary, then run `aidlc-log.ts answer --checkpoint summary-confirmation --stage requirements-analysis --details \\\\\\\"Looks correct\\\\\\\" after the human responds.\\\"}\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "11-compile-after-gap",
+          "note": "★ 時刻が進んだ再承認のあとの compile — ここが答え",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "12-compile-filled",
+          "note": "日誌が埋まった位置は対象外",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        }
+      ],
+      "final_rows": [],
+      "raw_memory_empty_timestamps": [],
+      "raw_final_completed_at": []
+    },
+    "rust": {
+      "impl": "rust",
+      "steps": [
+        {
+          "step": "01-next",
+          "note": "初期化を畳む",
+          "exit": null,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [ ] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "02-jump-forward",
+          "note": "requirements-analysis まで進める",
+          "exit": 0,
+          "stdout": "{\"direction\":\"forward\",\"target\":\"requirements-analysis\",\"target_phase\":\"INCEPTION\",\"stages_skipped\":[\"reverse-engineering\"],\"stages_reset\":[],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-answer",
+          "note": "要約確認を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record the summary choice because no matching unanswered summary question exists for this stage and work item. Record the question before presenting it, then wait for the human's choice.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-review-request",
+          "note": "レビューを起こす",
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_REQUESTED\",\"stage\":\"requirements-analysis\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-review-complete",
+          "note": "READY の受領証を記録する",
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_COMPLETED\",\"stage\":\"requirements-analysis\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-awaiting",
+          "note": "ゲートを提示する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"print\",\"message\":\"Recorded awaiting-approval for \\\"requirements-analysis\\\".\"}",
+          "stderr": "",
+          "checkbox": "- [?] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "03-first-approved",
+          "note": "人の Approve を記録して承認する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"done\",\"reason\":\"Committed approve for \\\"requirements-analysis\\\" (scope: bugfix). State advanced; run next to continue.\"}",
+          "stderr": "",
+          "checkbox": "- [x] requirements-analysis — EXECUTE",
+          "graph_row": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": []
+        },
+        {
+          "step": "04-compile-1",
+          "note": "1 回目の compile — ここで初めて記録されるはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [x] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:06Z"
+          },
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "05-compile-2",
+          "note": "2 回目の compile — 同じ承認なので増えないはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [x] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:06Z"
+          },
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "06-jump-redo-immediate",
+          "note": "requirements-analysis へ再跳躍（間を置かない）",
+          "exit": 0,
+          "stdout": "{\"direction\":\"redo\",\"target\":\"requirements-analysis\",\"target_phase\":\"INCEPTION\",\"stages_skipped\":[],\"stages_reset\":[\"requirements-analysis\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:06Z"
+          },
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "07-second-answer",
+          "note": "要約確認を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record the summary choice because no matching unanswered summary question exists for this stage and work item. Record the question before presenting it, then wait for the human's choice.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:06Z"
+          },
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "07-second-review-request",
+          "note": "レビューを起こす",
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_REQUESTED\",\"stage\":\"requirements-analysis\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:06Z"
+          },
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "07-second-review-complete",
+          "note": "READY の受領証を記録する",
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_COMPLETED\",\"stage\":\"requirements-analysis\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:06Z"
+          },
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "07-second-awaiting",
+          "note": "ゲートを提示する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"print\",\"message\":\"Recorded awaiting-approval for \\\"requirements-analysis\\\".\"}",
+          "stderr": "",
+          "checkbox": "- [?] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:06Z"
+          },
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "07-second-approved",
+          "note": "人の Approve を記録して承認する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"done\",\"reason\":\"Committed approve for \\\"requirements-analysis\\\" (scope: bugfix). State advanced; run next to continue.\"}",
+          "stderr": "",
+          "checkbox": "- [x] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:06Z"
+          },
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "08-compile-after-immediate",
+          "note": "間を置かない再承認のあとの compile",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [x] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:11Z"
+          },
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "09-jump-redo-after-gap",
+          "note": "requirements-analysis へ再跳躍（2 秒あけて）",
+          "exit": 0,
+          "stdout": "{\"direction\":\"redo\",\"target\":\"requirements-analysis\",\"target_phase\":\"INCEPTION\",\"stages_skipped\":[],\"stages_reset\":[\"requirements-analysis\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":3,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:11Z"
+          },
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "10-third-answer",
+          "note": "要約確認を記録する",
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record the summary choice because no matching unanswered summary question exists for this stage and work item. Record the question before presenting it, then wait for the human's choice.\"}",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:11Z"
+          },
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "10-third-review-request",
+          "note": "レビューを起こす",
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_REQUESTED\",\"stage\":\"requirements-analysis\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:11Z"
+          },
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "10-third-review-complete",
+          "note": "READY の受領証を記録する",
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_COMPLETED\",\"stage\":\"requirements-analysis\"}",
+          "stderr": "",
+          "checkbox": "- [-] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:11Z"
+          },
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "10-third-awaiting",
+          "note": "ゲートを提示する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"print\",\"message\":\"Recorded awaiting-approval for \\\"requirements-analysis\\\".\"}",
+          "stderr": "",
+          "checkbox": "- [?] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:11Z"
+          },
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "10-third-approved",
+          "note": "人の Approve を記録して承認する",
+          "exit": 0,
+          "stdout": "{\"kind\":\"done\",\"reason\":\"Committed approve for \\\"requirements-analysis\\\" (scope: bugfix). State advanced; run next to continue.\"}",
+          "stderr": "",
+          "checkbox": "- [x] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:11Z"
+          },
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "11-compile-after-gap",
+          "note": "★ 時刻が進んだ再承認のあとの compile — ここが答え",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [x] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "completed_at": "2026-09-10T03:37:17Z"
+          },
+          "memory_empty_total": 3,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "step": "12-compile-filled",
+          "note": "日誌が埋まった位置は対象外",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "checkbox": "- [x] requirements-analysis — EXECUTE",
+          "graph_row": {
+            "outcome": "approved",
+            "memory_entries": 1,
+            "completed_at": "2026-09-10T03:37:17Z"
+          },
+          "memory_empty_total": 3,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+          ]
+        }
+      ],
+      "final_rows": [
+        "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+        "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis",
+        "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: requirements-analysis"
+      ],
+      "raw_memory_empty_timestamps": [
+        "2026-09-10T03:37:08Z",
+        "2026-09-10T03:37:12Z",
+        "2026-09-10T03:37:18Z"
+      ],
+      "raw_final_completed_at": [
+        "2026-09-10T03:37:17Z"
+      ]
+    }
+  }
+}

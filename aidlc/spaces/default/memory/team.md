@@ -7,31 +7,47 @@
 
 ## Way of Working
 
-<!-- Affirmed during practices-discovery. Example: -->
-<!-- We use GitHub Flow with feature branches. Branches live 3-5 days max. -->
-<!-- Hotfixes branch from main and merge back via expedited review. -->
+私たちは `main` を統合先とする短命ブランチで作業する。Bolt（実装から統合までの作業単位）を [Pull Request](https://github.com/amadeus-dlc/amadeus-ng/pulls) 1 本に対応させ、直列 1 本で進め、squash-merge（履歴を1コミットにまとめる統合）する。根拠は依頼原文の「進め方の規律」と `memory/org.md` の統合先指定である。
+
+マージ前に CI（自動検証）全ジョブの成功とレビュー収束を確認する。現在の CI は未解決レビュースレッドを検査する。必要なレビュー指摘と競合が残らず、更新後の検査が成功するまで修正する。具体的な作業順・各変更の着地条件は後続の実行計画で決める。
+
+基準は現行 `main` のコードとする。既存コードの再設計・説明の書き直しをせず、必要な契約差分に限定する。過去の削除済み記録を前提にしない。
 
 ## Walking Skeleton
 
-<!-- Affirmed during practices-discovery. Example: -->
-<!-- We don't run a walking skeleton — our deployment pipeline is mature -->
-<!-- and the slice cost outweighs the value at our maturity stage. -->
+私たちは walking skeleton（各部分を接続し、最小構成で端から端まで動かす先行実装）を独立した先行作業単位として設けず、通常の作業単位で進める。要求分析で確定する必須差分を依存順に実装する。根拠は [確認事項](practices-discovery-questions.md) Q1 の回答「A. 通常の作業単位で進める」と全体の内容確認である。
+
+完了条件の実地スモーク（本リポジトリで小さな bugfix 相当の intent を開始から完了まで通す確認）は省略しない。自律実行は行わない。
 
 ## Testing Posture
 
-<!-- Affirmed during practices-discovery. Example: -->
-<!-- We use BDD. Specifications drive scenarios; scenarios drive code. -->
-<!-- Each Unit ships with feature files in /features/. -->
+- **Methodology**: tdd
+- **Ordering**: 各変更で失敗するテストを先に実行して red を確認し、最小の実装で green にしてから、テストの成功を維持しながら refactor する。
+- 上記は依頼原文で確定済みであり、`org.md` の未確定時の `test-after` 既定は適用しない。
+- workspace の行カバレッジ床 90.0% とベース比較を維持する。現設定の相対許容は 0.01 パーセントポイント、乱数シードは `20260823`、除外は `modules/app/aidlc/src/main.rs` 1 ファイルである。相対条件は `head >= base - 0.01` であり、絶対床90.0%に許容誤差を適用しない。これらは実測設定として保持し、テストを通すために緩和しない。
+- Quint（状態遷移を検査する仕様言語）3モデル、ITF（モデルの実行トレースを実装で再生する形式）、ゴールデン（観測結果の比較用データ）を外側の受入検査とする。ゴールデンの採用版は未裁定である。
+- `cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo lint`、`cargo test --workspace`、独立した `tools/lint` の検査を維持する。
+- `cargo audit` は依存ライブラリの脆弱性検査である。現在の CI 集約では必須対象外だが、今回の「CI 全ジョブ green」はこのジョブの成功も要求する。CI設定の変更が承認されたという意味ではない。
+- ゴールデンのバイト一致とキー集合の比較を区別し、未検証ケースと既知の出力差を要求分析へ渡す。既存検査の成功を完全互換の証明へ拡大解釈しない。具体的な限界は [evidence.md](evidence.md) に記録する。
+- 本工程ではテスト・カバレッジを再実行していない。既存設定の存在と、検査の成功を区別する。
 
 ## Deployment
 
-<!-- Affirmed during practices-discovery. -->
+私たちは本リポジトリと Claude Code を対象に、`target/release/aidlc` を使う実地スモーク、同バイナリの自己診断、CI全ジョブ成功を確認してセルフホストへ切り替える。現在のバイナリがこの条件を満たすとは扱わない。`runtime::run` を使う統合検査や、試験装置が監査へ人間の応答を置く検査を、releaseバイナリ・Claude Code・実フック・人間の承認による実地スモークの代わりにしない。
+
+切替後は「ホスト = 直近の安定タグ、ターゲット = 開発版」の2版運用とする。切替対象のタグと実体、参照先、復帰先と復帰の検証は後続の実行計画・切替工程で具体化する。今はタグを作成しない。
+
+`org.md` の staging 自動配備は複数環境を想定した既定であり、本件で staging の新設やクラウド配備を追加しない。現物のワークフローから自動配備処理は確認できなかった。
 
 ## Code Style
 
-<!-- Team-specific conventions beyond the linter. Example: -->
-<!-- - Prefer named exports over default exports -->
-<!-- - All async functions return Result<T, E>, never throw -->
+私たちは `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/` と `memory/` を規則の正本とし、README の衝突優先順と各規則の射程を守る。観測互換の契約を最優先にし、上流と実装の不一致を読み替えず人間の裁定を求める。
+
+Rust の整形は `rustfmt.toml`、静的検査は `Cargo.toml` と `cargo lint` に従う。現物の Rust は `1.95.0`、整形幅は100、改行はUnixである。CQRS（書込みと読取りの責務分離）、依存方向、型のカプセル化、境界でのエラー文言変換など、既存規則を変更箇所へ適用する。規則の存在と機械検出の範囲を同一視しない。テスト内の unwrap・expect は `clippy.toml` の許容範囲に従い、一律禁止と読み替えない。具体的な型・戻り値・配置は正本を参照し、この規則記録で新設しない。
+
+ステージ・エージェント・プロトコル・コンパイル済みグラフは配布資産を再利用する。独自にステージ本文を作らない。配布ファイルの修正は同期用パッチに記録する。
+
+会話・成果物は日本語とし、術語は初出で注釈を付ける。固定の契約トークンは逐語で保つ。規則は `memory/`、参照資料は `knowledge/documents/`、横断知識は `knowledge/aidlc-shared/`、工程成果物は intent 記録へ置く。
 
 ## Forbidden
 

@@ -35,6 +35,7 @@ impl ContinueTokenBuilder {
     ) -> ContinueTokenBuilder {
         ContinueTokenBuilder {
             token: ContinueToken {
+                state_text_digest: None,
                 version: TokenVersion::CURRENT,
                 stage,
                 scope,

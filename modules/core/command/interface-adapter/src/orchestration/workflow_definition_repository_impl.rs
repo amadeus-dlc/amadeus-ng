@@ -130,6 +130,16 @@ impl std::error::Error for CorruptDetail {
     }
 }
 
+impl<S> WorkflowDefinitionRepositoryImpl<S> {
+    const fn new(store: S, location: Option<StorePath>, strategy: SnapshotStrategy) -> Self {
+        Self {
+            store,
+            location,
+            strategy,
+        }
+    }
+}
+
 impl WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore> {
     /// SQLite ファイルのストアを開く (無ければ作る)。
     ///
@@ -154,11 +164,11 @@ impl WorkflowDefinitionRepositoryImpl<WorkflowDefinitionSqliteStore> {
                 path: Some(path.as_path().to_path_buf()),
             }
         })?;
-        Ok(WorkflowDefinitionRepositoryImpl {
+        Ok(Self::new(
             store,
-            location: Some(path.clone()),
-            strategy: SnapshotStrategy::default(),
-        })
+            Some(path.clone()),
+            SnapshotStrategy::default(),
+        ))
     }
 
     /// 内包しているストアの場所 (開き直しの材料)。
@@ -175,11 +185,11 @@ impl WorkflowDefinitionRepositoryImpl<WorkflowDefinitionMemoryStore> {
     /// 違わない。だからこそ契約テストが両方に同じ約束を課せる (BR2.7)。
     #[must_use]
     pub fn in_memory() -> WorkflowDefinitionRepositoryImpl<WorkflowDefinitionMemoryStore> {
-        WorkflowDefinitionRepositoryImpl {
-            store: WorkflowDefinitionMemoryStore::new(),
-            location: None,
-            strategy: SnapshotStrategy::default(),
-        }
+        Self::new(
+            WorkflowDefinitionMemoryStore::new(),
+            None,
+            SnapshotStrategy::default(),
+        )
     }
 }
 
@@ -202,11 +212,7 @@ impl<S: Clone> WorkflowDefinitionRepositoryImpl<S> {
     /// 表) を共有する設計なので、写しではなく同じストアを指す別の口が得られる。
     #[must_use]
     pub fn reopened(&self) -> WorkflowDefinitionRepositoryImpl<S> {
-        WorkflowDefinitionRepositoryImpl {
-            store: self.store.clone(),
-            location: self.location.clone(),
-            strategy: self.strategy,
-        }
+        Self::new(self.store.clone(), self.location.clone(), self.strategy)
     }
 }
 

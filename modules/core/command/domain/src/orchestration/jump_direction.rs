@@ -1,7 +1,6 @@
-//! `JumpDirection` — forward / backward / redo。`Current Stage` とのインデックス比較から
-//! **導出**される (upstream `aidlc-jump.ts:175-181`、02 §8)。
+//! `JumpDirection` — forward / backward / redo。resolveは位置から導き、executeは指定値を保存する。
 
-/// jump の 3 方向。`target` と `cursor` の大小関係そのもの (閉集合・全域)。
+/// jumpが指示する3つの適用方式。executeでは到達点の位置関係と一致するとは限らない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JumpDirection {
     /// `target > cursor` — まだ通過していないステージへ跳ぶ。介在する in-flight ステージと、
@@ -15,7 +14,7 @@ pub enum JumpDirection {
 }
 
 impl JumpDirection {
-    /// 方向は宣言ではなく導出 (E1 — 矛盾した方向指定は表現不能)。
+    /// resolveが現在位置から推奨方向を導く。executeの指定値を置き換える用途には使わない。
     #[must_use]
     pub fn of(cursor: usize, target: usize) -> JumpDirection {
         use std::cmp::Ordering::*;

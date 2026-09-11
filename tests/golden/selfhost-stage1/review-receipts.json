@@ -1,0 +1,76 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-review-receipts.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/review-receipts.json"
+  ],
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "fixture": "upstream-a277af21/stage1/cases.json#review/request",
+  "normalization": "workspace path and ISO timestamp only",
+  "observations": [
+    {
+      "id": "request",
+      "args": [
+        "review",
+        "--stage",
+        "requirements-analysis",
+        "--reviewer",
+        "aidlc-product-lead-agent",
+        "--iteration",
+        "1"
+      ],
+      "exit": 0,
+      "stdout": "{\"emitted\":\"REVIEW_REQUESTED\",\"stage\":\"requirements-analysis\"}\n",
+      "stderr": "",
+      "audit": "\n## Review Requested\n**Timestamp**: <TS>\n**Event**: REVIEW_REQUESTED\n**Stage**: requirements-analysis\n**Reviewer**: aidlc-product-lead-agent\n**Iteration**: 1\n**Artifact Fingerprint**: sha256:6d7abc84613dde3fdd397bb5324e9aff18f22b868a057a81434c883f80d14211\n**Review Appendix Artifact**: inception/requirements-analysis/requirements.md\n**Review Appendix Offset**: 163\n**Review Appendix Prior Digest**: none\n**Review Appendix Prior Length**: 0\n\n---\n",
+      "state_changed": false
+    },
+    {
+      "id": "retry-first",
+      "args": [
+        "review",
+        "--stage",
+        "requirements-analysis",
+        "--reviewer",
+        "aidlc-product-lead-agent",
+        "--iteration",
+        "1",
+        "--retry-pending"
+      ],
+      "exit": 0,
+      "stdout": "{\"emitted\":\"REVIEW_REQUESTED\",\"stage\":\"requirements-analysis\",\"retry\":\"pending-request\"}\n",
+      "stderr": "",
+      "audit": "\n## Review Requested\n**Timestamp**: <TS>\n**Event**: REVIEW_REQUESTED\n**Stage**: requirements-analysis\n**Reviewer**: aidlc-product-lead-agent\n**Iteration**: 1\n**Retry**: pending-request\n**Artifact Fingerprint**: sha256:6d7abc84613dde3fdd397bb5324e9aff18f22b868a057a81434c883f80d14211\n**Review Appendix Artifact**: inception/requirements-analysis/requirements.md\n**Review Appendix Offset**: 163\n**Review Appendix Prior Digest**: none\n**Review Appendix Prior Length**: 0\n\n---\n",
+      "state_changed": false
+    },
+    {
+      "id": "retry-second",
+      "args": [
+        "review",
+        "--stage",
+        "requirements-analysis",
+        "--reviewer",
+        "aidlc-product-lead-agent",
+        "--iteration",
+        "1",
+        "--retry-pending"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "{\"error\":\"Refusing review retry for \\\"requirements-analysis\\\": REVIEW_REQUESTED iteration 1 already used its one pending-request retry. Do not dispatch it again; record the bounded incomplete-review NOT-READY fallback or start the next permitted review iteration.\"}\n",
+      "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log review --stage requirements-analysis --reviewer aidlc-product-lead-agent --iteration 1 --retry-pending\n**Error**: Refusing review retry for \"requirements-analysis\": REVIEW_REQUESTED iteration 1 already used its one pending-request retry. Do not dispatch it again; record the bounded incomplete-review NOT-READY fallback or start the next permitted review iteration.\n\n---\n",
+      "state_changed": false
+    }
+  ]
+}

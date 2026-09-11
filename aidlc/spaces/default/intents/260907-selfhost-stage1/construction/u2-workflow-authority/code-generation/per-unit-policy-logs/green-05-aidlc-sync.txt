@@ -1,0 +1,3 @@
+配布元: vendor/aidlc-workflows @ 801c570062f67dc8f4952ee5fc601381d09db7ec
+バージョン: 2.7.1-j5ik2o.1
+コピー 0、削除 0、保持設定の確認 0

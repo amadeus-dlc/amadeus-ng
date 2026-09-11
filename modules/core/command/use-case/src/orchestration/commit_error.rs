@@ -20,6 +20,10 @@ use super::port::RepositoryError;
 // ある (裁定 6 で受容済み)。テストは `matches!` で判定する。
 #[derive(Debug)]
 pub enum CommitError {
+    /// 状態遷移前に必要なpipeline完了根拠の拒否。
+    Pipeline(CommandError),
+    /// 報告結果の構築拒否。
+    ReportResult(core_command_domain::orchestration::ReportResultError),
     /// 実行の再構成・永続化の失敗（ポートからそのまま伝播）。
     Repository(RepositoryError<IntentExecutionId>),
     /// intent の取得の失敗（ポートからそのまま伝播）。
@@ -70,6 +74,8 @@ pub enum CommitError {
 impl fmt::Display for CommitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Pipeline(error) => write!(f, "pipeline: {error}"),
+            CommitError::ReportResult(error) => write!(f, "report result: {error}"),
             CommitError::Repository(error) => write!(f, "repository: {error}"),
             CommitError::IntentRepository(error) => write!(f, "intent repository: {error}"),
             CommitError::Refused(refusal) => write!(f, "refused: {refusal}"),
@@ -101,6 +107,8 @@ impl std::error::Error for CommitError {
     /// 返すと、その材料はこの型で行き止まりになり、診断には分類だけが残る。
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::Pipeline(error) => Some(error),
+            CommitError::ReportResult(error) => Some(error),
             CommitError::Repository(error) => Some(error),
             CommitError::IntentRepository(error) => Some(error),
             CommitError::Refused(refusal) => Some(refusal),

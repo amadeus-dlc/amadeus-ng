@@ -1,15 +1,12 @@
 //! sha256 ダイジェスト本体 (BR1.6)。族は [`DigestFamily`](super::digest_family::DigestFamily)。
 
-use sha2::{Digest as _, Sha256};
+use crate::hash::sha256_hex;
 
 use crate::canon_json::profile::SerializationProfile;
 use crate::canon_json::value::JsonValue;
 use crate::canon_json::writer::serialize;
 
 use super::digest_family::DigestFamily;
-
-/// 小文字 16 進の桁。
-const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// sha256 ダイジェスト。族と 64 桁小文字 hex を持つ。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -62,29 +59,6 @@ pub fn hash_canonical(value: &JsonValue) -> Digest {
 pub fn hash_compact(value: &JsonValue) -> Digest {
     let text = serialize(value, SerializationProfile::ContractCompact);
     Digest::new(DigestFamily::CompactRaw, sha256_hex(text.as_bytes()))
-}
-
-/// バイト列の sha256 を 64 桁の小文字 16 進で返す。
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let mut hex = String::with_capacity(64);
-    for byte in hasher.finalize() {
-        // ニブル (0..16) の変換なので添字は必ず範囲内 — `unwrap_or` の既定分岐には到達しない。
-        hex.push(
-            HEX_DIGITS
-                .get(usize::from(byte >> 4))
-                .copied()
-                .unwrap_or(b'0') as char,
-        );
-        hex.push(
-            HEX_DIGITS
-                .get(usize::from(byte & 0x0f))
-                .copied()
-                .unwrap_or(b'0') as char,
-        );
-    }
-    hex
 }
 
 #[cfg(test)]

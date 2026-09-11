@@ -29,13 +29,21 @@ pub struct SteeringPlanRow {
 }
 
 impl SteeringPlanRow {
-    /// フェーズ 1 つぶんのパック済みチャンク列を 1 行へ写す (**この型の唯一の構築経路**)。
+    /// フェーズ 1 つぶんの規則ファイル列とパック済みチャンク列を 1 行へ写す
+    /// (**この型の唯一の構築経路**)。
+    ///
+    /// `bundle_digest` の素材は分割前の `files` (upstream `loaded.content`)、部数と台帳の素材は
+    /// 分割後の `chunks` である。
     #[must_use]
-    pub(crate) fn of(phase: PhaseId, chunks: &[Vec<RuleContent>]) -> SteeringPlanRow {
+    pub(crate) fn of(
+        phase: PhaseId,
+        files: &[RuleContent],
+        chunks: &[Vec<RuleContent>],
+    ) -> SteeringPlanRow {
         SteeringPlanRow {
             id: row_id::steering_plan(phase.as_str()),
             phase: phase.as_str().to_string(),
-            bundle_digest: digest::bundle(chunks),
+            bundle_digest: digest::bundle(files),
             part_count: chunks.len(),
             delivered_paths: json_column::strings(&delivered_paths(chunks)),
         }
@@ -53,7 +61,7 @@ impl SteeringPlanRow {
         &self.phase
     }
 
-    /// ルール束のダイジェスト (チャンクの入れ子配列 — 分割境界を含む)。
+    /// ルール束のダイジェスト (`sha256:` 前置 — `load-steering` の `bundle` にそのまま出る値)。
     #[must_use]
     pub fn bundle_digest(&self) -> &str {
         &self.bundle_digest
@@ -96,20 +104,25 @@ mod tests {
 
     #[test]
     fn an_empty_plan_rows_zero_parts_and_an_empty_ledger() {
-        let row = SteeringPlanRow::of(PhaseId::Initialization, &[]);
+        let row = SteeringPlanRow::of(PhaseId::Initialization, &[], &[]);
         assert_eq!(row.phase(), "initialization");
         assert_eq!(row.part_count(), 0);
         assert_eq!(row.delivered_paths(), "[]");
-        assert_eq!(row.bundle_digest().len(), 64);
+        assert!(
+            row.bundle_digest().starts_with("sha256:"),
+            "upstream の綴り"
+        );
+        assert_eq!(row.bundle_digest().len(), "sha256:".len() + 64);
     }
 
     #[test]
     fn the_ledger_deduplicates_in_reading_order_across_chunk_boundaries() {
+        let files = vec![content("a.md", "124"), content("b.md", "3")];
         let chunks = vec![
             vec![content("a.md", "1"), content("a.md", "2")],
             vec![content("b.md", "3"), content("a.md", "4")],
         ];
-        let row = SteeringPlanRow::of(PhaseId::Inception, &chunks);
+        let row = SteeringPlanRow::of(PhaseId::Inception, &files, &chunks);
         assert_eq!(
             row.delivered_paths(),
             r#"["a.md","b.md"]"#,

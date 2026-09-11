@@ -39,7 +39,25 @@ mod oversize_directive;
 pub mod presenter;
 pub mod record_name;
 pub mod runtime;
-pub mod scaffold;
+
 pub mod steering;
 mod turn;
 pub mod wording;
+
+mod workspace_scanner;
+
+mod summary_questions_input;
+
+mod source_baseline;
+mod source_fingerprint;
+
+mod lexical_path;
+
+mod intent_location;
+mod session_navigation;
+
+mod session_processes;
+
+mod usage_ledger;
+
+mod validation_basis;

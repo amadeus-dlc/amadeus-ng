@@ -1,0 +1,14 @@
+{
+  "id": "hooks/stop-forwarding-loop/block-pending-directive",
+  "family": "hooks",
+  "hook": "stop-forwarding-loop",
+  "case": "block-pending-directive",
+  "upstream_hook_file": ".claude/hooks/aidlc-continue-workflow.ts",
+  "description": "保留中の directive があるターン終了は decision:block で差し止め、続きの指示を reason に載せる",
+  "workspace": "active-workflow",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

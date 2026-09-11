@@ -223,14 +223,14 @@ function tokenPresent(cell: string, token: string): boolean {
   return new RegExp(`(?:^|[\\s,;/])${escaped}(?:$|[\\s,;/])`, "i").test(cell);
 }
 
-function storyAssignments(storyMapPath: string, units: string[], ids: Map<string, string>): { assignments: Map<string, Set<string>>; reason?: string } {
+function storyAssignments(storyMapPath: string, units: string[], ids: Map<string, string>, patterns: RegExp[] = [ID_PATTERNS.US]): { assignments: Map<string, Set<string>>; reason?: string } {
   const read = readText(storyMapPath);
   if (read.content === null) return { assignments: new Map(), reason: read.reason };
   const assignments = new Map<string, Set<string>>();
   for (const line of read.content.split(/\r?\n/)) {
     const cells = markdownCells(line);
     if (cells.length === 0) continue;
-    const stories = extractIds(line, [ID_PATTERNS.US]);
+    const stories = extractIds(line, patterns);
     if (stories.size === 0) continue;
     for (const unit of units) {
       const aliases = [unit, ids.get(unit)].filter((value): value is string => value !== undefined);
@@ -245,6 +245,39 @@ function storyAssignments(storyMapPath: string, units: string[], ids: Map<string
   return assignments.size === 0
     ? { assignments, reason: `unit-of-work-story-map.md contains no story-to-unit mappings: ${storyMapPath}` }
     : { assignments };
+}
+
+function requirementAssignments(path: string, context: UnitContext): { assignments: Map<string, Set<string>>; reason?: string } {
+  const read = readText(path);
+  const assignments = new Map<string, Set<string>>();
+  if (read.content === null) return { assignments, reason: read.reason };
+  let idColumn = -1;
+  let unitColumns: number[] = [];
+  for (const line of read.content.split(/\r?\n/)) {
+    if (!line.trim()) { idColumn = -1; unitColumns = []; }
+    const cells = markdownCells(line);
+    if (cells.length === 0) continue;
+    const headings = cells.map(cell => cell.replace(/[`*]/g, "").toLowerCase());
+    const header = headings.findIndex(cell => ["requirement id", "要求id", "要求 id"].includes(cell));
+    if (header >= 0) {
+      idColumn = header;
+      unitColumns = headings.flatMap((cell, index) => ["primary unit id", "unit id", "directory", "unit", "supporting units", "support unit", "支援単位", "担当単位", "対応する単位"].includes(cell) ? [index] : []);
+      continue;
+    }
+    if (idColumn < 0 || unitColumns.length === 0) continue;
+    for (const id of extractIds(cells[idColumn] ?? "", [ID_PATTERNS.FR])) {
+      const assigned = assignments.get(id) ?? new Set<string>();
+      for (const unit of context.units) {
+        const aliases = [unit, context.unitIds.get(unit)].filter((alias): alias is string => alias !== undefined);
+        if (unitColumns.some(index => aliases.some(alias => {
+          const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          return new RegExp(`(?:^|[^A-Za-z0-9_-])${escaped}(?:$|[^A-Za-z0-9_-])`, "i").test(cells[index] ?? "");
+        }))) assigned.add(unit);
+      }
+      assignments.set(id, assigned);
+    }
+  }
+  return assignments.size > 0 ? { assignments } : { assignments, reason: `unit-of-work-story-map.md contains no requirement-to-unit mappings: ${path}` };
 }
 
 function resolveUnitContext(projectDir: string, outputPath: string, docsDir: string): { context?: UnitContext; reason?: string } {
@@ -317,12 +350,24 @@ function resolveUpstream(stage: string, projectDir: string, outputPath: string):
       unitIds: unitIdMap(join(docsDir, "inception", "units-generation", "unit-of-work.md"), dag.units),
     };
     result.unitContext = context;
-    const mapped = storyAssignments(storyMap, context.units, context.unitIds);
+    const mapped = storyAssignments(storyMap, context.units, context.unitIds,
+      existsSync(stories) ? [ID_PATTERNS.US] : [ID_PATTERNS.FR]);
     if (mapped.reason) result.reasons.push(mapped.reason);
     result.storyAssignments = mapped.assignments;
     for (const id of sourceIds) {
       if (!mapped.assignments.has(id)) result.extraGaps.push(id);
     }
+    return result;
+  }
+
+  if (stage === "code-generation" && resolveBoltDag(projectDir).state === "none") {
+    if (extractUnitName(outputPath) !== null) {
+      result.reasons.push("unit-of-work-dependency.md is missing; cannot verify the code-generation unit");
+      return result;
+    }
+    addSource(result, existsSync(stories)
+      ? idsFromFile(stories, [ID_PATTERNS.AC], "stories.md")
+      : idsFromFile(requirements, [ID_PATTERNS.FR, ID_PATTERNS.NFR], "requirements.md"));
     return result;
   }
 
@@ -419,7 +464,14 @@ function resolveUpstream(stage: string, projectDir: string, outputPath: string):
         addSource(result, idsFromFile(stories, [ID_PATTERNS.AC], "stories.md"));
       }
     } else {
-      addSource(result, idsFromFile(requirements, [ID_PATTERNS.FR, ID_PATTERNS.NFR], "requirements.md"));
+      const source = idsFromFile(requirements, [ID_PATTERNS.FR, ID_PATTERNS.NFR], "requirements.md");
+      if (source.reason) result.reasons.push(source.reason);
+      const mapped = requirementAssignments(storyMap, resolvedUnit.context);
+      if (mapped.reason) result.reasons.push(mapped.reason);
+      for (const id of source.ids) {
+        if (id.startsWith("NFR") || mapped.assignments.get(id)?.has(unit)) result.ids.add(id);
+      }
+      if (![...mapped.assignments.values()].some(units => units.has(unit))) result.reasons.push(`no requirements in unit-of-work-story-map.md map to unit "${unit}"`);
     }
     const nfrDir = join(docsDir, "construction", unit, "nfr-requirements");
     for (const name of ["performance-requirements.md", "security-requirements.md", "scalability-requirements.md", "reliability-requirements.md"]) {
@@ -597,6 +649,11 @@ function main(): void {
   reasons.push(...upstream.reasons);
   gaps.push(...upstream.extraGaps);
   const missingFromUpstreamIds = [...upstream.ids].filter((id) => !declared.has(id));
+  if (stage === "code-generation") {
+    for (const id of declared) {
+      if (/^FR\d+(?:\.\d+)?$/.test(id) && !upstream.ids.has(id)) invalidEntries.push(`${id}: requirement is not assigned to this code-generation target`);
+    }
+  }
   if (upstream.ids.size === 0 && upstream.reasons.length === 0) {
     reasons.push(`upstream ID set is empty for stage "${stage}"`);
   }

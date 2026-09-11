@@ -1,0 +1,545 @@
+{
+  "question": "Q1: per-unit 受領証を配線するか（review-freeze の凍結範囲）",
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459",
+    "verified_manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "rust_binary": {
+    "path": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/target/debug/aidlc",
+    "sha256": "4bb7ebad466674a66748a9a91ace377afc607df492b65543bbcbd79f32a01898"
+  },
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/upstream-capture-logs/capture-q1-review-freeze.ts",
+    "/private/tmp/claude-501/-Users-j5ik2o-orca-workspaces-amadeus-ng-stage1/9066110a-1655-41d7-b3db-924e89f60ca9/scratchpad/upstream/dist/claude",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/target/debug/aidlc",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/upstream-capture-logs/q1-review-freeze.json"
+  ],
+  "normalization": "一時 workspace の絶対パス・ISO 時刻・sha256・intent 名のみ",
+  "comparison": [
+    {
+      "case": "A-control/stage-level-stage",
+      "upstream_setup_ok": false,
+      "rust_setup_ok": true,
+      "rows": [
+        {
+          "probe": "declared-artifact",
+          "upstream": "採取できず",
+          "rust": {
+            "exit": 2,
+            "blocked": true,
+            "freeze_rows": 1
+          },
+          "same": null
+        },
+        {
+          "probe": "undeclared-diary",
+          "upstream": "採取できず",
+          "rust": {
+            "exit": 0,
+            "blocked": false,
+            "freeze_rows": 0
+          },
+          "same": null
+        }
+      ]
+    },
+    {
+      "case": "B-zero-unit/stage-level-receipt",
+      "upstream_setup_ok": true,
+      "rust_setup_ok": true,
+      "rows": [
+        {
+          "probe": "declared-plan",
+          "upstream": {
+            "exit": 0,
+            "blocked": false,
+            "freeze_rows": 0
+          },
+          "rust": {
+            "exit": 2,
+            "blocked": true,
+            "freeze_rows": 1
+          },
+          "same": false
+        },
+        {
+          "probe": "declared-summary",
+          "upstream": {
+            "exit": 0,
+            "blocked": false,
+            "freeze_rows": 0
+          },
+          "rust": {
+            "exit": 2,
+            "blocked": true,
+            "freeze_rows": 1
+          },
+          "same": false
+        },
+        {
+          "probe": "undeclared-diary",
+          "upstream": {
+            "exit": 0,
+            "blocked": false,
+            "freeze_rows": 0
+          },
+          "rust": {
+            "exit": 0,
+            "blocked": false,
+            "freeze_rows": 0
+          },
+          "same": true
+        }
+      ]
+    },
+    {
+      "case": "C-unit/unit-receipt",
+      "upstream_setup_ok": false,
+      "rust_setup_ok": false,
+      "rows": [
+        {
+          "probe": "own-unit",
+          "upstream": "採取できず",
+          "rust": "採取できず",
+          "same": null
+        },
+        {
+          "probe": "stage-level",
+          "upstream": "採取できず",
+          "rust": "採取できず",
+          "same": null
+        },
+        {
+          "probe": "sibling-unit",
+          "upstream": "採取できず",
+          "rust": "採取できず",
+          "same": null
+        }
+      ]
+    },
+    {
+      "case": "D-zero-unit/no-receipt",
+      "upstream_setup_ok": true,
+      "rust_setup_ok": true,
+      "rows": [
+        {
+          "probe": "declared-plan",
+          "upstream": {
+            "exit": 0,
+            "blocked": false,
+            "freeze_rows": 0
+          },
+          "rust": {
+            "exit": 0,
+            "blocked": false,
+            "freeze_rows": 0
+          },
+          "same": true
+        }
+      ]
+    }
+  ],
+  "observations": [
+    {
+      "case": "A-control/stage-level-stage",
+      "description": "対照群。per-unit でない requirements-analysis に終端受領証。既知の凍結が両者で起きるかを確かめ、記録の読み取りが成立していることを示す。",
+      "impl": "upstream",
+      "setup_ok": false,
+      "setup_error": null,
+      "setup_steps": [
+        {
+          "step": "review-request",
+          "argv": [
+            "review",
+            "--stage",
+            "requirements-analysis",
+            "--reviewer",
+            "aidlc-product-lead-agent",
+            "--iteration",
+            "1"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot start review for \\\"requirements-analysis\\\": /private<RECORD>/inception/requirements-analysis/requirements-analysis-questions.md must contain exactly one `[Answer]: Looks correct` in its Consolidated Summary Confirmation section.\"}\n"
+        },
+        {
+          "step": "review-complete",
+          "argv": [
+            "review",
+            "--stage",
+            "requirements-analysis",
+            "--reviewer",
+            "aidlc-product-lead-agent",
+            "--iteration",
+            "1",
+            "--verdict",
+            "READY"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record a verdict for review iteration 1 on \\\"requirements-analysis\\\" because no pending request with that number exists. Start or retry that review first.\"}\n"
+        }
+      ],
+      "probes": []
+    },
+    {
+      "case": "A-control/stage-level-stage",
+      "description": "対照群。per-unit でない requirements-analysis に終端受領証。既知の凍結が両者で起きるかを確かめ、記録の読み取りが成立していることを示す。",
+      "impl": "rust",
+      "setup_ok": true,
+      "setup_error": null,
+      "setup_steps": [
+        {
+          "step": "review-request",
+          "argv": [
+            "review",
+            "--stage",
+            "requirements-analysis",
+            "--reviewer",
+            "aidlc-product-lead-agent",
+            "--iteration",
+            "1"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_REQUESTED\",\"stage\":\"requirements-analysis\"}\n",
+          "stderr": ""
+        },
+        {
+          "step": "review-complete",
+          "argv": [
+            "review",
+            "--stage",
+            "requirements-analysis",
+            "--reviewer",
+            "aidlc-product-lead-agent",
+            "--iteration",
+            "1",
+            "--verdict",
+            "READY"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_COMPLETED\",\"stage\":\"requirements-analysis\"}\n",
+          "stderr": ""
+        }
+      ],
+      "probes": [
+        {
+          "probe": "declared-artifact",
+          "target": "<RECORD>/inception/requirements-analysis/requirements.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/inception/requirements-analysis/requirements.md\"}}",
+          "exit": 2,
+          "blocked": true,
+          "stdout": "",
+          "stderr": "review-freeze: \"<RECORD>/inception/requirements-analysis/requirements.md\" is this stage's output document for stage \"requirements-analysis\", and its latest review is final. Writing it now would make that review no longer cover the document. If this is a reviewer suggestion, quote it at the gate instead of applying it. Restart this stage with /aidlc --stage requirements-analysis; the recorded answers survive, and the stage will ask for confirmation again.\n",
+          "audit_freeze_rows": [
+            "## Review Freeze Blocked\n**Timestamp**: <TS>\n**Event**: REVIEW_FREEZE_BLOCKED\n**Tool**: Write\n**Target**: <RECORD>/inception/requirements-analysis/requirements.md\n**Stage**: requirements-analysis"
+          ]
+        },
+        {
+          "probe": "undeclared-diary",
+          "target": "<RECORD>/inception/requirements-analysis/memory.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/inception/requirements-analysis/memory.md\"}}",
+          "exit": 0,
+          "blocked": false,
+          "stdout": "",
+          "stderr": "",
+          "audit_freeze_rows": []
+        }
+      ]
+    },
+    {
+      "case": "B-zero-unit/stage-level-receipt",
+      "description": "本題。per-unit ステージ code-generation に Unit を 1 つも作らず、stage 水準の終端受領証を立てた状態で produces を書く。",
+      "impl": "upstream",
+      "setup_ok": true,
+      "setup_error": null,
+      "setup_steps": [
+        {
+          "step": "review-request",
+          "argv": [
+            "review",
+            "--stage",
+            "code-generation",
+            "--reviewer",
+            "aidlc-architecture-reviewer-agent",
+            "--iteration",
+            "1"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_REQUESTED\",\"stage\":\"code-generation\"}\n",
+          "stderr": ""
+        },
+        {
+          "step": "review-complete",
+          "argv": [
+            "review",
+            "--stage",
+            "code-generation",
+            "--reviewer",
+            "aidlc-architecture-reviewer-agent",
+            "--iteration",
+            "1",
+            "--verdict",
+            "READY"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_COMPLETED\",\"stage\":\"code-generation\"}\n",
+          "stderr": ""
+        }
+      ],
+      "probes": [
+        {
+          "probe": "declared-plan",
+          "target": "<RECORD>/construction/code-generation/code-generation-plan.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/construction/code-generation/code-generation-plan.md\"}}",
+          "exit": 0,
+          "blocked": false,
+          "stdout": "",
+          "stderr": "",
+          "audit_freeze_rows": []
+        },
+        {
+          "probe": "declared-summary",
+          "target": "<RECORD>/construction/code-generation/code-summary.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/construction/code-generation/code-summary.md\"}}",
+          "exit": 0,
+          "blocked": false,
+          "stdout": "",
+          "stderr": "",
+          "audit_freeze_rows": []
+        },
+        {
+          "probe": "undeclared-diary",
+          "target": "<RECORD>/construction/code-generation/memory.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/construction/code-generation/memory.md\"}}",
+          "exit": 0,
+          "blocked": false,
+          "stdout": "",
+          "stderr": "",
+          "audit_freeze_rows": []
+        }
+      ]
+    },
+    {
+      "case": "B-zero-unit/stage-level-receipt",
+      "description": "本題。per-unit ステージ code-generation に Unit を 1 つも作らず、stage 水準の終端受領証を立てた状態で produces を書く。",
+      "impl": "rust",
+      "setup_ok": true,
+      "setup_error": null,
+      "setup_steps": [
+        {
+          "step": "review-request",
+          "argv": [
+            "review",
+            "--stage",
+            "code-generation",
+            "--reviewer",
+            "aidlc-architecture-reviewer-agent",
+            "--iteration",
+            "1"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_REQUESTED\",\"stage\":\"code-generation\"}\n",
+          "stderr": ""
+        },
+        {
+          "step": "review-complete",
+          "argv": [
+            "review",
+            "--stage",
+            "code-generation",
+            "--reviewer",
+            "aidlc-architecture-reviewer-agent",
+            "--iteration",
+            "1",
+            "--verdict",
+            "READY"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"REVIEW_COMPLETED\",\"stage\":\"code-generation\"}\n",
+          "stderr": ""
+        }
+      ],
+      "probes": [
+        {
+          "probe": "declared-plan",
+          "target": "<RECORD>/construction/code-generation/code-generation-plan.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/construction/code-generation/code-generation-plan.md\"}}",
+          "exit": 2,
+          "blocked": true,
+          "stdout": "",
+          "stderr": "review-freeze: \"<RECORD>/construction/code-generation/code-generation-plan.md\" is this stage's output document for stage \"code-generation\", and its latest review is final. Writing it now would make that review no longer cover the document. If this is a reviewer suggestion, quote it at the gate instead of applying it. Restart this stage with /aidlc --stage code-generation; the recorded answers survive, and the stage will ask for confirmation again.\n",
+          "audit_freeze_rows": [
+            "## Review Freeze Blocked\n**Timestamp**: <TS>\n**Event**: REVIEW_FREEZE_BLOCKED\n**Tool**: Write\n**Target**: <RECORD>/construction/code-generation/code-generation-plan.md\n**Stage**: code-generation"
+          ]
+        },
+        {
+          "probe": "declared-summary",
+          "target": "<RECORD>/construction/code-generation/code-summary.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/construction/code-generation/code-summary.md\"}}",
+          "exit": 2,
+          "blocked": true,
+          "stdout": "",
+          "stderr": "review-freeze: \"<RECORD>/construction/code-generation/code-summary.md\" is this stage's output document for stage \"code-generation\", and its latest review is final. Writing it now would make that review no longer cover the document. If this is a reviewer suggestion, quote it at the gate instead of applying it. Restart this stage with /aidlc --stage code-generation; the recorded answers survive, and the stage will ask for confirmation again.\n",
+          "audit_freeze_rows": [
+            "## Review Freeze Blocked\n**Timestamp**: <TS>\n**Event**: REVIEW_FREEZE_BLOCKED\n**Tool**: Write\n**Target**: <RECORD>/construction/code-generation/code-summary.md\n**Stage**: code-generation"
+          ]
+        },
+        {
+          "probe": "undeclared-diary",
+          "target": "<RECORD>/construction/code-generation/memory.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/construction/code-generation/memory.md\"}}",
+          "exit": 0,
+          "blocked": false,
+          "stdout": "",
+          "stderr": "",
+          "audit_freeze_rows": []
+        }
+      ]
+    },
+    {
+      "case": "C-unit/unit-receipt",
+      "description": "Unit 有り。Bolt u1/u2 を起こし、u1 にだけ終端受領証を立てる。自 Unit・stage 水準・兄弟 Unit の 3 宛先を撃つ。",
+      "impl": "upstream",
+      "setup_ok": false,
+      "setup_error": null,
+      "setup_steps": [
+        {
+          "step": "bolt-start/u1",
+          "argv": [
+            "start",
+            "--name",
+            "u1",
+            "--batch",
+            "1"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"BOLT_STARTED\",\"bolt_names\":\"u1\",\"batch\":\"1\",\"walking_skeleton\":false}\n",
+          "stderr": ""
+        },
+        {
+          "step": "bolt-start/u2",
+          "argv": [
+            "start",
+            "--name",
+            "u2",
+            "--batch",
+            "1"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"BOLT_STARTED\",\"bolt_names\":\"u2\",\"batch\":\"1\",\"walking_skeleton\":false}\n",
+          "stderr": ""
+        },
+        {
+          "step": "review-request/u1",
+          "argv": [
+            "review",
+            "--stage",
+            "code-generation",
+            "--reviewer",
+            "aidlc-architecture-reviewer-agent",
+            "--iteration",
+            "1",
+            "--unit",
+            "u1"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot start review for \\\"code-generation\\\": a required output document is missing or unreadable. Create every required output document for this stage, then retry the review.\"}\n"
+        },
+        {
+          "step": "review-complete/u1",
+          "argv": [
+            "review",
+            "--stage",
+            "code-generation",
+            "--reviewer",
+            "aidlc-architecture-reviewer-agent",
+            "--iteration",
+            "1",
+            "--unit",
+            "u1",
+            "--verdict",
+            "READY"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record a verdict for review iteration 1 on \\\"code-generation\\\" because no pending request with that number exists. Start or retry that review first.\"}\n"
+        }
+      ],
+      "probes": []
+    },
+    {
+      "case": "C-unit/unit-receipt",
+      "description": "Unit 有り。Bolt u1/u2 を起こし、u1 にだけ終端受領証を立てる。自 Unit・stage 水準・兄弟 Unit の 3 宛先を撃つ。",
+      "impl": "rust",
+      "setup_ok": false,
+      "setup_error": null,
+      "setup_steps": [
+        {
+          "step": "bolt-start/u1",
+          "argv": [
+            "start",
+            "--name",
+            "u1",
+            "--batch",
+            "1"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "Cannot run aidlc-bolt start: the start subcommand is not wired in this build. Only `set-autonomy` is available.\n"
+        }
+      ],
+      "probes": []
+    },
+    {
+      "case": "D-zero-unit/no-receipt",
+      "description": "陰性対照。受領証を一切立てずに同じ宛先を撃つ。両者とも通るはず。",
+      "impl": "upstream",
+      "setup_ok": true,
+      "setup_error": null,
+      "setup_steps": [],
+      "probes": [
+        {
+          "probe": "declared-plan",
+          "target": "<RECORD>/construction/code-generation/code-generation-plan.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/construction/code-generation/code-generation-plan.md\"}}",
+          "exit": 0,
+          "blocked": false,
+          "stdout": "",
+          "stderr": "",
+          "audit_freeze_rows": []
+        }
+      ]
+    },
+    {
+      "case": "D-zero-unit/no-receipt",
+      "description": "陰性対照。受領証を一切立てずに同じ宛先を撃つ。両者とも通るはず。",
+      "impl": "rust",
+      "setup_ok": true,
+      "setup_error": null,
+      "setup_steps": [],
+      "probes": [
+        {
+          "probe": "declared-plan",
+          "target": "<RECORD>/construction/code-generation/code-generation-plan.md",
+          "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<RECORD>/construction/code-generation/code-generation-plan.md\"}}",
+          "exit": 0,
+          "blocked": false,
+          "stdout": "",
+          "stderr": "",
+          "audit_freeze_rows": []
+        }
+      ]
+    }
+  ]
+}

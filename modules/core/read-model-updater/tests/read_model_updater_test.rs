@@ -185,6 +185,8 @@ fn journal() -> Vec<JournalEntry> {
 /// ループだけを孤立させるための読み手。
 #[derive(Debug, Default)]
 struct FakeReader {
+    plan_fingerprints: BTreeMap<String, core_read_model_updater::read_tables::PlanFingerprintRow>,
+    testing: Option<core_read_model_updater::read_tables::TestingTables>,
     publications: Rc<RefCell<BTreeMap<ProjectionName, (PublicationBatch, bool)>>>,
     journal: Vec<JournalEntry>,
     intents: Vec<(u64, Intent)>,
@@ -207,6 +209,10 @@ struct FakeReader {
     steering: Rc<RefCell<Option<SteeringTables>>>,
     /// steering 面を差し替えた回数 (再投影が走ったかどうかの観測点)。
     steering_writes: Rc<RefCell<usize>>,
+    /// 同居する成果物監査の行 (global 通番付き)。
+    artifacts: Vec<core_read_model_updater::orchestration::ArtifactJournalEntry>,
+    /// 同居するセッション監査の行 (global 通番付き)。
+    sessions: Vec<core_read_model_updater::orchestration::SessionJournalEntry>,
 }
 
 impl JournalReader for FakeReader {
@@ -239,6 +245,18 @@ impl JournalReader for FakeReader {
             .filter(|(position, _)| GlobalSeqNr::new(*position) <= to)
             .cloned()
             .collect();
+        let artifacts: Vec<_> = self
+            .artifacts
+            .iter()
+            .filter(|entry| entry.global_seq() <= to)
+            .cloned()
+            .collect();
+        let sessions: Vec<_> = self
+            .sessions
+            .iter()
+            .filter(|entry| entry.global_seq() <= to)
+            .cloned()
+            .collect();
         let last = rows
             .last()
             .map(JournalEntry::global_seq)
@@ -248,13 +266,17 @@ impl JournalReader for FakeReader {
                     .iter()
                     .map(|(position, _)| GlobalSeqNr::new(*position)),
             )
+            .chain(artifacts.iter().map(|entry| entry.global_seq()))
+            .chain(sessions.iter().map(|entry| entry.global_seq()))
             .max();
         Ok(JournalBatch::new(
             rows,
             intents.into_iter().map(|(_, intent)| intent).collect(),
             Vec::new(),
             last,
-        ))
+        )
+        .with_artifacts(artifacts)
+        .with_sessions(sessions))
     }
 
     async fn publish(
@@ -302,18 +324,34 @@ impl JournalReader for FakeReader {
             .filter(|(global, _)| GlobalSeqNr::new(*global) > after)
             .cloned()
             .collect();
+        let artifacts: Vec<_> = self
+            .artifacts
+            .iter()
+            .filter(|entry| entry.global_seq() > after)
+            .cloned()
+            .collect();
+        let sessions: Vec<_> = self
+            .sessions
+            .iter()
+            .filter(|entry| entry.global_seq() > after)
+            .cloned()
+            .collect();
         let scanned_to = executions
             .last()
             .map(JournalEntry::global_seq)
             .into_iter()
             .chain(intents.iter().map(|(global, _)| GlobalSeqNr::new(*global)))
+            .chain(artifacts.iter().map(|entry| entry.global_seq()))
+            .chain(sessions.iter().map(|entry| entry.global_seq()))
             .max();
         Ok(JournalBatch::new(
             executions,
             intents.into_iter().map(|(_, intent)| intent).collect(),
             Vec::new(),
             scanned_to,
-        ))
+        )
+        .with_artifacts(artifacts)
+        .with_sessions(sessions))
     }
 
     async fn checkpoint(
@@ -350,6 +388,27 @@ impl JournalReader for FakeReader {
         Ok(())
     }
 
+    async fn replace_plan_fingerprint(
+        &mut self,
+        row: &core_read_model_updater::read_tables::PlanFingerprintRow,
+    ) -> Result<(), JournalReadError> {
+        self.plan_fingerprints
+            .insert(row.id().to_string(), row.clone());
+        Ok(())
+    }
+    async fn testing_source_digest(&self) -> Result<Option<String>, JournalReadError> {
+        Ok(self
+            .testing
+            .as_ref()
+            .map(|tables| tables.source_digest().to_string()))
+    }
+    async fn replace_testing(
+        &mut self,
+        tables: &core_read_model_updater::read_tables::TestingTables,
+    ) -> Result<(), JournalReadError> {
+        self.testing = Some(tables.clone());
+        Ok(())
+    }
     async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError> {
         Ok(self
             .steering
@@ -388,7 +447,11 @@ impl Fixture {
         let audit_shard = dir.path().join("audit/host-abcd1234.md");
         let memory_dir = dir.path().join("memory");
         std::fs::create_dir_all(memory_dir.join("phases")).expect("memory 層を作る");
-        std::fs::write(memory_dir.join("org.md"), "# Org\n").expect("規則を置く");
+        std::fs::write(
+            memory_dir.join("org.md"),
+            "# Org\n\nALWAYS keep the audit record.\n",
+        )
+        .expect("規則を置く");
         Fixture {
             publications: Rc::new(RefCell::new(BTreeMap::new())),
             _dir: dir,
@@ -462,6 +525,8 @@ impl Fixture {
         let spy = Rc::new(RefCell::new(None));
         let updater = ReadModelUpdater::new(
             FakeReader {
+                plan_fingerprints: BTreeMap::new(),
+                testing: None,
                 journal,
                 intents,
                 checkpoints,
@@ -472,6 +537,8 @@ impl Fixture {
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
                 publications: Rc::clone(&self.publications),
+                artifacts: Vec::new(),
+                sessions: Vec::new(),
             },
             projection(),
             self.targets(),
@@ -497,6 +564,8 @@ impl Fixture {
         }
         ReadModelUpdater::new(
             FakeReader {
+                plan_fingerprints: BTreeMap::new(),
+                testing: None,
                 journal,
                 intents,
                 checkpoints,
@@ -507,6 +576,8 @@ impl Fixture {
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
                 publications: Rc::clone(&self.publications),
+                artifacts: Vec::new(),
+                sessions: Vec::new(),
             },
             projection(),
             self.targets(),
@@ -531,6 +602,8 @@ impl Fixture {
         let spy = Rc::new(RefCell::new(None));
         let updater = ReadModelUpdater::new(
             FakeReader {
+                plan_fingerprints: BTreeMap::new(),
+                testing: None,
                 journal,
                 intents,
                 checkpoints,
@@ -541,6 +614,8 @@ impl Fixture {
                 steering: Rc::clone(&self.steering),
                 steering_writes: Rc::clone(&self.steering_writes),
                 publications: Rc::clone(&self.publications),
+                artifacts: Vec::new(),
+                sessions: Vec::new(),
             },
             projection(),
             self.targets(),
@@ -1080,7 +1155,10 @@ async fn a_second_catch_up_leaves_the_rows_as_the_first_one_left_them() {
 #[tokio::test]
 async fn the_first_catch_up_projects_the_memory_layer_it_finds() {
     let fixture = Fixture::new();
-    fixture.write_rule("phases/inception.md", "# Inception\n");
+    fixture.write_rule(
+        "phases/inception.md",
+        "# Inception\n\nALWAYS confirm the scope.\n",
+    );
     let mut updater = fixture.updater(journal(), intents());
     updater.catch_up().await.expect("キャッチアップ");
 
@@ -1281,4 +1359,1052 @@ async fn a_disappeared_history_is_not_a_successful_catch_up() {
         assert_eq!(fixture.state(), state);
         assert!(!fixture.audit_shard.exists());
     }
+}
+
+/// 3 行目に任意のイベントを載せた履歴（genesis → GateOpened → 指定イベント）。
+fn journal_with(third: IntentExecutionEvent) -> Vec<JournalEntry> {
+    let mut rows = journal();
+    rows.pop();
+    rows.push(entry(4, 3, third));
+    rows
+}
+
+fn prompt_observed() -> IntentExecutionEvent {
+    IntentExecutionEvent::PromptObserved(core_command_domain::orchestration::PromptObserved::new(
+        event_id(),
+        execution_id(),
+        "session-1",
+        "A",
+        false,
+    ))
+}
+
+fn directive_issued() -> IntentExecutionEvent {
+    IntentExecutionEvent::DirectiveIssued(core_command_domain::orchestration::DirectiveIssued::new(
+        event_id(),
+        execution_id(),
+        core_command_domain::orchestration::ActiveDirective::new(
+            1,
+            genesis_intent().id().clone(),
+            core_command_domain::orchestration::DirectivePublication::new(
+                "1".repeat(64),
+                "2".repeat(64),
+                core_command_domain::orchestration::PublishedDirective::RunStage {
+                    stage: slug("practices-discovery"),
+                    unit: None,
+                },
+            ),
+            "2".repeat(64),
+            "sessionless:1111111111111111".to_string(),
+            0,
+            0,
+            1,
+        ),
+    ))
+}
+
+fn publication_io(error: CatchUpError) -> (PathBuf, std::io::ErrorKind) {
+    match error {
+        CatchUpError::PublicationIo { path, kind } => (path, kind),
+        other => panic!("PublicationIo を期待した: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_human_turn_file_that_cannot_be_read_stops_the_catch_up_with_its_path() {
+    let fixture = Fixture::new();
+    let human_turn = fixture.targets().human_turn_file().to_path_buf();
+    std::fs::create_dir_all(&human_turn).expect("読めない形で置く");
+    let mut updater = fixture.updater(journal_with(prompt_observed()), intents());
+    let (path, kind) = publication_io(updater.catch_up().await.expect_err("読めないので止まる"));
+    assert_eq!(path, human_turn);
+    assert_ne!(kind, std::io::ErrorKind::NotFound);
+    assert!(!fixture.audit_shard.exists(), "監査面へ何も書かない");
+}
+
+#[tokio::test]
+async fn a_human_turn_is_published_as_the_prompt_time() {
+    let fixture = Fixture::new();
+    let human_turn = fixture.targets().human_turn_file().to_path_buf();
+    std::fs::write(&human_turn, "2020-01-01T00:00:00Z\n").expect("前回の値");
+    let mut updater = fixture.updater(journal_with(prompt_observed()), intents());
+    updater.catch_up().await.expect("キャッチアップ");
+    let batch = fixture
+        .publications
+        .borrow()
+        .get(&projection())
+        .map(|(batch, _)| batch.clone())
+        .expect("公開要求");
+    let file = batch
+        .files()
+        .iter()
+        .find(|file| file.path() == human_turn)
+        .expect("人間応答の時刻ファイルが公開対象に入る");
+    assert_eq!(
+        *file,
+        core_read_model_updater::orchestration::PublicationFile::replacement(
+            &human_turn,
+            "2020-01-01T00:00:00Z\n",
+            "2026-08-21T09:14:07Z\n"
+        ),
+        "前回の値からの置換として公開される"
+    );
+}
+
+#[tokio::test]
+async fn an_active_directive_file_that_cannot_be_read_stops_the_catch_up_with_its_path() {
+    let fixture = Fixture::new();
+    let directive = fixture.targets().active_directive_file().to_path_buf();
+    std::fs::create_dir_all(&directive).expect("読めない形で置く");
+    let mut updater = fixture.updater(journal_with(directive_issued()), intents());
+    let (path, kind) = publication_io(updater.catch_up().await.expect_err("読めないので止まる"));
+    assert_eq!(path, directive);
+    assert_ne!(kind, std::io::ErrorKind::NotFound);
+}
+
+#[tokio::test]
+async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
+    let fixture = Fixture::new();
+    let blocker = fixture._dir.path().join("record");
+    std::fs::write(&blocker, "not a directory").expect("ファイルで塞ぐ");
+    let mut checkpoints = BTreeMap::new();
+    checkpoints.insert(projection(), GlobalSeqNr::new(2));
+    let mut updater = ReadModelUpdater::new(
+        FakeReader {
+            plan_fingerprints: BTreeMap::new(),
+            testing: None,
+            journal: journal(),
+            intents: intents(),
+            checkpoints,
+            tables: Rc::new(RefCell::new(None)),
+            late_row: Rc::new(RefCell::new(None)),
+            reads: Rc::new(RefCell::new(0)),
+            lose_history_after_probe: false,
+            steering: Rc::clone(&fixture.steering),
+            steering_writes: Rc::clone(&fixture.steering_writes),
+            publications: Rc::clone(&fixture.publications),
+            artifacts: Vec::new(),
+            sessions: Vec::new(),
+        },
+        projection(),
+        ProjectionTargets::new(
+            blocker.join("aidlc-state.md"),
+            blocker.join("audit/host.md"),
+            fixture.memory_dir.clone(),
+        ),
+        fixture.steering_source(),
+    );
+    let error = updater.catch_up().await.expect_err("存在を確かめられない");
+    assert!(
+        matches!(error, CatchUpError::StateFileRead(_)),
+        "実際: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_reader_without_a_pipeline_face_reports_unsupported_instead_of_pretending() {
+    let mut reader = FakeReader::default();
+    let tables = core_read_model_updater::read_tables::PipelineTables::project(
+        &JournalBatch::empty(),
+        &IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+        None,
+    )
+    .expect("空の履歴からも表は組める");
+    let error = reader
+        .replace_pipeline(&tables)
+        .await
+        .expect_err("pipeline 面を持たない読み手");
+    assert!(
+        matches!(
+            error,
+            JournalReadError::Io {
+                kind: std::io::ErrorKind::Unsupported,
+                path: None
+            }
+        ),
+        "実際: {error:?}"
+    );
+}
+
+/// 公開名（記録ディレクトリ名と slug）を持つ intent の誕生。
+fn named_intent() -> Intent {
+    let base = genesis_intent();
+    Intent::from((
+        Created::new(
+            intent_event_id(),
+            base.id().clone(),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new("classic", "build it").with_record_name(
+                core_command_domain::orchestration::IntentRecordName::new(
+                    core_command_domain::workspace::IntentDirName::parse("260907-selfhost-stage1")
+                        .expect("記録名"),
+                    "selfhost-stage1",
+                ),
+            ),
+            base.stages().clone(),
+            base.scan().clone(),
+        ),
+        at(),
+    ))
+}
+
+/// 記録ディレクトリを 1 段掘り、`intents.json` の置き場（記録の親）を一時ディレクトリ直下に置く。
+struct RegistryFixture {
+    fixture: Fixture,
+    record: PathBuf,
+}
+
+impl RegistryFixture {
+    fn new() -> Self {
+        let fixture = Fixture::new();
+        let record = fixture._dir.path().join("record");
+        std::fs::create_dir_all(&record).expect("記録ディレクトリ");
+        std::fs::write(record.join("aidlc-state.md"), STATE).expect("出発点を置く");
+        Self { fixture, record }
+    }
+    fn registry(&self) -> PathBuf {
+        self.fixture._dir.path().join("intents.json")
+    }
+    fn updater(&self) -> ReadModelUpdater<FakeReader> {
+        let mut checkpoints = BTreeMap::new();
+        checkpoints.insert(projection(), GlobalSeqNr::new(2));
+        ReadModelUpdater::new(
+            FakeReader {
+                plan_fingerprints: BTreeMap::new(),
+                testing: None,
+                journal: journal(),
+                intents: vec![(1, named_intent())],
+                checkpoints,
+                tables: Rc::new(RefCell::new(None)),
+                late_row: Rc::new(RefCell::new(None)),
+                reads: Rc::new(RefCell::new(0)),
+                lose_history_after_probe: false,
+                steering: Rc::clone(&self.fixture.steering),
+                steering_writes: Rc::clone(&self.fixture.steering_writes),
+                publications: Rc::clone(&self.fixture.publications),
+                artifacts: Vec::new(),
+                sessions: Vec::new(),
+            },
+            projection(),
+            ProjectionTargets::new(
+                self.record.join("aidlc-state.md"),
+                self.record.join("audit/host-abcd1234.md"),
+                self.fixture.memory_dir.clone(),
+            ),
+            self.fixture.steering_source(),
+        )
+    }
+}
+
+#[tokio::test]
+async fn a_named_intent_is_registered_and_a_foreign_row_is_kept() {
+    let registry = RegistryFixture::new();
+    std::fs::write(
+        registry.registry(),
+        "[{\"uuid\":\"11111111-1111-7111-8111-111111111111\",\"slug\":\"other\",\"dirName\":\"260901-other\",\"scope\":\"express\",\"status\":\"complete\"}]\n",
+    )
+    .expect("既存の登録");
+    registry.updater().catch_up().await.expect("キャッチアップ");
+    let rows: Vec<serde_json::Value> =
+        serde_json::from_str(&std::fs::read_to_string(registry.registry()).expect("登録"))
+            .expect("JSON");
+    assert_eq!(rows.len(), 2, "イベント外の既存行は保持する");
+    let registered = rows.last().expect("追加された行");
+    assert_eq!(
+        registered.get("uuid"),
+        Some(&serde_json::Value::from(INTENT))
+    );
+    assert_eq!(
+        registered.get("dirName"),
+        Some(&serde_json::Value::from("260907-selfhost-stage1"))
+    );
+    assert_eq!(
+        registered.get("slug"),
+        Some(&serde_json::Value::from("selfhost-stage1"))
+    );
+    assert_eq!(
+        registered.get("status"),
+        Some(&serde_json::Value::from("in-flight"))
+    );
+}
+
+#[tokio::test]
+async fn a_registry_row_whose_directory_disagrees_with_the_birth_is_a_conflict() {
+    let registry = RegistryFixture::new();
+    std::fs::write(
+        registry.registry(),
+        format!("[{{\"uuid\":\"{INTENT}\",\"slug\":\"selfhost-stage1\",\"dirName\":\"260907-elsewhere\",\"scope\":\"classic\",\"status\":\"in-flight\"}}]\n"),
+    )
+    .expect("食い違う登録");
+    let error = registry
+        .updater()
+        .catch_up()
+        .await
+        .expect_err("読み替えない");
+    assert!(
+        matches!(&error, CatchUpError::PublicationConflict { path } if *path == registry.registry()),
+        "実際: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_registry_row_that_already_owns_the_directory_under_another_intent_is_a_conflict() {
+    let registry = RegistryFixture::new();
+    std::fs::write(
+        registry.registry(),
+        "[{\"uuid\":\"11111111-1111-7111-8111-111111111111\",\"slug\":\"other\",\"dirName\":\"260907-selfhost-stage1\",\"scope\":\"express\",\"status\":\"complete\"}]\n",
+    )
+    .expect("同じディレクトリを持つ別 intent");
+    let error = registry
+        .updater()
+        .catch_up()
+        .await
+        .expect_err("読み替えない");
+    assert!(
+        matches!(&error, CatchUpError::PublicationConflict { path } if *path == registry.registry()),
+        "実際: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_registry_that_cannot_be_read_stops_the_catch_up_with_its_path() {
+    let registry = RegistryFixture::new();
+    std::fs::create_dir_all(registry.registry()).expect("読めない形で置く");
+    let (path, kind) = publication_io(registry.updater().catch_up().await.expect_err("読めない"));
+    assert_eq!(path, registry.registry());
+    assert_ne!(kind, std::io::ErrorKind::NotFound);
+    let broken = RegistryFixture::new();
+    std::fs::write(broken.registry(), "{not json").expect("壊れた登録");
+    let (path, kind) = publication_io(broken.updater().catch_up().await.expect_err("読めない"));
+    assert_eq!(path, broken.registry());
+    assert_eq!(kind, std::io::ErrorKind::InvalidData);
+}
+
+/// 取得ループの失敗は、材料（投影名・位置・内包した失敗）を診断文言に載せる。
+#[test]
+fn the_catch_up_failures_render_their_material() {
+    use core_read_model_updater::read_tables::ReadTablesError;
+    use core_read_model_updater::workspace::StateFileWriteError;
+    let cases: Vec<(CatchUpError, &str)> = vec![
+        (
+            CatchUpError::LegacyProjection {
+                projection: "state-file".to_string(),
+            },
+            "legacy shared projection requires migration: state-file",
+        ),
+        (
+            CatchUpError::StateFileWrite(StateFileWriteError::Io {
+                message: "disk full".to_string(),
+            }),
+            "state file write: Io { message: \"disk full\" }",
+        ),
+        (
+            CatchUpError::HistoryDisappeared,
+            "history disappeared between reads",
+        ),
+        (
+            CatchUpError::ReadTables(ReadTablesError::MissingGenesis {
+                aggregate_id: "abc".to_string(),
+            }),
+            "read tables: missing genesis for abc",
+        ),
+        (CatchUpError::PlanUnavailable, "plan unavailable"),
+        (CatchUpError::MixedIntents, "mixed intents"),
+    ];
+    for (error, expected) in cases {
+        assert_eq!(error.to_string(), expected);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 誕生 (genesis) からの初回キャッチアップ — 状態ファイルの骨格・依頼原文・ソース基準
+// ---------------------------------------------------------------------------
+
+/// 記録名とソース基準を持つ intent の誕生記録（初回投影が公開する付随ファイルの材料）。
+///
+/// 初期化ステージ (`state-init`) を先頭に持つ — 誕生の投影はそれを完了済みにし、最初の
+/// ゲート付きステージへ着地する。`gated` を偽にすると着地先が無い計画になる。
+fn genesis_intent_with_baseline(gated: bool) -> Intent {
+    use core_command_domain::orchestration::{IntentRecordName, SourceBaseline};
+    use core_command_domain::workspace::IntentDirName;
+    let listing = format!("-\tsrc/lib.rs\t100644\t{}\n", "0".repeat(64));
+    let init = StageEntry::new(
+        slug("state-init"),
+        PhaseId::Initialization,
+        PlanAction::Execute,
+        false,
+        StageDisplay::new(
+            StageNumber::parse("0.1").expect("番号"),
+            "State Init",
+            "orchestrator",
+        )
+        .expect("単一行"),
+    );
+    let stage = StageEntry::new(
+        slug("practices-discovery"),
+        PhaseId::Inception,
+        PlanAction::Execute,
+        false,
+        StageDisplay::new(
+            StageNumber::parse("2.2").expect("番号"),
+            "Practices Discovery",
+            "aidlc-pipeline-deploy-agent",
+        )
+        .expect("単一行"),
+    );
+    let stages = if gated { vec![init, stage] } else { vec![init] };
+    Intent::from((
+        Created::new(
+            intent_event_id(),
+            IntentId::parse(INTENT).expect("UUIDv7"),
+            WorkflowDefinitionId::parse("claude").expect("定義 id"),
+            DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+            StartRequest::new("classic", "build \"it\"")
+                .with_record_name(IntentRecordName::new(
+                    IntentDirName::parse("260907-selfhost-stage1").expect("記録名"),
+                    "selfhost-stage1",
+                ))
+                .with_source_baseline(SourceBaseline::new(Some(listing)).expect("一覧")),
+            StageEntries::new(stages).expect("計画"),
+            WorkspaceScan::new(
+                BrownfieldGreenfield::Greenfield,
+                "Unknown",
+                "Unknown",
+                "Unknown",
+            )
+            .expect("単一行"),
+        ),
+        at(),
+    ))
+}
+
+/// チェックポイント 0 から始める読み手（誕生の行から描く）。
+fn updater_from_zero(
+    fixture: &Fixture,
+    journal: Vec<JournalEntry>,
+    intents: Vec<(u64, Intent)>,
+) -> ReadModelUpdater<FakeReader> {
+    ReadModelUpdater::new(
+        FakeReader {
+            journal,
+            intents,
+            publications: Rc::clone(&fixture.publications),
+            steering: Rc::clone(&fixture.steering),
+            steering_writes: Rc::clone(&fixture.steering_writes),
+            ..FakeReader::default()
+        },
+        projection(),
+        fixture.targets(),
+        fixture.steering_source(),
+    )
+}
+
+#[tokio::test]
+async fn the_first_catch_up_from_genesis_composes_the_state_and_publishes_the_birth_files() {
+    let fixture = Fixture::new();
+    std::fs::remove_file(&fixture.state_file).expect("骨格は投影が組む");
+    let intent = genesis_intent_with_baseline(true);
+    let started = IntentExecutionEvent::Started(Started::new(
+        event_id(),
+        execution_id(),
+        intent.id().clone(),
+        intent.stages().clone(),
+    ));
+    let journal = vec![
+        entry(2, 1, started),
+        entry(
+            3,
+            2,
+            IntentExecutionEvent::GateOpened(GateOpened::new(
+                event_id(),
+                execution_id(),
+                slug("practices-discovery"),
+                ArtifactPaths::empty(),
+            )),
+        ),
+    ];
+    let mut updater = updater_from_zero(&fixture, journal, vec![(1, intent.clone())]);
+    let reached = updater.catch_up().await.expect("初回キャッチアップ");
+    assert_eq!(reached, GlobalSeqNr::new(3));
+    let state = fixture.state();
+    assert!(
+        state.contains("## Stage Progress"),
+        "骨格が組まれる: {state}"
+    );
+    assert!(
+        state.contains("- **Current Stage**: practices-discovery"),
+        "{state}"
+    );
+    let targets = fixture.targets();
+    assert_eq!(
+        std::fs::read_to_string(targets.description_file()).expect("依頼原文"),
+        "\"build \\\"it\\\"\"\n",
+        "依頼原文は契約 JSON の文字列 1 つ"
+    );
+    let baseline = intent
+        .source_baseline()
+        .and_then(|baseline| baseline.snapshot_name())
+        .expect("基準名");
+    assert!(
+        fixture
+            .state_file
+            .with_file_name(".aidlc-source-review")
+            .join("code-generation")
+            .join(&baseline)
+            .is_file(),
+        "ソース基準の一覧が公開される"
+    );
+    assert!(
+        fixture.shard().contains("WORKFLOW_STARTED"),
+        "{}",
+        fixture.shard()
+    );
+
+    // 依頼原文が既に在れば書き直さない（人が触る可能性のある正本）。ゲート付きステージの
+    // 無い計画 (初期化だけ) でも誕生は描ける — 着地先が無いだけである。
+    let again = Fixture::new();
+    std::fs::remove_file(&again.state_file).unwrap();
+    std::fs::write(again.targets().description_file(), "\"kept\"\n").unwrap();
+    let init_only = genesis_intent_with_baseline(false);
+    let mut updater = updater_from_zero(
+        &again,
+        vec![entry(
+            2,
+            1,
+            IntentExecutionEvent::Started(Started::new(
+                event_id(),
+                execution_id(),
+                init_only.id().clone(),
+                init_only.stages().clone(),
+            )),
+        )],
+        vec![(1, init_only.clone())],
+    );
+    updater.catch_up().await.expect("初回キャッチアップ");
+    assert_eq!(
+        std::fs::read_to_string(again.targets().description_file()).unwrap(),
+        "\"kept\"\n"
+    );
+    assert!(
+        again.state().contains("- [x] state-init — EXECUTE"),
+        "{}",
+        again.state()
+    );
+}
+
+#[tokio::test]
+async fn a_state_or_description_path_that_cannot_be_probed_stops_the_catch_up() {
+    // 状態ファイルの親の位置にファイルがある → 在否を確かめられない (ENOTDIR)。
+    let fixture = Fixture::new();
+    let blocker = fixture._dir.path().join("blocker");
+    std::fs::write(&blocker, "file").unwrap();
+    let targets = ProjectionTargets::new(
+        blocker.join("aidlc-state.md"),
+        fixture.audit_shard.clone(),
+        fixture.memory_dir.clone(),
+    );
+    let mut updater = ReadModelUpdater::new(
+        FakeReader {
+            journal: journal(),
+            intents: intents(),
+            publications: Rc::clone(&fixture.publications),
+            steering: Rc::clone(&fixture.steering),
+            steering_writes: Rc::clone(&fixture.steering_writes),
+            ..FakeReader::default()
+        },
+        projection(),
+        targets,
+        fixture.steering_source(),
+    );
+    let error = updater.catch_up().await.expect_err("在否を確かめられない");
+    assert!(
+        matches!(error, CatchUpError::StateFileRead(_)),
+        "実際: {error:?}"
+    );
+    assert!(fixture.publications.borrow().is_empty());
+
+    // 状態ファイルは在るが、依頼原文の位置を確かめられない (project-description.json の
+    // 位置にディレクトリではなくファイルの下の経路を要求される形)。
+    let fixture = Fixture::new();
+    std::fs::remove_file(&fixture.state_file).unwrap();
+    let description = fixture.targets().description_file().to_path_buf();
+    std::fs::write(&description, "x").unwrap();
+    let nested = ProjectionTargets::new(
+        description.join("aidlc-state.md"),
+        fixture.audit_shard.clone(),
+        fixture.memory_dir.clone(),
+    );
+    let mut updater = ReadModelUpdater::new(
+        FakeReader {
+            journal: journal(),
+            intents: intents(),
+            publications: Rc::clone(&fixture.publications),
+            steering: Rc::clone(&fixture.steering),
+            steering_writes: Rc::clone(&fixture.steering_writes),
+            ..FakeReader::default()
+        },
+        projection(),
+        nested,
+        fixture.steering_source(),
+    );
+    let error = updater.catch_up().await.expect_err("在否を確かめられない");
+    assert!(
+        matches!(error, CatchUpError::StateFileRead(_)),
+        "実際: {error:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 保存済みの公開要求 (未確定) は、新しいイベントを描く前に片付ける
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_pending_publication_is_finished_before_new_events_are_drawn() {
+    let fixture = Fixture::new();
+    let pending = PublicationBatch::new(
+        GlobalSeqNr::new(2),
+        GlobalSeqNr::new(3),
+        vec![
+            core_read_model_updater::orchestration::PublicationFile::audit(
+                &fixture.audit_shard,
+                "\n## Saved\n**Event**: SAVED_CUT\n\n---\n",
+            )
+            .unwrap(),
+        ],
+    )
+    .for_targets(&fixture.targets())
+    .unwrap();
+    fixture
+        .publications
+        .borrow_mut()
+        .insert(projection(), (pending, false));
+    let mut updater = fixture.updater(journal(), intents());
+    let reached = updater
+        .catch_up()
+        .await
+        .expect("保存済みの断面を先に確定する");
+    assert_eq!(reached, GlobalSeqNr::new(4));
+    let shard = fixture.shard();
+    let saved = shard
+        .find("SAVED_CUT")
+        .expect("保存済みの断面が先に書かれる");
+    // 保存済みの断面は位置 3 までを確定したので、新しく描かれるのは位置 4 の改訂だけ。
+    let fresh = shard
+        .find("Re-entering gate after revision")
+        .unwrap_or_else(|| panic!("新しいイベントは後に描かれる: {shard}"));
+    assert!(saved < fresh, "{shard}");
+    assert_eq!(
+        shard.matches("STAGE_AWAITING_APPROVAL").count(),
+        1,
+        "確定済みの位置 (ゲート開始) は描き直さない: {shard}"
+    );
+    assert!(
+        fixture
+            .publications
+            .borrow()
+            .get(&projection())
+            .is_some_and(|(_, committed)| *committed)
+    );
+}
+
+#[tokio::test]
+async fn a_pending_publication_for_other_targets_or_beyond_the_history_is_refused() {
+    // 別の出力先へ束ねられた要求は、この出力先では確定しない。
+    let fixture = Fixture::new();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let foreign = ProjectionTargets::new(
+        elsewhere.path().join("aidlc-state.md"),
+        elsewhere.path().join("audit/host.md"),
+        elsewhere.path().join("memory"),
+    );
+    let pending = PublicationBatch::new(GlobalSeqNr::new(2), GlobalSeqNr::new(3), Vec::new())
+        .for_targets(&foreign)
+        .unwrap();
+    fixture
+        .publications
+        .borrow_mut()
+        .insert(projection(), (pending, false));
+    let mut updater = fixture.updater(journal(), intents());
+    assert_eq!(
+        updater.catch_up().await,
+        Err(CatchUpError::PublicationConflict {
+            path: fixture.state_file.clone()
+        })
+    );
+    assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
+
+    // 履歴が要求の位置まで無ければ、材料が無いので確定できない。
+    let fixture = Fixture::new();
+    let pending = PublicationBatch::new(GlobalSeqNr::new(2), GlobalSeqNr::new(9), Vec::new())
+        .for_targets(&fixture.targets())
+        .unwrap();
+    fixture
+        .publications
+        .borrow_mut()
+        .insert(projection(), (pending, false));
+    let mut updater = fixture.updater(journal(), intents());
+    assert_eq!(updater.catch_up().await, Err(CatchUpError::PlanUnavailable));
+    assert!(!fixture.audit_shard.exists());
+}
+
+// ---------------------------------------------------------------------------
+// 成果物・セッション監査は、記録の監査シャードへ同じ公開要求で積む
+// ---------------------------------------------------------------------------
+
+/// 記録配置 (`aidlc/spaces/<space>/intents/<record>/`) の出力先。
+struct RecordFixture {
+    _dir: TempDir,
+    record: PathBuf,
+    publications: Rc<RefCell<BTreeMap<ProjectionName, (PublicationBatch, bool)>>>,
+}
+
+impl RecordFixture {
+    fn new() -> RecordFixture {
+        let dir = tempfile::tempdir().expect("一時ディレクトリ");
+        let record = dir.path().join("aidlc/spaces/default/intents/260907-x");
+        std::fs::create_dir_all(record.join("memory")).unwrap();
+        std::fs::write(record.join("aidlc-state.md"), STATE).unwrap();
+        RecordFixture {
+            _dir: dir,
+            record,
+            publications: Rc::new(RefCell::new(BTreeMap::new())),
+        }
+    }
+    fn targets(&self) -> ProjectionTargets {
+        ProjectionTargets::new(
+            self.record.join("aidlc-state.md"),
+            self.record.join("audit/host-abcd1234.md"),
+            self.record.join("memory"),
+        )
+    }
+    fn shard(&self) -> String {
+        std::fs::read_to_string(self.record.join("audit/host-abcd1234.md")).unwrap_or_default()
+    }
+    fn updater(
+        &self,
+        checkpoint: u64,
+        journal: Vec<JournalEntry>,
+        intents: Vec<(u64, Intent)>,
+        artifacts: Vec<core_read_model_updater::orchestration::ArtifactJournalEntry>,
+        sessions: Vec<core_read_model_updater::orchestration::SessionJournalEntry>,
+    ) -> ReadModelUpdater<FakeReader> {
+        let mut checkpoints = BTreeMap::new();
+        if checkpoint > 0 {
+            checkpoints.insert(projection(), GlobalSeqNr::new(checkpoint));
+        }
+        ReadModelUpdater::new(
+            FakeReader {
+                journal,
+                intents,
+                checkpoints,
+                artifacts,
+                sessions,
+                publications: Rc::clone(&self.publications),
+                ..FakeReader::default()
+            },
+            projection(),
+            self.targets(),
+            SteeringSource::new(self.record.join("memory")),
+        )
+    }
+}
+
+fn hook_target(record: &str) -> core_command_domain::workspace::HookHealthTarget {
+    use core_command_domain::workspace::{HookHealthTarget, IntentDirName, SpaceName};
+    HookHealthTarget::new(
+        SpaceName::default(),
+        Some(IntentDirName::parse(record).expect("記録名")),
+    )
+}
+
+fn artifact_entry(
+    global: u64,
+    seq_nr: usize,
+    record: &str,
+    file: &str,
+    created: bool,
+) -> core_read_model_updater::orchestration::ArtifactJournalEntry {
+    use core_command_domain::workspace::{
+        ArtifactAuditEvent, ArtifactAuditEventId, ArtifactAuditId, ArtifactSaved,
+        ArtifactWriteObservation,
+    };
+    let target = hook_target(record);
+    let event = ArtifactAuditEvent::Saved(ArtifactSaved::new(
+        ArtifactAuditEventId::generate(),
+        ArtifactAuditId::for_target(&target),
+        ArtifactWriteObservation::new(
+            target,
+            "Write".into(),
+            file.into(),
+            "intent-capture".into(),
+            created,
+        ),
+    ));
+    core_read_model_updater::orchestration::ArtifactJournalEntry::new(
+        GlobalSeqNr::new(global),
+        seq_nr,
+        at(),
+        event,
+    )
+}
+
+fn session_entry(
+    global: u64,
+    seq_nr: usize,
+    record: &str,
+) -> core_read_model_updater::orchestration::SessionJournalEntry {
+    use core_command_domain::workspace::{
+        AuditFieldKey, AuditFields, EventType, SessionAuditEvent, SessionAuditEventId,
+        SessionAuditId, SessionAuditObservationId, SessionAuditRecord,
+    };
+    let target = hook_target(record);
+    let event = SessionAuditEvent::new(
+        SessionAuditEventId::generate(),
+        SessionAuditObservationId::generate(),
+        SessionAuditId::for_target(&target),
+        target,
+        SessionAuditRecord::new(
+            EventType::SessionEnded,
+            AuditFields::new().with(AuditFieldKey::parse("Reason").unwrap(), "clear"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    core_read_model_updater::orchestration::SessionJournalEntry::new(
+        GlobalSeqNr::new(global),
+        seq_nr,
+        at(),
+        event,
+    )
+}
+
+/// 成果物監査・セッション監査の行は、実行の行が確定済みの窓でも、記録のシャードへ積まれる。
+/// 別の記録の観測は積まない。
+///
+/// 成果物とセッションを**別の窓**で流すのは、同じシャードへの追記計画が 1 バッチに 2 つ
+/// 入ると 2 つ目の適用が競合として拒否されるため（`PublicationFile::audit` は計画時の
+/// 内容を前提に固定する）。混在窓の扱いは人間の裁定事項として報告書に記す。
+#[tokio::test]
+async fn artifact_and_session_rows_of_the_record_are_appended_to_its_audit_shard() {
+    let fixture = RecordFixture::new();
+    let mut updater = fixture.updater(
+        4,
+        journal(),
+        intents(),
+        vec![
+            artifact_entry(5, 1, "260907-x", "ideation/intent.md", true),
+            // 別の記録の観測はこのシャードへ積まない。
+            artifact_entry(6, 1, "260907-other", "elsewhere.md", false),
+        ],
+        Vec::new(),
+    );
+    let reached = updater.catch_up().await.expect("成果物の窓");
+    assert_eq!(reached, GlobalSeqNr::new(6));
+    let shard = fixture.shard();
+    assert!(shard.contains("**Event**: ARTIFACT_CREATED"), "{shard}");
+    assert!(shard.contains("**File**: ideation/intent.md"), "{shard}");
+    assert!(shard.contains("**Context**: intent-capture"), "{shard}");
+    assert!(!shard.contains("elsewhere.md"), "{shard}");
+    assert!(
+        !shard.contains("GATE_OPENED"),
+        "確定済みの実行の行は描き直さない: {shard}"
+    );
+
+    let mut updater = fixture.updater(
+        6,
+        journal(),
+        intents(),
+        Vec::new(),
+        vec![
+            session_entry(7, 1, "260907-x"),
+            session_entry(8, 1, "260907-other"),
+        ],
+    );
+    let reached = updater.catch_up().await.expect("セッションの窓");
+    assert_eq!(reached, GlobalSeqNr::new(8));
+    let shard = fixture.shard();
+    assert_eq!(
+        shard.matches("**Event**: SESSION_ENDED").count(),
+        1,
+        "{shard}"
+    );
+    assert!(shard.contains("**Reason**: clear"), "{shard}");
+}
+
+/// 監査の行しか無いバッチは計画なしで投影され、チェックポイントは走査済み位置まで進む。
+#[tokio::test]
+async fn an_audit_only_batch_is_projected_without_a_plan_and_advances_the_checkpoint() {
+    for (artifacts, sessions, event) in [
+        (
+            vec![artifact_entry(
+                1,
+                1,
+                "260907-x",
+                "ideation/intent.md",
+                false,
+            )],
+            Vec::new(),
+            "ARTIFACT_UPDATED",
+        ),
+        (
+            Vec::new(),
+            vec![session_entry(1, 1, "260907-x")],
+            "SESSION_ENDED",
+        ),
+    ] {
+        let fixture = RecordFixture::new();
+        let mut updater = fixture.updater(0, Vec::new(), Vec::new(), artifacts, sessions);
+        let reached = updater.catch_up().await.expect("監査だけのキャッチアップ");
+        assert_eq!(reached, GlobalSeqNr::new(1));
+        let shard = fixture.shard();
+        assert!(shard.contains(&format!("**Event**: {event}")), "{shard}");
+        assert_eq!(
+            std::fs::read_to_string(fixture.record.join("aidlc-state.md")).unwrap(),
+            STATE,
+            "状態ファイルに触らない"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_audit_shard_that_cannot_be_read_stops_the_artifact_and_session_publication() {
+    for (artifacts, sessions) in [
+        (
+            vec![artifact_entry(5, 1, "260907-x", "ideation/intent.md", true)],
+            Vec::new(),
+        ),
+        (Vec::new(), vec![session_entry(5, 1, "260907-x")]),
+    ] {
+        let fixture = RecordFixture::new();
+        std::fs::create_dir_all(fixture.record.join("audit/host-abcd1234.md")).unwrap();
+        let mut updater = fixture.updater(0, Vec::new(), Vec::new(), artifacts, sessions);
+        let error = updater.catch_up().await.expect_err("シャードが読めない");
+        assert!(
+            matches!(error, CatchUpError::PublicationConflict { .. }),
+            "実際: {error:?}"
+        );
+        assert!(fixture.publications.borrow().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn a_first_human_turn_is_published_as_a_creation() {
+    let fixture = Fixture::new();
+    let human_turn = fixture.targets().human_turn_file().to_path_buf();
+    let mut updater = fixture.updater(journal_with(prompt_observed()), intents());
+    updater.catch_up().await.expect("キャッチアップ");
+    assert_eq!(
+        std::fs::read_to_string(&human_turn).expect("作られる"),
+        "2026-08-21T09:14:07Z\n"
+    );
+}
+
+#[tokio::test]
+async fn an_active_directive_is_created_and_then_replaced_in_place() {
+    let fixture = Fixture::new();
+    let directive = fixture.targets().active_directive_file().to_path_buf();
+    let mut updater = fixture.updater(journal_with(directive_issued()), intents());
+    updater.catch_up().await.expect("初回は作成");
+    let created = std::fs::read_to_string(&directive).expect("指示ファイルが作られる");
+    assert!(
+        created.contains("practices-discovery"),
+        "指示の位置が載る: {created}"
+    );
+    // 同じ指示をもう一度 (別の窓で) 描くと、既存の内容からの置換として公開される。
+    let again = Fixture::new();
+    let directive = again.targets().active_directive_file().to_path_buf();
+    std::fs::write(&directive, "stale\n").unwrap();
+    let mut updater = again.updater(journal_with(directive_issued()), intents());
+    updater.catch_up().await.expect("置換");
+    let replaced = std::fs::read_to_string(&directive).unwrap();
+    assert_ne!(replaced, "stale\n");
+    assert_eq!(replaced, created, "同じ指示は同じ内容へ落ち着く");
+}
+
+/// 1 ステージ計画 (`genesis_intent`) の投影に足りる骨格。
+const FULL_STATE: &str = "\
+## Project Information
+- **Active Agent**: orchestrator
+
+## Scope Configuration
+- **Stages to Execute**: 2.2
+- **Stages to Skip**: None
+
+## Execution Plan Summary
+- **Total Stages**: 1
+- **Completed**: 0
+- **In Progress**: practices-discovery
+
+## Runtime State
+- **Revision Count**: 0
+- **Construction Autonomy Mode**: gated
+
+## Stage Progress
+- [-] practices-discovery — EXECUTE
+
+## Phase Progress
+- **Initialization**: Verified
+- **Ideation**: Pending
+- **Inception**: Active
+- **Construction**: Pending
+- **Operation**: Pending
+
+## Current Status
+- **Lifecycle Phase**: INCEPTION
+- **Current Stage**: practices-discovery
+- **Next Stage**: -
+- **Status**: Running
+- **Last Updated**: 2026-08-20T00:00:00Z
+
+## Session Resume Point
+- **Last Completed Stage**: 
+- **Next Action**: Execute Stage
+";
+
+#[tokio::test]
+async fn a_report_carrying_a_source_baseline_publishes_its_listing() {
+    use core_command_domain::orchestration::{
+        ReportId, ReportResult, ReportTransition, Reported, SourceBaseline, TransitionStep,
+        TransitionSteps,
+    };
+    let listing = format!("-\tsrc/lib.rs\t100644\t{}\n", "1".repeat(64));
+    let baseline = SourceBaseline::new(Some(listing.clone())).unwrap();
+    let name = baseline.snapshot_name().expect("一覧があれば名前がある");
+    let reported = IntentExecutionEvent::Reported(
+        Reported::new(
+            event_id(),
+            execution_id(),
+            ReportId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0555").unwrap(),
+            ReportResult::Committed {
+                stage: slug("practices-discovery"),
+                scope: "classic".to_string(),
+                steps: TransitionSteps::new(vec![TransitionStep::Skip]).unwrap(),
+                transition: ReportTransition::StageSkipped {
+                    reason: "out of scope".to_string(),
+                },
+            },
+            None,
+            Some(baseline),
+        )
+        .unwrap(),
+    );
+    let fixture = Fixture::new();
+    std::fs::write(&fixture.state_file, FULL_STATE).unwrap();
+    let mut updater = fixture.updater(journal_with(reported), intents());
+    updater.catch_up().await.expect("キャッチアップ");
+    let published = fixture
+        .state_file
+        .with_file_name(".aidlc-source-review")
+        .join("code-generation")
+        .join(&name);
+    assert_eq!(
+        std::fs::read_to_string(&published).expect("一覧が公開される"),
+        listing
+    );
+    assert!(
+        fixture.shard().contains("**Event**: STAGE_SKIPPED"),
+        "{}",
+        fixture.shard()
+    );
 }

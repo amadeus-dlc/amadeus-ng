@@ -13,6 +13,8 @@
 /// 検査点を迂回する余地も無い。`Intent` の一部として直列化されるために導出している。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StartRequest {
+    source_baseline: Option<super::SourceBaseline>,
+    record_name: Option<super::IntentRecordName>,
     scope: String,
     request: String,
     depth: Option<String>,
@@ -21,11 +23,52 @@ pub struct StartRequest {
 }
 
 impl StartRequest {
+    /// 採取済みの開始基準を伴う要求を作る。
+    #[must_use]
+    pub fn with_source_baseline(mut self, baseline: super::SourceBaseline) -> Self {
+        self.source_baseline = Some(baseline);
+        self
+    }
+    /// 保存・投影境界へ渡す開始基準。
+    #[must_use]
+    pub const fn source_baseline(&self) -> Option<&super::SourceBaseline> {
+        self.source_baseline.as_ref()
+    }
+
+    /// 予約済みの公開記録名を開始要求へ結び付ける。
+    #[must_use]
+    pub fn with_record_name(mut self, record_name: super::IntentRecordName) -> Self {
+        self.record_name = Some(record_name);
+        self
+    }
+    /// 公開記録の識別名。従来の名前を記録していない履歴はNone。
+    #[must_use]
+    pub const fn record_name(&self) -> Option<&super::IntentRecordName> {
+        self.record_name.as_ref()
+    }
+
+    /// 未指定の詳細度とテスト戦略を、採用したスコープの既定で解決する。
+    #[must_use]
+    pub fn with_scope_defaults(
+        mut self,
+        metadata: &crate::workflow_definition::ScopeMetadata,
+    ) -> Self {
+        if self.depth.is_none() {
+            self.depth = metadata.depth().map(str::to_string);
+        }
+        if self.test_strategy.is_none() {
+            self.test_strategy = self.depth.clone();
+        }
+        self
+    }
+
     /// スコープ名と人間の要求から組む。`depth` / `test_strategy` / `review` は既定で
     /// 「指定なし」。
     #[must_use]
     pub fn new(scope: impl Into<String>, request: impl Into<String>) -> StartRequest {
         StartRequest {
+            source_baseline: None,
+            record_name: None,
             scope: scope.into(),
             request: request.into(),
             depth: None,

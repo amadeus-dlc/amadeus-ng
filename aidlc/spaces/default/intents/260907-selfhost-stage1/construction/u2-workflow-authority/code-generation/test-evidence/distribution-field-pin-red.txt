@@ -1,0 +1,24 @@
+   Compiling core-command-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/interface-adapter)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.69s
+     Running tests/golden_parity_test.rs (target/debug/deps/golden_parity_test-eaf387a7684068d3)
+
+running 1 test
+test the_grid_has_eleven_columns_with_the_measured_execute_counts ... FAILED
+
+failures:
+
+---- the_grid_has_eleven_columns_with_the_measured_execute_counts stdout ----
+
+thread 'the_grid_has_eleven_columns_with_the_measured_execute_counts' (302121460) panicked at modules/core/command/interface-adapter/tests/golden_parity_test.rs:243:9:
+assertion `left == right` failed: スコープ bugfix の EXECUTE 数が採取実測と一致しない
+  left: 7
+ right: 9
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_grid_has_eleven_columns_with_the_measured_execute_counts
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `-p core-command-interface-adapter --test golden_parity_test`

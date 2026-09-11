@@ -31,6 +31,13 @@ pub struct LoadSteeringDirective {
 }
 
 impl LoadSteeringDirective {
+    /// 入力境界が観測した本文の照合値を、内側の封緘トークンへ載せる。
+    #[must_use]
+    pub fn with_state_text_digest(mut self, digest: super::StateTextDigest) -> Self {
+        self.continue_token = self.continue_token.with_state_text_digest(digest);
+        self
+    }
+
     /// 1 部を組む (**この型の唯一の構築経路**)。
     ///
     /// 材料はすべて行の写しである — 索引と総数は `read_steering_part.part_index` /

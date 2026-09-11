@@ -1,0 +1,13 @@
+{
+  "id": "cli/next/no-active-intent",
+  "family": "cli",
+  "verb": "next",
+  "case": "no-active-intent",
+  "description": "作業がまだ 1 件も無いワークスペースで next を呼ぶと、開始コマンドを名指す print directive が返る",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

@@ -1,0 +1,15 @@
+   Compiling core-command-domain v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/domain)
+   Compiling core-read-model-updater v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/read-model-updater)
+   Compiling core-query-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/query/interface-adapter)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.24s
+     Running tests/report_result_dao_contract.rs (target/debug/deps/report_result_dao_contract-6994c81f053fbf23)
+
+running 5 tests
+test absent_storage_is_an_error_and_is_not_created_by_a_query ... ok
+test a_missing_report_table_is_not_an_empty_success ... ok
+test querying_does_not_repair_an_incompatible_result_schema ... ok
+test report_identity_is_a_bound_value_not_a_query_fragment ... ok
+test querying_a_report_does_not_substitute_another_reports_result ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

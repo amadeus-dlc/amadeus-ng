@@ -100,7 +100,7 @@ fn saturated_node() -> StageNode {
     )
     .lead_agent("aidlc-product-agent".to_string())
     .support_agents(vec!["aidlc-design-agent".to_string()])
-    .produces(vec!["intent.md".to_string()])
+    .produces(vec!["intent".to_string()])
     .reviewer("aidlc-product-lead-agent".to_string())
     .reviewer_max_iterations(2)
     .review_class(ReviewClass::Adversarial)

@@ -11,7 +11,7 @@ use super::read_model_store::ReadModelStore;
 macro_rules! select_jump {
     ($where_clause:literal) => {
         concat!(
-            "SELECT target_index, target_slug, outcome, refusal FROM read_next_jump WHERE ",
+            "SELECT target_index, target_slug, outcome, refusal, resolution FROM read_next_jump WHERE ",
             $where_clause
         )
     };
@@ -54,6 +54,7 @@ fn jump_row(row: &Row<'_>) -> rusqlite::Result<JumpView> {
         row.get(1)?,
         row.get(2)?,
         row.get(3)?,
+        row.get(4)?,
     ))
 }
 

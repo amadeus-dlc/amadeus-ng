@@ -1,0 +1,233 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "source_file": ".claude/tools/aidlc-orchestrate.ts",
+  "initial_files": {},
+  "capture_method": "各入力を空の独立workspaceから実行。標準出力・標準エラー・終了値を無変換で保存。",
+  "normalization": [],
+  "observations": [
+    {
+      "id": "workspace-1",
+      "args": [
+        "intent"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-2",
+      "args": [
+        "intent",
+        "list"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-3",
+      "args": [
+        "intent",
+        "list",
+        "--status"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-4",
+      "args": [
+        "intent",
+        "list",
+        "--json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent --json`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-5",
+      "args": [
+        "intent",
+        "--json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent --json`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-6",
+      "args": [
+        "intent",
+        "help"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts help`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-7",
+      "args": [
+        "intent",
+        "-h"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts help`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-8",
+      "args": [
+        "intent",
+        "switch"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"error\",\"message\":\"Usage: aidlc intent switch <name>\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-9",
+      "args": [
+        "intent",
+        "switch",
+        "create"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent switch create`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-10",
+      "args": [
+        "intent",
+        "sample name"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent 'sample name'`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-11",
+      "args": [
+        "intent",
+        "create",
+        "--scope",
+        "bugfix",
+        "--arguments",
+        "repair user's intent"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent-create --scope bugfix --arguments 'repair user'\\\"'\\\"'s intent'`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-12",
+      "args": [
+        "space"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-13",
+      "args": [
+        "space",
+        "list",
+        "--json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space --json`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-14",
+      "args": [
+        "space",
+        "teamB"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space teamB`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-15",
+      "args": [
+        "space",
+        "switch",
+        "create"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space switch create`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-16",
+      "args": [
+        "space",
+        "create",
+        "team A"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space-create 'team A'`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-17",
+      "args": [
+        "space",
+        "create"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"error\",\"message\":\"Usage: aidlc space create <name>\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-18",
+      "args": [
+        "space-create",
+        "team A"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space-create 'team A'`, print its output verbatim, then stop.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-19",
+      "args": [
+        "space-create"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"error\",\"message\":\"Usage: aidlc space-create <name>\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-20",
+      "args": [
+        "intent",
+        "archive"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"error\",\"message\":\"intent archive is reserved for a future workspace verb and is not implemented yet. Use intent switch archive to select an existing record with that name.\"}\n",
+      "stderr": ""
+    },
+    {
+      "id": "workspace-21",
+      "args": [
+        "space",
+        "rename"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"kind\":\"error\",\"message\":\"space rename is reserved for a future workspace verb and is not implemented yet. Use space switch rename to select an existing record with that name.\"}\n",
+      "stderr": ""
+    }
+  ]
+}

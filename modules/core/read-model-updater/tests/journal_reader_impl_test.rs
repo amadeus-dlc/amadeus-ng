@@ -2072,7 +2072,7 @@ async fn a_store_left_on_the_old_read_schema_is_rebuilt_from_the_journal() {
     let version: i64 = raw
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("版");
-    assert_eq!(version, 1, "作り直したら版を記録する");
+    assert_eq!(version, 6, "作り直した後は現行の読取り版 (v6) を記録する");
     let rebuilt: i64 = raw
         .query_row("SELECT COUNT(*) FROM read_next_answer", [], |row| {
             row.get(0)

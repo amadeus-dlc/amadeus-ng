@@ -15,7 +15,7 @@ pub struct GlobalSeqNr(u64);
 
 impl GlobalSeqNr {
     /// 「まだ何も読んでいない」位置。未登録の投影のチェックポイントはこの値になる (BR1.4)。
-    pub const ZERO: GlobalSeqNr = GlobalSeqNr(0);
+    pub const ZERO: GlobalSeqNr = Self::new(0);
 
     /// 通番を包む。ジャーナル行の採番はストアの責務なので、ここでは値域を狭めない。
     #[must_use]
@@ -32,7 +32,7 @@ impl GlobalSeqNr {
 
 impl From<u64> for GlobalSeqNr {
     fn from(value: u64) -> GlobalSeqNr {
-        GlobalSeqNr(value)
+        Self::new(value)
     }
 }
 

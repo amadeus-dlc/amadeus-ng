@@ -35,7 +35,9 @@ use super::port::CompiledDefinitionRepository;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::RepositoryError;
+use super::port::SessionAuditRepository;
 use super::port::WorkflowDefinitionRepository;
+use core_command_domain::workspace::{SessionAudit, SessionAuditEvent, SessionAuditId};
 
 /// フィクスチャの intent 識別子 (UUIDv7)。
 pub(crate) const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
@@ -252,18 +254,22 @@ pub(crate) struct InMemoryWorkflowDefinitionRepository {
 }
 
 impl InMemoryWorkflowDefinitionRepository {
+    const fn of_store(stored: Option<(WorkflowDefinition, usize)>, corrupt: bool) -> Self {
+        Self {
+            stored,
+            committed: Vec::new(),
+            lookups: std::cell::Cell::new(0),
+            corrupt,
+            related_lookup_id: None,
+            interrupting_writes: 0,
+        }
+    }
+
     /// 基本コンストラクタ — 中身 (集約とストアが採番している版) をそのまま受け取る。
     pub(crate) const fn new(
         stored: Option<(WorkflowDefinition, usize)>,
     ) -> InMemoryWorkflowDefinitionRepository {
-        InMemoryWorkflowDefinitionRepository {
-            stored,
-            committed: Vec::new(),
-            lookups: std::cell::Cell::new(0),
-            corrupt: false,
-            related_lookup_id: None,
-            interrupting_writes: 0,
-        }
+        Self::of_store(stored, false)
     }
 
     /// 関連取得が異なる系譜を返す不具合を再現する。
@@ -302,14 +308,7 @@ impl InMemoryWorkflowDefinitionRepository {
     /// `NotFound` 以外の読取失敗をユースケースがどう運ぶかを見るための台本 — 実物では
     /// ジャーナル行を直接壊さないと作れない状態である。
     pub(crate) const fn corrupt() -> InMemoryWorkflowDefinitionRepository {
-        InMemoryWorkflowDefinitionRepository {
-            stored: None,
-            committed: Vec::new(),
-            lookups: std::cell::Cell::new(0),
-            corrupt: true,
-            related_lookup_id: None,
-            interrupting_writes: 0,
-        }
+        Self::of_store(None, true)
     }
 
     /// このストアが受理したイベント列 (書込の有無を見るテスト用)。
@@ -399,20 +398,20 @@ enum StubOutcome {
 }
 
 impl InMemoryCompiledDefinitionRepository {
+    const fn new(outcome: StubOutcome) -> Self {
+        Self { outcome }
+    }
+
     /// 決まった配布束を返すダブル。
     pub(crate) const fn serving(
         compiled_definition: CompiledDefinition,
     ) -> InMemoryCompiledDefinitionRepository {
-        InMemoryCompiledDefinitionRepository {
-            outcome: StubOutcome::Serving(compiled_definition),
-        }
+        Self::new(StubOutcome::Serving(compiled_definition))
     }
 
     /// 配布束が読めないダブル。
     pub(crate) const fn unreadable() -> InMemoryCompiledDefinitionRepository {
-        InMemoryCompiledDefinitionRepository {
-            outcome: StubOutcome::Unreadable,
-        }
+        Self::new(StubOutcome::Unreadable)
     }
 }
 
@@ -709,6 +708,13 @@ impl InMemoryIntentExecutionRepository {
 }
 
 impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
+    async fn find_for_approval_origin(
+        &self,
+        origin: &core_command_domain::orchestration::PlanApprovalOrigin,
+    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>> {
+        self.find_by_id(origin.execution_id()).await
+    }
+
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
@@ -908,5 +914,98 @@ mod tests {
             intent_repository.find_by_id(held.id()).await.is_err(),
             "何も残さない"
         );
+    }
+}
+
+/// `SessionAuditRepository` の trait フェイク — 「保持している集約を返す / 無ければ `NotFound`」と
+/// 「保存した事実を並べる」を模す。保存の失敗を模す形も持つ (監査の失敗が判定を変えないことの
+/// 観測点)。実物 (`SessionAuditRepositoryImpl`) の契約はアダプタ層の契約テストが固定する。
+#[derive(Debug)]
+pub(crate) struct InMemorySessionAuditRepository {
+    held: HashMap<SessionAuditId, SessionAudit>,
+    stored: Vec<SessionAuditEvent>,
+    store_fails: bool,
+}
+
+impl InMemorySessionAuditRepository {
+    /// 基本コンストラクタ — 保持する集約の写像と、保存を失敗させるかを受け取る。
+    pub(crate) fn new(
+        held: HashMap<SessionAuditId, SessionAudit>,
+        store_fails: bool,
+    ) -> InMemorySessionAuditRepository {
+        InMemorySessionAuditRepository {
+            held,
+            stored: Vec::new(),
+            store_fails,
+        }
+    }
+
+    /// 何も保持しない (どの識別子で引いても `NotFound`)。
+    pub(crate) fn empty() -> InMemorySessionAuditRepository {
+        InMemorySessionAuditRepository::new(HashMap::new(), false)
+    }
+
+    /// 1 つの集約を保持する (その識別子で引けば返る)。
+    pub(crate) fn holding(aggregate: SessionAudit) -> InMemorySessionAuditRepository {
+        let mut held = HashMap::new();
+        held.insert(aggregate.id().clone(), aggregate);
+        InMemorySessionAuditRepository::new(held, false)
+    }
+
+    /// 保存が必ず I/O で失敗する (何も保持しない)。
+    pub(crate) fn failing_on_store() -> InMemorySessionAuditRepository {
+        InMemorySessionAuditRepository::new(HashMap::new(), true)
+    }
+
+    /// これまでに保存した事実 (保存順)。
+    pub(crate) fn stored(&self) -> &[SessionAuditEvent] {
+        &self.stored
+    }
+}
+
+impl SessionAuditRepository for InMemorySessionAuditRepository {
+    async fn find_by_id(
+        &self,
+        id: &SessionAuditId,
+    ) -> Result<SessionAudit, RepositoryError<SessionAuditId>> {
+        self.held
+            .get(id)
+            .cloned()
+            .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
+    }
+
+    async fn store(
+        &mut self,
+        event: &SessionAuditEvent,
+        aggregate: &SessionAudit,
+    ) -> Result<(), RepositoryError<SessionAuditId>> {
+        if self.store_fails {
+            return Err(RepositoryError::Io {
+                kind: std::io::ErrorKind::Other,
+                path: None,
+            });
+        }
+        self.stored.push(event.clone());
+        self.held.insert(aggregate.id().clone(), aggregate.clone());
+        Ok(())
+    }
+}
+
+/// ユースケースはポートを値で所有するので、テストがフェイクを後から覗くには借用で渡す。
+/// 可変参照はポートの契約をそのまま転送する (ロジックは持たない)。
+impl<R: SessionAuditRepository> SessionAuditRepository for &mut R {
+    async fn find_by_id(
+        &self,
+        id: &SessionAuditId,
+    ) -> Result<SessionAudit, RepositoryError<SessionAuditId>> {
+        (**self).find_by_id(id).await
+    }
+
+    async fn store(
+        &mut self,
+        event: &SessionAuditEvent,
+        aggregate: &SessionAudit,
+    ) -> Result<(), RepositoryError<SessionAuditId>> {
+        (**self).store(event, aggregate).await
     }
 }

@@ -15,12 +15,14 @@
 //!
 //! # 材料が 2 系統ある
 //!
-//! この層が作る表は 2 つの投影単位に分かれる。
+//! ジャーナルと参照入力を別の投影単位として扱う。
 //!
 //! | 投影単位 | 材料 | 表 | 時点の名乗り | Tx |
 //! | --- | --- | --- | --- | --- |
-//! | [`ReadTables`] | ジャーナルの全履歴 | 15 表 | `as_of` (走査位置) | チェックポイントと同一 |
+//! | [`ReadTables`] | ジャーナルの全履歴 | 17 表 | `as_of` (走査位置) | チェックポイントと同一 |
 //! | [`SteeringTables`] | 参照入力 (memory 層の規則ファイル) | 2 表 | `source_digest` | 別 Tx |
+//! | [`TestingTables`] | memory と依頼条件 | 1 表 | `source_digest` | 別 Tx |
+//! | [`PlanFingerprintRow`] | 計画文書・規則・現在の発行 | 1 表 | `source_digest` | 別 Tx |
 //!
 //! 分けるのは、規則ファイルの編集がイベントを 1 件も伴わないからである。ジャーナルの走査
 //! 位置と無関係に変わるものを `as_of` で名乗らせると、「進んでいないのに行が動いた」という
@@ -44,6 +46,12 @@
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
 use std::collections::{BTreeMap, BTreeSet};
+
+mod artifact_audit_row;
+pub use artifact_audit_row::ArtifactAuditRow;
+
+mod answer_result_row;
+pub use answer_result_row::AnswerResultRow;
 
 use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent};
 use core_command_domain::workflow_definition::{
@@ -69,9 +77,11 @@ mod next_answer_row;
 mod next_jump_phase_row;
 mod next_jump_row;
 mod read_tables_error;
+mod report_result_row;
 mod request_kind;
 mod row_id;
 mod rule_content;
+pub use report_result_row::ReportResultRow;
 mod run_stage_row;
 mod scope_change_row;
 mod spelling;
@@ -123,6 +133,11 @@ pub(crate) use sql::{
 /// `steering_plan_id`) で指す。id も FK も履歴の関数なので、同じ履歴からは同じ値が出る。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadTables {
+    artifact_audits: Vec<ArtifactAuditRow>,
+    session_audits: Vec<SessionAuditRow>,
+    report_results: Vec<ReportResultRow>,
+    jump_results: Vec<JumpResultRow>,
+    answer_results: Vec<AnswerResultRow>,
     definitions: Vec<DefinitionRow>,
     definition_stages: Vec<DefinitionStageRow>,
     definition_scopes: Vec<DefinitionScopeRow>,
@@ -139,6 +154,7 @@ pub struct ReadTables {
     next_jump_phases: Vec<NextJumpPhaseRow>,
     scope_changes: Vec<ScopeChangeRow>,
     as_of: Option<GlobalSeqNr>,
+    preserve_existing: bool,
 }
 
 impl ReadTables {
@@ -304,7 +320,30 @@ impl ReadTables {
             }
         }
 
+        let session_audits = SessionAuditRow::project(history.sessions())?;
+        let artifact_audits = ArtifactAuditRow::project(history.artifacts())?;
+        let answer_results = history
+            .executions()
+            .iter()
+            .filter_map(|entry| match entry.event() {
+                IntentExecutionEvent::AnswerRecorded(answer) => Some(AnswerResultRow::of(answer)),
+                _ => None,
+            })
+            .collect();
+        let report_results = history
+            .executions()
+            .iter()
+            .filter_map(|entry| match entry.event() {
+                IntentExecutionEvent::Reported(reported) => Some(ReportResultRow::of(reported)),
+                _ => None,
+            })
+            .collect();
         Ok(ReadTables {
+            artifact_audits,
+            session_audits,
+            answer_results,
+            report_results,
+            jump_results: JumpResultRow::project(history)?,
             definitions: definitions_rows,
             definition_stages,
             definition_scopes,
@@ -321,7 +360,53 @@ impl ReadTables {
             next_jump_phases,
             scope_changes,
             as_of: history.scanned_to(),
+            preserve_existing: false,
         })
+    }
+
+    /// 成果物・セッション監査だけを投影する断面。既存の read_* 行を保持したまま
+    /// 通常の PublicationBatch/checkpoint 経路へ渡す。
+    ///
+    /// # Errors
+    ///
+    /// 履歴の再構成に失敗した場合。
+    pub fn project_audit_only(history: &JournalBatch) -> Result<ReadTables, ReadTablesError> {
+        let mut tables = Self::project(history)?;
+        tables.preserve_existing = true;
+        Ok(tables)
+    }
+
+    pub(crate) const fn preserves_existing(&self) -> bool {
+        self.preserve_existing
+    }
+
+    /// 通知IDごとのセッション監査結果。
+    #[must_use]
+    pub fn session_audits(&self) -> &[SessionAuditRow] {
+        &self.session_audits
+    }
+
+    /// 成果物監査行。
+    #[must_use]
+    pub fn artifact_audits(&self) -> &[ArtifactAuditRow] {
+        &self.artifact_audits
+    }
+
+    /// 保存済み回答ごとの結果行。
+    #[must_use]
+    pub fn answer_results(&self) -> &[AnswerResultRow] {
+        &self.answer_results
+    }
+
+    /// 保存済み報告ごとの結果行。
+    #[must_use]
+    pub fn jump_results(&self) -> &[JumpResultRow] {
+        &self.jump_results
+    }
+    /// 報告結果の行。
+    #[must_use]
+    pub fn report_results(&self) -> &[ReportResultRow] {
+        &self.report_results
     }
 
     /// 走査済み最終位置 (どこまでの歴史を映した行か)。`None` = 1 行も無かった履歴。
@@ -507,3 +592,38 @@ fn replay_executions(history: &JournalBatch) -> Result<Vec<IntentExecution>, Rea
     }
     Ok(replayed)
 }
+mod testing_contract_row;
+pub use testing_contract_row::TestingContractRow;
+mod testing_tables;
+pub use testing_tables::TestingTables;
+
+pub(crate) use sql::replace_testing;
+mod plan_fingerprint_row;
+pub use plan_fingerprint_row::PlanFingerprintRow;
+pub(crate) use sql::replace_plan_fingerprint;
+
+mod plan_approval_tables;
+pub use plan_approval_tables::PlanApprovalTables;
+
+mod plan_approval_operation_row;
+pub use plan_approval_operation_row::PlanApprovalOperationRow;
+
+mod plan_approval_file;
+pub use plan_approval_file::PlanApprovalFile;
+
+mod plan_answer_row;
+pub use plan_answer_row::PlanAnswerRow;
+
+mod plan_generation_row;
+pub use plan_generation_row::PlanGenerationRow;
+
+mod session_audit_row;
+pub use session_audit_row::SessionAuditRow;
+
+mod pipeline_progress_row;
+pub use pipeline_progress_row::PipelineProgressRow;
+mod pipeline_tables;
+pub use pipeline_tables::PipelineTables;
+
+mod jump_result_row;
+pub use jump_result_row::JumpResultRow;

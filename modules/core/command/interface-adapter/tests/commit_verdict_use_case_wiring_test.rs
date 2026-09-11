@@ -74,6 +74,7 @@ async fn the_use_case_commits_a_transition_through_the_real_repository() {
     use_case
         .execute(
             &execution_id(),
+            &core_command_domain::orchestration::ReportId::generate(),
             // `[-]` のゲートは明示 `--stage` を要する（forward 表）。ここで見たいのは
             // 判断ではなく**実物のストアを通したコミット**である。
             ReportRequest::new(

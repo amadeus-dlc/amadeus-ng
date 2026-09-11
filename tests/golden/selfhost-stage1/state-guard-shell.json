@@ -1,0 +1,1435 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-state-guard-shell.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/state-guard-shell.json"
+  ],
+  "normalization": [],
+  "observations": [
+    {
+      "id": "main/plain",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/plain",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/read-only",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-state.ts show\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/read-only",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-state.ts show\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/quoted-path",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun \\\".claude/tools/aidlc-state.ts\\\" approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/quoted-path",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun \\\".claude/tools/aidlc-state.ts\\\" approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/single-quoted-path",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun '.claude/tools/aidlc-state.ts' approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/single-quoted-path",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun '.claude/tools/aidlc-state.ts' approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/bun-run",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun run .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/bun-run",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun run .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/absolute-bun",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"/tools/bun.exe .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/absolute-bun",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"/tools/bun.exe .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/assignment",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"MODE=\\\"safe\\\" bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/assignment",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"MODE=\\\"safe\\\" bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/env",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env -i MODE=safe bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/env",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env -i MODE=safe bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/command-prefix",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"command bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/command-prefix",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"command bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/exec-prefix",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"exec bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/exec-prefix",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"exec bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/after-and",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"cd project && bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/after-and",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"cd project && bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/after-pipe",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo text | bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/after-pipe",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo text | bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/after-newline",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo text\\nbun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/after-newline",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo text\\nbun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/subshell",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"(bun .claude/tools/aidlc-state.ts approve stage)\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/subshell",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"(bun .claude/tools/aidlc-state.ts approve stage)\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/block",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"{ bun .claude/tools/aidlc-state.ts approve stage; }\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/block",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"{ bun .claude/tools/aidlc-state.ts approve stage; }\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/echo-prose",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/echo-prose",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo bun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/single-quoted-separator",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo 'text; bun .claude/tools/aidlc-state.ts approve stage'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/single-quoted-separator",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo 'text; bun .claude/tools/aidlc-state.ts approve stage'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/double-quoted-separator",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo \\\"text; bun .claude/tools/aidlc-state.ts approve stage\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/double-quoted-separator",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo \\\"text; bun .claude/tools/aidlc-state.ts approve stage\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/multiline-string",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"printf '%s' \\\"text\\nbun .claude/tools/aidlc-state.ts approve stage\\n\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/multiline-string",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"printf '%s' \\\"text\\nbun .claude/tools/aidlc-state.ts approve stage\\n\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/literal-heredoc",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"cat <<'EOF'\\nbun .claude/tools/aidlc-state.ts approve stage\\nEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/literal-heredoc",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"cat <<'EOF'\\nbun .claude/tools/aidlc-state.ts approve stage\\nEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/unquoted-heredoc",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"cat <<EOF\\nbun .claude/tools/aidlc-state.ts approve stage\\nEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/unquoted-heredoc",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"cat <<EOF\\nbun .claude/tools/aidlc-state.ts approve stage\\nEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/tab-heredoc",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"cat <<-EOF\\n\\tbun .claude/tools/aidlc-state.ts approve stage\\n\\tEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/tab-heredoc",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"cat <<-EOF\\n\\tbun .claude/tools/aidlc-state.ts approve stage\\n\\tEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/function-definition",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"later() { bun .claude/tools/aidlc-state.ts approve stage; }\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/function-definition",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"later() { bun .claude/tools/aidlc-state.ts approve stage; }\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-state.ts approve because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/function-keyword",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"function later { bun .claude/tools/aidlc-state.ts approve stage; }\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/function-keyword",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"function later { bun .claude/tools/aidlc-state.ts approve stage; }\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-state.ts approve because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/emoji-before-function",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo '🚀'; later() { bun .claude/tools/aidlc-state.ts approve stage; }\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/emoji-before-function",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo '🚀'; later() { bun .claude/tools/aidlc-state.ts approve stage; }\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/double-quoted-substitution",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo \\\"$( bun .claude/tools/aidlc-state.ts approve stage )\\\"\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/double-quoted-substitution",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo \\\"$( bun .claude/tools/aidlc-state.ts approve stage )\\\"\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/single-quoted-substitution",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo '$( bun .claude/tools/aidlc-state.ts approve stage )'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/single-quoted-substitution",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo '$( bun .claude/tools/aidlc-state.ts approve stage )'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/unquoted-heredoc-substitution",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"cat <<EOF\\n$( bun .claude/tools/aidlc-state.ts approve stage )\\nEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/unquoted-heredoc-substitution",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"cat <<EOF\\n$( bun .claude/tools/aidlc-state.ts approve stage )\\nEOF\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-state.ts approve because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/quoted-heredoc-substitution",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"cat <<'EOF'\\n$( bun .claude/tools/aidlc-state.ts approve stage )\\nEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/quoted-heredoc-substitution",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"cat <<'EOF'\\n$( bun .claude/tools/aidlc-state.ts approve stage )\\nEOF\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/newline-after-function",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"later() { echo hi; }\\nbun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "delegated/newline-after-function",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"later() { echo hi; }\\nbun .claude/tools/aidlc-state.ts approve stage\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Stage status cannot be changed with aidlc-state.ts approve because that bypasses the workflow's completion and approval checks. Use aidlc-orchestrate.ts report --stage <slug> --result <awaiting-approval|approved|rejected|revised|completed|skipped>; use aidlc-orchestrate.ts park to pause, and next/jump to move through the workflow.\n"
+    },
+    {
+      "id": "main/allowed-specialized",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-state.ts practices-promote --stage practices-discovery\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/allowed-specialized",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-state.ts practices-promote --stage practices-discovery\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-state.ts practices-promote because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/orchestrate-next",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/orchestrate-next",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/dispatcher-native",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"aidlc next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/dispatcher-native",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"aidlc next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/dispatcher-ts",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc.ts --resume\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/dispatcher-ts",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc.ts --resume\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc.ts --resume because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/nested-shell",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bash -c 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nested-shell",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bash -c 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/nested-shell-options",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"zsh -o errexit -lc 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nested-shell-options",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"zsh -o errexit -lc 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/eval",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"eval 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/eval",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"eval 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/dynamic-executable",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"$RUN next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/dynamic-executable",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"$RUN next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run dynamic executable beyond guard inspection because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/literal-executable-assignment",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"RUN=bun; $RUN .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/literal-executable-assignment",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"RUN=bun; $RUN .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/literal-shell-assignment",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"RUN='bun .claude/tools/aidlc-orchestrate.ts next'; bash -c \\\"$RUN\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/literal-shell-assignment",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"RUN='bun .claude/tools/aidlc-orchestrate.ts next'; bash -c \\\"$RUN\\\"\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/dynamic-shell",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bash -c \\\"$RUN\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/dynamic-shell",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bash -c \\\"$RUN\\\"\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run dynamic shell command beyond guard inspection because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/nice",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"nice -n 10 bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nice",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"nice -n 10 bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/nohup",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"nohup -- bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nohup",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"nohup -- bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/time",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"time -f '%e' bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/time",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"time -f '%e' bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/env-split",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env -S 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-split",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env -S 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/env-unknown",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env --unknown bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-unknown",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env --unknown bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run execution wrapper beyond guard inspection because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/command-query",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"command -v bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/command-query",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"command -v bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/bun-preload",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun --preload setup.ts .claude/tools/aidlc-orchestrate.ts report --stage x --result completed\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/bun-preload",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun --preload setup.ts .claude/tools/aidlc-orchestrate.ts report --stage x --result completed\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts report because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/bun-eval",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun --eval 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/bun-eval",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun --eval 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/workspace-switch",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"aidlc intent switch example\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/workspace-switch",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"aidlc intent switch example\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc intent switch because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/workspace-create",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"aidlc space create other\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/workspace-create",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"aidlc space create other\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc space create because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/workspace-list",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"aidlc intent list\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/workspace-list",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"aidlc intent list\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/utility-creation",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-utility.ts intent-create --scope bugfix\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/utility-creation",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-utility.ts intent-create --scope bugfix\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-utility.ts intent-create because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/backticks",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo `bun .claude/tools/aidlc-orchestrate.ts next`\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/backticks",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo `bun .claude/tools/aidlc-orchestrate.ts next`\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/line-continuation",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bu\\\\\\nn .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/line-continuation",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bu\\\\\\nn .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/eval-option",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"eval -- 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/eval-option",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"eval -- 'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/eval-dynamic",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"eval \\\"$RUN\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/eval-dynamic",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"eval \\\"$RUN\\\"\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run dynamic eval shell command beyond guard inspection because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/command-path",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"command -p bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/command-path",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"command -p bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/exec-name",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"exec -a worker bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/exec-name",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"exec -a worker bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/exec-flags",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"exec -cl bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/exec-flags",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"exec -cl bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/exec-unknown",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"exec -z bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/exec-unknown",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"exec -z bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/env-unset",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env -u SECRET bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-unset",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env -u SECRET bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/env-chdir",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env --chdir=/tmp bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-chdir",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env --chdir=/tmp bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/env-signal",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env --default-signal=INT bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-signal",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env --default-signal=INT bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/env-split-attached",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env -S'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-split-attached",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env -S'bun .claude/tools/aidlc-orchestrate.ts next'\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/env-split-dynamic",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env -S '$RUN next'\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-split-dynamic",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env -S '$RUN next'\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run execution wrapper beyond guard inspection because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/env-help",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env --help bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-help",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env --help bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/env-null",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"env --null bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/env-null",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"env --null bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/nice-attached",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"nice -n-3 bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nice-attached",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"nice -n-3 bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/nice-long",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"nice --adjustment=+3 bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nice-long",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"nice --adjustment=+3 bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/nice-invalid",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"nice -n abc bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nice-invalid",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"nice -n abc bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/nice-missing",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"nice -n\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nice-missing",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"nice -n\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/nohup-help",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"nohup --help bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/nohup-help",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"nohup --help bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/time-values",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"time --format '%E' --output time.txt bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/time-values",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"time --format '%E' --output time.txt bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/redirection-prefix",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"2>/tmp/log env MODE=safe bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/redirection-prefix",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"2>/tmp/log env MODE=safe bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/shell-keywords",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"if true; then bun .claude/tools/aidlc-orchestrate.ts next; fi\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/shell-keywords",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"if true; then bun .claude/tools/aidlc-orchestrate.ts next; fi\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/dispatcher-scope",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"aidlc scope change --scope feature\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/dispatcher-scope",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"aidlc scope change --scope feature\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc scope change because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/dispatcher-config",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"aidlc config set x y\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/dispatcher-config",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"aidlc config set x y\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc config set because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/utility-project-dir",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-utility.ts --project-dir /tmp/project intent-create --scope bugfix\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/utility-project-dir",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-utility.ts --project-dir /tmp/project intent-create --scope bugfix\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-utility.ts intent-create because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/comment-prose",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"echo text # ; bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/comment-prose",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"echo text # ; bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/reserved-workspace",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"aidlc intent rename old new\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/reserved-workspace",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"aidlc intent rename old new\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/leading-bom",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"﻿bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/leading-bom",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"﻿bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/leading-nel",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/leading-nel",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bun .claude/tools/aidlc-orchestrate.ts next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "main/depth-8",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bash -c \\\"bash -c \\\\\\\"bash -c \\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bun .claude/tools/aidlc-orchestrate.ts next\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\"\\\\\\\"\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/depth-8",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bash -c \\\"bash -c \\\\\\\"bash -c \\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bun .claude/tools/aidlc-orchestrate.ts next\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\"\\\\\\\"\\\"\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run aidlc-orchestrate.ts next because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "main/depth-9",
+      "mode": "main",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"\",\"tool_input\":{\"command\":\"bash -c \\\"bash -c \\\\\\\"bash -c \\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bun .claude/tools/aidlc-orchestrate.ts next\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\"\\\\\\\"\\\"\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "delegated/depth-9",
+      "mode": "delegated",
+      "stdin": "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"bash -c \\\"bash -c \\\\\\\"bash -c \\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bash -c \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"bun .claude/tools/aidlc-orchestrate.ts next\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\"\\\\\\\"\\\"\"}}",
+      "exit": 2,
+      "stdout": "",
+      "stderr": "Delegated agent \"aidlc-developer-agent\" cannot run nested shell command beyond guard inspection limit because only the main workflow session can change stage status or routing. Return the artifact, contribution, or review verdict to the main session without parking, resuming, reporting, routing, or presenting an approval question.\n"
+    },
+    {
+      "id": "envelope/malformed-json",
+      "mode": "envelope",
+      "stdin": "{",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "envelope/null-json",
+      "mode": "envelope",
+      "stdin": "null",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "envelope/array-json",
+      "mode": "envelope",
+      "stdin": "[]",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "envelope/missing-tool",
+      "mode": "envelope",
+      "stdin": "{}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "envelope/missing-command",
+      "mode": "envelope",
+      "stdin": "{\"tool_name\":\"Bash\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "envelope/non-bash",
+      "mode": "envelope",
+      "stdin": "{\"tool_name\":\"Read\",\"agent_type\":\"aidlc-developer-agent\",\"tool_input\":{\"command\":\"aidlc next\"}}",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "id": "envelope/replacement-decoded-invalid-json",
+      "mode": "envelope",
+      "stdin": "�",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ]
+}

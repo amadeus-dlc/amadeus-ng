@@ -1,0 +1,26 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "fixture_kind": "distribution-shell-subset",
+  "capture_method": "固定コミット a277af21 の dist/claude から `git -C vendor/aidlc-workflows show` で写した配布シェルの部分集合 (memory 層・conductor persona・classic の scope 定義・active-space)。配布グラフ 3 入力は tests/golden/upstream-a277af21/data/ を使う。各ファイルの sha256 は同コーパスの封印済み source-manifest.sha256 と一致することを modules/app/aidlc/tests/classic_corpus_contract.rs が実行時に確かめる。既存コーパスは変更しない。",
+  "files": [
+    {"path": ".claude/aidlc-common/conductor.md", "sha256": "7033010b0bbb3dcc44afddd9007d7511fb59d37c05d78a48845f5984ee4c07c7"},
+    {"path": ".claude/scopes/aidlc-classic.md", "sha256": "26137b9f8043639753f036055727afd8b6891f395d20505a4d6affb78450bdae"},
+    {"path": "aidlc/active-space", "sha256": "01666ec060466c14b9fa06c613fbac449163f2a2017558fe16526209ab78c6b0"},
+    {"path": "aidlc/spaces/default/memory/org.md", "sha256": "c9f678ff3dfee9ce806d1a545346d491eb6e221e6225ca6efdf070ac53ba9b73"},
+    {"path": "aidlc/spaces/default/memory/phases/construction.md", "sha256": "336a0e700510ec5d932aa0e4476c1123ce925e6a4afffee31c513bf7d1e1cf1b"},
+    {"path": "aidlc/spaces/default/memory/phases/ideation.md", "sha256": "6179c9da75d3f2944c37f51968bcdab2fb4e59052b30a1ebb716f0bbd0d4fcb4"},
+    {"path": "aidlc/spaces/default/memory/phases/inception.md", "sha256": "a23a5931ec6cb06dd9b49d905f001694babc99089e97da0314fc9920fb3ee64b"},
+    {"path": "aidlc/spaces/default/memory/phases/operation.md", "sha256": "2ca872806259b476e5fc10896d39b3461cae4a80e173e4a7af122eeb0c7e66b9"},
+    {"path": "aidlc/spaces/default/memory/project.md", "sha256": "48a0686495d791abaad4512f8a33497947138edddf1c6b35914e51f64099b5c3"},
+    {"path": "aidlc/spaces/default/memory/team.md", "sha256": "c065a3f8811764025aa9bdb5a9c51628f2724e57fc5ec0caa0973693e08d2c3e"},
+    {"path": "aidlc/spaces/default/memory/templates/.gitkeep", "sha256": "9cf930a165d4d24fd80ff21a9c7df39419a285e035fbe669bf5460ad0921d13c"}
+  ],
+  "data_files_from_corpus": [".claude/tools/data/harness.json", ".claude/tools/data/scope-grid.json", ".claude/tools/data/stage-graph.json"]
+}

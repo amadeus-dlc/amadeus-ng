@@ -61,8 +61,9 @@ impl SteeringTables {
         let mut parts = Vec::new();
         let mut chunks_by_phase = Vec::new();
         for phase in phases() {
-            let chunks = pack_files(&rules.files_for(phase))?;
-            plans.push(SteeringPlanRow::of(phase, &chunks));
+            let files = rules.files_for(phase);
+            let chunks = pack_files(&files)?;
+            plans.push(SteeringPlanRow::of(phase, &files, &chunks));
             for (position, chunk) in chunks.iter().enumerate() {
                 parts.push(SteeringPartRow::of(phase, position + 1, chunk));
             }

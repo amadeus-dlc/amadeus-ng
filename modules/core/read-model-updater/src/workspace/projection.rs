@@ -22,14 +22,14 @@
 //! 自身は「渡された列を順に写す」だけでよい。
 
 use core_command_domain::orchestration::{
-    AutonomyMode, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, JumpDirection,
-    Jumped, Parked, PhaseBoundary, PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested,
-    SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped, StageSlugSet,
+    AutonomyMode, CapturedLearnings, IntentExecutionEvent, JumpDirection, Jumped, LearningScope,
+    LearningsCaptured, Parked, PhaseBoundary, PracticesAffirmed, Recomposed, ReviewCompleted,
+    ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded, StageSlugSet,
 };
 use core_command_domain::workflow_definition::{PhaseId, PlanAction, StageSlug};
 use core_command_domain::workspace::{
     AuditFieldKey, AuditFieldKeyError, AuditFields, CheckboxState, CheckboxUpdateError, Checkboxes,
-    PromotedSection, append_under_heading, replace_section,
+    PromotedSection, append_under_heading, ensure_heading, replace_section,
 };
 
 use chrono::{DateTime, Utc};
@@ -94,6 +94,8 @@ mod key {
     pub(super) const FEEDBACK: &str = "Feedback";
     /// `**Stages skipped**:`。
     pub(super) const STAGES_SKIPPED: &str = "Stages skipped";
+    /// 読み飛ばしが条件判定かジャンプかを示す本家2.7.1の分類。
+    pub(super) const SKIP_KIND: &str = "Skip Kind";
     /// `**Stages added**:`。
     pub(super) const STAGES_ADDED: &str = "Stages added";
     /// `**Stages in Scope**:`。
@@ -110,21 +112,24 @@ mod key {
     pub(super) const RETRY: &str = "Retry";
     /// `**Affirming User**:`（昇格の承認者 — ピン `3c3146cf` `aidlc-state.ts:3734`）。
     pub(super) const AFFIRMING_USER: &str = "Affirming User";
+    /// `**Candidate-ID**:`（学びの儀式 — `aidlc-learnings.ts:853`）。
+    pub(super) const CANDIDATE_ID: &str = "Candidate-ID";
+    /// `**Content-Hash**:`（同 `:854`。学びの同一性）。
+    pub(super) const CONTENT_HASH: &str = "Content-Hash";
+    /// `**Destination**:`（同 `:855`。`<project-dir>` へ伏せたメモリ層のパス）。
+    pub(super) const DESTINATION: &str = "Destination";
+    /// `**Heading**:`（同 `:856`。`## ` を含む完全形）。
+    pub(super) const HEADING: &str = "Heading";
     /// `**Sections Written**:`（同 `:3735`。空でも欄は描く）。
     pub(super) const SECTIONS_WRITTEN: &str = "Sections Written";
     /// `**Mandated Rules Appended**:`（同 `:3736`）。
     pub(super) const MANDATED_RULES_APPENDED: &str = "Mandated Rules Appended";
     /// `**Forbidden Rules Appended**:`（同 `:3737`）。
     pub(super) const FORBIDDEN_RULES_APPENDED: &str = "Forbidden Rules Appended";
-    /// `**Mode**:`。**upstream の実行出力としては採れない**（`cli/set-autonomy` は失敗経路
-    /// しか捉えていない）。ピン `3c3146cf` の配布シェルには
-    /// `- **Construction Autonomy Mode**:` 行を状態ファイルへ書き込む経路が 1 つも無く、
-    /// `set-autonomy` は行の不在を検出して終了コード 1 で止まるため、成功経路そのものが
-    /// 到達不能である（全数走査の根拠は `tests/golden/upstream-3c3146cf/README.md` と
-    /// `cli/cases-missing.json` の `set-autonomy/gated`）。このキーはピンの**ソース**
-    /// （`aidlc-bolt.ts` の `emitAudit(pd, "AUTONOMY_MODE_SET", { Mode: … })`）から読んだ値で
-    /// あり、実行バイトでの裏取りはピン更新待ちである。状態ファイル側の綴りは
-    /// `cli/set-autonomy/state-field-absent` の失敗文言が逐語で固定している。
+    /// `**Mode**:`（本家 `aidlc-bolt.ts` `handleSetAutonomy` の `AUTONOMY_MODE_SET` 監査行）。
+    /// 2.7.1 コーパスに成功経路の採取は無い（`cli/set-autonomy/state-field-absent` は拒否側
+    /// のみ）ので、綴りの根拠はソース読みである。自律実行は今回の必須範囲外であり、この
+    /// 綴りを互換性の証明として使わない。
     pub(super) const MODE: &str = "Mode";
 }
 
@@ -399,14 +404,277 @@ fn project_one(
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
     match event {
-        IntentExecutionEvent::Started(_) => started(at, plan, read_model),
-        IntentExecutionEvent::GateOpened(opened) => gate_opened(opened, at, read_model),
-        IntentExecutionEvent::GateApproved(approved) => {
-            gate_approved(approved, at, plan, read_model)
+        IntentExecutionEvent::PlanAnswerLogged(answer) => {
+            let input = answer.input();
+            let evidence = input.decision().evidence();
+            let authority = evidence.authority();
+            let mut fields = AuditFields::new()
+                .with(key("Stage")?, input.stage())
+                .with(key("Details")?, input.choice().as_str());
+            for (name, value) in [
+                ("Checkpoint", "Code Generation Plan Approval"),
+                ("Plan Target", authority.target_id()),
+                ("Intent", authority.intent_id()),
+                ("Directive Epoch", authority.directive_epoch()),
+                ("Run floor", authority.run_floor()),
+                ("Approval Fingerprint", evidence.fingerprint()),
+                ("Questions File", evidence.questions_file()),
+                ("Questions SHA-256", evidence.questions_sha256()),
+                ("Prompt SHA-256", evidence.prompt_sha256()),
+                ("Session", input.decision().session().raw()),
+            ] {
+                fields = fields.with(key(name)?, value);
+            }
+            let kind = match input.choice() {
+                core_command_domain::orchestration::PlanChoice::ApprovePlan => {
+                    EventType::PlanApprovalRecorded
+                }
+                core_command_domain::orchestration::PlanChoice::RequestChanges => {
+                    EventType::QuestionAnswered
+                }
+            };
+            read_model.append_audit(&render_audit_block(kind, at, &fields));
+            Ok(())
         }
-        IntentExecutionEvent::GateRejected(rejected) => gate_rejected(rejected, at, read_model),
-        IntentExecutionEvent::StageRevised(revised) => stage_revised(revised, at, read_model),
-        IntentExecutionEvent::StageSkipped(skipped) => stage_skipped(skipped, at, plan, read_model),
+        IntentExecutionEvent::SingleStageRunStarted(event) => {
+            let agent = plan
+                .display_of(event.stage())
+                .ok_or_else(|| unknown(event.stage()))?
+                .lead_agent();
+            let fields = AuditFields::new()
+                .with(key("Stage")?, event.stage().as_str())
+                .with(key("Agent")?, agent)
+                .with(
+                    key("Workflow")?,
+                    &format!("single-stage:{}", event.stage().as_str()),
+                );
+            read_model.append_audit(&render_audit_block(EventType::StageStarted, at, &fields));
+            Ok(())
+        }
+        IntentExecutionEvent::PipelineLinkCompleted(event) => {
+            let receipt = event.receipt();
+            let mut fields = AuditFields::new()
+                .with(key("Stage")?, receipt.stage())
+                .with(key("Link")?, receipt.link())
+                .with(
+                    key("Position")?,
+                    &format!("{}/{}", receipt.position(), receipt.total()),
+                );
+            if let Some(handoff) = receipt.handoff() {
+                fields = fields
+                    .with(key("Artifact Path")?, handoff.path())
+                    .with(key("Artifact SHA256")?, handoff.sha256())
+                    .with(key("Artifact Mtime Ms")?, handoff.mtime_ms());
+            }
+            if let Some(repo) = receipt.repo() {
+                fields = fields.with(key("Repo")?, repo);
+            }
+            if receipt.is_single() {
+                fields = fields.with(
+                    key("Workflow")?,
+                    &format!("single-stage:{}", receipt.stage()),
+                );
+            }
+            read_model.append_audit(&render_audit_block(
+                EventType::PipelineLinkCompleted,
+                at,
+                &fields,
+            ));
+            Ok(())
+        }
+        IntentExecutionEvent::DirectiveContextInvalidated(event) => {
+            read_model.apply_directive_issue(event.directive());
+            Ok(())
+        }
+        IntentExecutionEvent::DirectiveIssued(event) => {
+            read_model.apply_directive_issue(event.directive());
+            Ok(())
+        }
+        IntentExecutionEvent::AnswerRecorded(answer) => {
+            use core_command_domain::orchestration::AnswerDisposition;
+            let mut fields = AuditFields::new()
+                .with(key("Stage")?, answer.stage())
+                .with(key("Details")?, answer.details());
+            let event_type = match answer.disposition() {
+                AnswerDisposition::Recorded => Some(EventType::QuestionAnswered),
+                AnswerDisposition::ApprovalGateReportOwned => None,
+                AnswerDisposition::SummaryConfirmed(evidence) => {
+                    fields = fields
+                        .with(key("Checkpoint")?, "Consolidated Summary Confirmation")
+                        .with(key("Questions File")?, evidence.questions_file())
+                        .with(key("Questions SHA-256")?, evidence.questions_sha256())
+                        .with(key("Hash Scope")?, "confirmed-content-v1");
+                    Some(EventType::SummaryConfirmationRecorded)
+                }
+            };
+            if let Some(event_type) = event_type {
+                read_model.append_audit(&render_audit_block(event_type, at, &fields));
+            }
+            Ok(())
+        }
+        IntentExecutionEvent::PromptObserved(prompt) => {
+            if !prompt.unattended() {
+                let mut fields = AuditFields::new();
+                if !prompt.session().is_empty() {
+                    fields = fields.with(key("Session")?, prompt.session());
+                }
+                read_model.append_audit(&render_audit_block(EventType::HumanTurn, at, &fields));
+            }
+            Ok(())
+        }
+        IntentExecutionEvent::CommandFailed(event) => {
+            let failure = event.failure();
+            let fields = AuditFields::new()
+                .with(key("Tool")?, failure.tool())
+                .with(key("Command")?, failure.command())
+                .with(key("Error")?, failure.error());
+            read_model.append_audit(&render_audit_block(EventType::ErrorLogged, at, &fields));
+            Ok(())
+        }
+        IntentExecutionEvent::MemoryJournalsObserved(event) => {
+            // compile が判定した位置ぶんの `MEMORY_EMPTY` を描く。判定のやり直しはしない —
+            // 承認済みか・この承認について記録済みかは集約の状態でしか決まらないからである
+            // (`coding-rules/cqrs-boundaries.md`)。状態ファイルは動かさない。
+            event.empty_stages().fold_left(Ok(()), |written, stage| {
+                written?;
+                let fields = AuditFields::new().with(key(key::STAGE)?, stage.as_str());
+                read_model.append_audit(&render_audit_block(EventType::MemoryEmpty, at, &fields));
+                Ok(())
+            })
+        }
+        IntentExecutionEvent::HealthChecked(event) => {
+            let result = event.result();
+            let fields = AuditFields::new()
+                .with(key("Request")?, "/aidlc --doctor")
+                .with(
+                    key("Details")?,
+                    &format!("{} passed, {} failed", result.passed(), result.failed()),
+                );
+            read_model.append_audit(&render_audit_block(EventType::HealthChecked, at, &fields));
+            Ok(())
+        }
+        IntentExecutionEvent::TaskSynchronized(event) => {
+            let stage = plan
+                .find(event.stage())
+                .ok_or_else(|| unknown(event.stage()))?;
+            set_field(
+                read_model,
+                field::LIFECYCLE_PHASE,
+                &stage.phase().as_str().to_uppercase(),
+            )?;
+            set_field(
+                read_model,
+                field::ACTIVE_AGENT,
+                stage.display().lead_agent(),
+            )?;
+            set_field(read_model, field::STATUS, "Running")?;
+            set_field(read_model, field::LAST_UPDATED, &iso8601_seconds(at))?;
+            set_field(read_model, field::CURRENT_STAGE, event.stage().as_str())?;
+            set_field(read_model, field::IN_PROGRESS, event.stage().as_str())?;
+            set_checkbox(
+                read_model,
+                event.stage().as_str(),
+                CheckboxState::InProgress,
+            )
+        }
+        IntentExecutionEvent::DecisionRecorded(recorded) => {
+            let prompt = recorded.prompt();
+            let mut fields = AuditFields::new()
+                .with(key("Stage")?, prompt.stage())
+                .with(key("Decision")?, prompt.decision());
+            if let Some(options) = prompt.options() {
+                fields = fields.with(key("Options")?, options);
+            }
+            if let Some(rationale) = prompt.rationale() {
+                fields = fields.with(key("Rationale")?, rationale);
+            }
+            if let Some(file) = prompt.summary_file() {
+                fields = fields
+                    .with(key("Checkpoint")?, "Consolidated Summary Confirmation")
+                    .with(key("Questions File")?, file);
+            }
+            if let Some(plan) = prompt.plan_approval() {
+                let evidence = plan.evidence();
+                let authority = evidence.authority();
+                for (name, value) in [
+                    ("Checkpoint", "Code Generation Plan Approval"),
+                    ("Plan Target", authority.target_id()),
+                    ("Intent", authority.intent_id()),
+                    ("Directive Epoch", authority.directive_epoch()),
+                    ("Run floor", authority.run_floor()),
+                    ("Approval Fingerprint", evidence.fingerprint()),
+                    ("Questions File", evidence.questions_file()),
+                    ("Questions SHA-256", evidence.questions_sha256()),
+                    ("Prompt SHA-256", evidence.prompt_sha256()),
+                    ("Session", plan.session().raw()),
+                ] {
+                    fields = fields.with(key(name)?, value);
+                }
+            }
+            read_model.append_audit(&render_audit_block(
+                EventType::DecisionRecorded,
+                at,
+                &fields,
+            ));
+            Ok(())
+        }
+        IntentExecutionEvent::Reported(reported) => {
+            use core_command_domain::orchestration::{ReportResult, ReportTransition};
+            match reported.result() {
+                ReportResult::NoOp { .. } => Ok(()),
+                ReportResult::Committed {
+                    stage, transition, ..
+                } => match transition {
+                    ReportTransition::GateOpened { .. } => gate_opened(stage, at, read_model),
+                    ReportTransition::GateApproved { user_input } => gate_approved(
+                        stage,
+                        user_input.as_deref(),
+                        reported.validation(),
+                        reported.source_baseline(),
+                        at,
+                        plan,
+                        read_model,
+                    ),
+                    ReportTransition::GateRejected { feedback } => {
+                        gate_rejected(stage, feedback.as_deref(), at, read_model)
+                    }
+                    ReportTransition::StageRevised => stage_revised(stage, at, read_model),
+                    ReportTransition::StageSkipped { reason } => stage_skipped(
+                        stage,
+                        reason,
+                        reported.source_baseline(),
+                        at,
+                        plan,
+                        read_model,
+                    ),
+                },
+            }
+        }
+        IntentExecutionEvent::Started(_) => started(at, plan, read_model),
+        IntentExecutionEvent::GateOpened(opened) => gate_opened(opened.stage(), at, read_model),
+        IntentExecutionEvent::GateApproved(approved) => gate_approved(
+            approved.stage(),
+            approved.user_input(),
+            None,
+            None,
+            at,
+            plan,
+            read_model,
+        ),
+        IntentExecutionEvent::GateRejected(rejected) => {
+            gate_rejected(rejected.stage(), rejected.feedback(), at, read_model)
+        }
+        IntentExecutionEvent::StageRevised(revised) => {
+            stage_revised(revised.stage(), at, read_model)
+        }
+        IntentExecutionEvent::StageSkipped(skipped) => stage_skipped(
+            skipped.stage(),
+            skipped.reason(),
+            None,
+            at,
+            plan,
+            read_model,
+        ),
         IntentExecutionEvent::Jumped(jumped) => jumped_event(jumped, at, plan, read_model),
         IntentExecutionEvent::Parked(parked) => parked_event(parked, at, read_model),
         IntentExecutionEvent::Unparked(_) => {
@@ -433,6 +701,9 @@ fn project_one(
         }
         IntentExecutionEvent::PracticesAffirmed(affirmed) => {
             practices_affirmed(affirmed, at, read_model)
+        }
+        IntentExecutionEvent::LearningsCaptured(captured) => {
+            learnings_captured(captured, at, read_model)
         }
     }
 }
@@ -490,7 +761,14 @@ fn started(
         &plan.in_scope_count().to_string(),
     )?;
     match first_gated_in_scope(plan).map(|stage| stage.slug().clone()) {
-        Some(slug) => enter_stage_without_row(read_model, plan, &slug),
+        Some(slug) => {
+            enter_stage_without_row(read_model, plan, &slug)?;
+            set_field(
+                read_model,
+                field::NEXT_ACTION,
+                &format!("Execute {}", slug.as_str()),
+            )
+        }
         None => Ok(()),
     }
 }
@@ -503,13 +781,13 @@ fn append_started_rows(
 ) -> Result<(), ProjectionError> {
     let scope = plan.scope();
 
-    read_model.append_audit(&render_audit_block(
-        EventType::WorkflowStarted,
-        at,
-        &AuditFields::new()
-            .with(key(key::SCOPE)?, scope)
-            .with(key(key::REQUEST)?, plan.request()),
-    ));
+    let mut fields = AuditFields::new()
+        .with(key(key::SCOPE)?, scope)
+        .with(key(key::REQUEST)?, &plan.request_line());
+    if let Some(baseline) = plan.source_baseline() {
+        fields = fields.with(key("Source Baseline")?, &baseline.fingerprint());
+    }
+    read_model.append_audit(&render_audit_block(EventType::WorkflowStarted, at, &fields));
 
     read_model.append_audit(&render_audit_block(
         EventType::PhaseStarted,
@@ -543,7 +821,7 @@ fn append_started_rows(
         .iter()
         .filter(|stage| stage.is_in_scope() && stage.phase() == PhaseId::Initialization)
     {
-        read_model.append_audit(&stage_started_row(stage, at)?);
+        read_model.append_audit(&stage_started_row(stage, at, None)?);
         if let Some(row) = initialization_row(stage, at, plan, routing_to)? {
             read_model.append_audit(&row);
         }
@@ -571,7 +849,7 @@ fn append_started_rows(
     }
 
     if let Some(stage) = routing_to {
-        read_model.append_audit(&stage_started_row(stage, at)?);
+        read_model.append_audit(&stage_started_row(stage, at, None)?);
     }
     Ok(())
 }
@@ -599,7 +877,7 @@ fn initialization_row(
     let scan = plan.scan();
     let fields = match *event {
         EventType::WorkspaceScaffolded => AuditFields::new()
-            .with(key(key::REQUEST)?, plan.request())
+            .with(key(key::REQUEST)?, &plan.request_line())
             .with(
                 key(key::DETAILS)?,
                 &format!(
@@ -615,7 +893,7 @@ fn initialization_row(
             .with(key(key::BUILD_SYSTEM)?, scan.build_system())
             .with(key(key::DETAILS)?, "Deterministic rule-based scan"),
         _ => AuditFields::new()
-            .with(key(key::REQUEST)?, plan.request())
+            .with(key(key::REQUEST)?, &plan.request_line())
             .with(key(key::PROJECT_TYPE)?, scan.project_type())
             .with(key(key::SCOPE)?, plan.scope())
             .with(key(key::LANGUAGES)?, scan.languages())
@@ -666,31 +944,28 @@ fn initialization_completion_details(
 
 /// `GateOpened` → `STAGE_AWAITING_APPROVAL`、チェックボックス `[-]` → `[?]`。
 fn gate_opened(
-    opened: &GateOpened,
+    stage: &StageSlug,
     at: &DateTime<Utc>,
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
-    let fields = AuditFields::new().with(key(key::STAGE)?, opened.stage().as_str());
+    let fields = AuditFields::new().with(key(key::STAGE)?, stage.as_str());
     read_model.append_audit(&render_audit_block(
         EventType::StageAwaitingApproval,
         at,
         &fields,
     ));
-    set_checkbox(
-        read_model,
-        opened.stage().as_str(),
-        CheckboxState::AwaitingApproval,
-    )
+    set_checkbox(read_model, stage.as_str(), CheckboxState::AwaitingApproval)
 }
 
 /// `GateRejected` → `GATE_REJECTED` + `STAGE_REVISING`、`[?]` → `[R]`、`Revision Count`。
 fn gate_rejected(
-    rejected: &GateRejected,
+    stage: &StageSlug,
+    feedback: Option<&str>,
     at: &DateTime<Utc>,
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
-    let stage = rejected.stage().as_str();
-    let feedback = rejected.feedback().unwrap_or_default();
+    let stage = stage.as_str();
+    let feedback_text = feedback.unwrap_or_default();
     // 改訂回数はイベントに載らない — upstream `aidlc-state.ts` と同じく、リードモデルの
     // `Revision Count` を読んで +1 する (非数値・欠落は 0 に畳む — 正本互換の導出)。
     let prior = find_field(read_model.state(), field::REVISION_COUNT)
@@ -699,16 +974,16 @@ fn gate_rejected(
     let revisions = prior.saturating_add(1).to_string();
 
     let mut gate = AuditFields::new().with(key(key::STAGE)?, stage);
-    if rejected.feedback().is_some() {
-        gate = gate.with(key(key::FEEDBACK)?, feedback);
+    if feedback.is_some() {
+        gate = gate.with(key(key::FEEDBACK)?, feedback_text);
     }
     read_model.append_audit(&render_audit_block(EventType::GateRejected, at, &gate));
 
     let mut revising = AuditFields::new()
         .with(key(key::STAGE)?, stage)
         .with(key(key::REVISION_COUNT)?, &revisions);
-    if rejected.feedback().is_some() {
-        revising = revising.with(key(key::FEEDBACK)?, feedback);
+    if feedback.is_some() {
+        revising = revising.with(key(key::FEEDBACK)?, feedback_text);
     }
     read_model.append_audit(&render_audit_block(EventType::StageRevising, at, &revising));
 
@@ -718,49 +993,55 @@ fn gate_rejected(
 
 /// `StageRevised` → `STAGE_AWAITING_APPROVAL`（再入の逐語つき）、`[R]` → `[?]`。
 fn stage_revised(
-    revised: &StageRevised,
+    stage: &StageSlug,
     at: &DateTime<Utc>,
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
     let fields = AuditFields::new()
-        .with(key(key::STAGE)?, revised.stage().as_str())
+        .with(key(key::STAGE)?, stage.as_str())
         .with(key(key::DETAILS)?, REENTRY_DETAILS);
     read_model.append_audit(&render_audit_block(
         EventType::StageAwaitingApproval,
         at,
         &fields,
     ));
-    set_checkbox(
-        read_model,
-        revised.stage().as_str(),
-        CheckboxState::AwaitingApproval,
-    )
+    set_checkbox(read_model, stage.as_str(), CheckboxState::AwaitingApproval)
 }
 
 /// `GateApproved` → `GATE_APPROVED` + `STAGE_COMPLETED` + (フェーズ境界) + 次ステージの開始。
 fn gate_approved(
-    approved: &GateApproved,
+    stage: &StageSlug,
+    user_input: Option<&str>,
+    validation: Option<&core_command_domain::orchestration::StageValidation>,
+    baseline: Option<&core_command_domain::orchestration::SourceBaseline>,
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
-    let stage = approved.stage();
     let title = title_of(plan, stage)?;
 
     let mut gate = AuditFields::new().with(key(key::STAGE)?, stage.as_str());
-    if let Some(input) = approved.user_input() {
+    if let Some(input) = user_input {
         gate = gate.with(key(key::USER_INPUT)?, input);
     }
     read_model.append_audit(&render_audit_block(EventType::GateApproved, at, &gate));
+    let mut completed = AuditFields::new().with(key(key::STAGE)?, stage.as_str());
+    if let Some(validation) = validation {
+        use core_command_domain::orchestration::StageValidation;
+        let (name, value) = match validation {
+            StageValidation::Basis(value) => ("Validation Basis", value),
+            StageValidation::Warning(value) => ("Validation Warning", value),
+        };
+        completed = completed.with(key(name)?, value);
+    }
+    completed = completed.with(
+        key(key::DETAILS)?,
+        &format!("Stage {title} approved by gate"),
+    );
     read_model.append_audit(&render_audit_block(
         EventType::StageCompleted,
         at,
-        &AuditFields::new()
-            .with(key(key::STAGE)?, stage.as_str())
-            .with(
-                key(key::DETAILS)?,
-                &format!("Stage {title} approved by gate"),
-            ),
+        &completed,
     ));
     // 境界行の `**Stages completed**:` は**倒したあとの**チェックボックスを数えた値なので、
     // 先に完了させる（`cli/report/approved-across-phases` は 2 — 計画上の inception 内
@@ -784,6 +1065,7 @@ fn gate_approved(
         next.as_ref(),
         stage,
         Completion::Approved,
+        baseline,
     )
 }
 
@@ -793,7 +1075,9 @@ fn gate_approved(
 
 /// `StageSkipped` → `STAGE_SKIPPED` + 次ステージの開始。完了数と最終完了ステージは動かさない。
 fn stage_skipped(
-    skipped: &StageSkipped,
+    stage: &StageSlug,
+    reason: &str,
+    baseline: Option<&core_command_domain::orchestration::SourceBaseline>,
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
     read_model: &mut ReadModel,
@@ -802,20 +1086,20 @@ fn stage_skipped(
         EventType::StageSkipped,
         at,
         &AuditFields::new()
-            .with(key(key::STAGE)?, skipped.stage().as_str())
-            .with(key(key::REASON)?, skipped.reason()),
+            .with(key(key::STAGE)?, stage.as_str())
+            .with(key(key::REASON)?, reason)
+            .with(key(key::SKIP_KIND)?, "conditional-runtime"),
     ));
-    set_checkbox(read_model, skipped.stage().as_str(), CheckboxState::Skipped)?;
-    let next = next_in_effective_scope(read_model, plan, skipped.stage());
+    set_checkbox(read_model, stage.as_str(), CheckboxState::Skipped)?;
+    let next = next_in_effective_scope(read_model, plan, stage);
     leave_for(
         read_model,
         at,
         plan,
         next.as_ref(),
-        skipped.stage(),
-        Completion::Skipped {
-            reason: skipped.reason(),
-        },
+        stage,
+        Completion::Skipped { reason },
+        baseline,
     )
 }
 
@@ -856,7 +1140,7 @@ fn jumped_event(
             .ok_or_else(|| unknown(slug))
     };
     let (src_at, tgt_at) = (position(&source)?, position(target)?);
-    let direction = JumpDirection::of(src_at, tgt_at);
+    let direction = jumped.direction();
     let spelling = direction_spelling(direction);
     let lowered = spelling.to_lowercase();
 
@@ -865,6 +1149,14 @@ fn jumped_event(
         checkboxes
             .find(slug.as_str())
             .map(core_command_domain::workspace::CheckboxEntry::state)
+    };
+    let mut reset_stages = Vec::new();
+    // 読み飛ばし・巻き戻しの対象は跳躍に使う計画で決まる — `--scope` を名指した直接
+    // execute は別 scope の静的な列で導く (裁定 2026-09-10: jump-contract Q1 = A。
+    // 集約の `jump_plan` と同じ規則)。
+    let in_jump_plan = |stage: &PlannedStage| match jumped.scope() {
+        Some(scope) => scope.contains(stage.slug()),
+        None => effective_action(read_model, stage) == PlanAction::Execute,
     };
     match direction {
         JumpDirection::Forward => {
@@ -878,12 +1170,12 @@ fn jumped_event(
                 .iter()
                 .filter(|stage| {
                     // 実効 SKIP の中間は触らない (`SKIP` 行はそのまま — upstream 実バイト)。
-                    effective_action(read_model, stage) == PlanAction::Execute
+                    in_jump_plan(stage)
                         && state_of(stage.slug()).is_some_and(CheckboxState::is_in_flight)
                 })
                 .map(PlannedStage::slug)
                 .collect();
-            if state_of(&source).is_some_and(CheckboxState::is_active) {
+            if &source != target && state_of(&source).is_some_and(CheckboxState::is_active) {
                 skipped.push(&source);
             }
             for slug in skipped {
@@ -895,7 +1187,8 @@ fn jumped_event(
                         .with(
                             key(key::REASON)?,
                             &format!("Skipped by jump to {} ({lowered})", target.as_str()),
-                        ),
+                        )
+                        .with(key(key::SKIP_KIND)?, "jump"),
                 ));
                 set_checkbox(read_model, slug.as_str(), CheckboxState::Skipped)?;
             }
@@ -905,12 +1198,21 @@ fn jumped_event(
             // 一度 pending へ戻してから開始し直す (`jump/execute-backward` の
             // `**Stages completed**: 0` は到達点の [x] を戻した後の数え直しでしか説明が
             // 付かない)。
-            for stage in plan.stages().get(tgt_at..).unwrap_or_default() {
-                let touched =
-                    state_of(stage.slug()).is_some_and(|marker| marker != CheckboxState::Pending);
-                if effective_action(read_model, stage) == PlanAction::Execute && touched {
-                    set_checkbox(read_model, stage.slug().as_str(), CheckboxState::Pending)?;
-                }
+            let resets: Vec<StageSlug> = plan
+                .stages()
+                .get(tgt_at..)
+                .unwrap_or_default()
+                .iter()
+                .filter(|stage| {
+                    in_jump_plan(stage)
+                        && state_of(stage.slug())
+                            .is_some_and(|marker| marker != CheckboxState::Pending)
+                })
+                .map(|stage| stage.slug().clone())
+                .collect();
+            for slug in resets {
+                reset_stages.push(slug.clone());
+                set_checkbox(read_model, slug.as_str(), CheckboxState::Pending)?;
             }
         }
         JumpDirection::Redo => {}
@@ -925,25 +1227,91 @@ fn jumped_event(
     }
 
     let number = number_of(plan, target)?;
-    read_model.append_audit(&render_audit_block(
-        EventType::StageJumped,
-        at,
-        &AuditFields::new()
-            .with(key(key::DIRECTION)?, spelling)
-            .with(key(key::SOURCE)?, source.as_str())
-            .with(key(key::TARGET)?, target.as_str())
-            .with(key(key::SCOPE)?, plan.scope())
-            .with(
-                key(key::DETAILS)?,
-                &format!(
-                    "{spelling} jump from {} to {} ({number}). Scope: {}.",
-                    source.as_str(),
-                    target.as_str(),
-                    plan.scope()
-                ),
+    let mut fields = AuditFields::new()
+        .with(key(key::DIRECTION)?, spelling)
+        .with(key(key::SOURCE)?, source.as_str())
+        .with(key(key::TARGET)?, target.as_str())
+        .with(key(key::SCOPE)?, plan.scope())
+        .with(
+            key(key::DETAILS)?,
+            &format!(
+                "{spelling} jump from {} to {} ({number}). Scope: {}.",
+                source.as_str(),
+                target.as_str(),
+                plan.scope()
             ),
-    ));
-    enter_stage(read_model, at, plan, target)?;
+        );
+    if let Some(observation) = jumped
+        .observation()
+        .filter(|_| direction == JumpDirection::Backward)
+    {
+        let (mut changed, mut invalidated, mut reviews) = observation.fold_artifacts(
+            (Vec::new(), Vec::new(), Vec::new()),
+            |(mut changed, mut invalidated, mut reviews), artifact| {
+                if artifact.stage() == target {
+                    changed.push(artifact.path().to_string());
+                }
+                if artifact.stage() != target
+                    && reset_stages.contains(artifact.stage())
+                    && artifact.exists()
+                {
+                    invalidated.push(artifact.path().to_string());
+                    if artifact.has_review() {
+                        reviews.push(format!("{}#Review", artifact.path()));
+                    }
+                }
+                (changed, invalidated, reviews)
+            },
+        );
+        for values in [&mut changed, &mut invalidated, &mut reviews] {
+            values.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
+            values.dedup();
+        }
+        fields = fields
+            .with(
+                key("Changed Upstream Artifacts")?,
+                &core_infrastructure::canon_json::serialize(
+                    &core_infrastructure::canon_json::JsonValue::Array(
+                        changed
+                            .into_iter()
+                            .map(core_infrastructure::canon_json::JsonValue::String)
+                            .collect(),
+                    ),
+                    core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+                ),
+            )
+            .with(
+                key("Invalidated Downstream Artifacts")?,
+                &core_infrastructure::canon_json::serialize(
+                    &core_infrastructure::canon_json::JsonValue::Array(
+                        invalidated
+                            .into_iter()
+                            .map(core_infrastructure::canon_json::JsonValue::String)
+                            .collect(),
+                    ),
+                    core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+                ),
+            )
+            .with(
+                key("Invalidated Downstream Reviews")?,
+                &core_infrastructure::canon_json::serialize(
+                    &core_infrastructure::canon_json::JsonValue::Array(
+                        reviews
+                            .into_iter()
+                            .map(core_infrastructure::canon_json::JsonValue::String)
+                            .collect(),
+                    ),
+                    core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+                ),
+            );
+    }
+    if let Some(baseline) = jumped.baseline() {
+        fields = fields.with(key("Source Baseline")?, &baseline.fingerprint());
+    }
+    read_model.append_audit(&render_audit_block(EventType::StageJumped, at, &fields));
+    let stage = plan.find(target).ok_or_else(|| unknown(target))?;
+    read_model.append_audit(&stage_started_row(stage, at, jumped.baseline())?);
+    enter_stage_without_row(read_model, plan, target)?;
     set_field(
         read_model,
         field::LAST_COMPLETED_STAGE,
@@ -1246,7 +1614,7 @@ fn synthetic_workflow_id(slug: &StageSlug) -> String {
     format!("single-stage:{}", slug.as_str())
 }
 
-/// `SingleStageRunCommitted` → `STAGE_STARTED` / `STAGE_COMPLETED` の**監査 2 行だけ**。
+/// `SingleStageRunCommitted` → `STAGE_COMPLETED` の監査1行。開始は専用イベントが描く。
 ///
 /// 状態ファイルのフィールドもチェックボックスも `read_*` 表も**一切動かさない** — 適用が
 /// フレーム空だからである（仕様 I10、オーナー裁定 2026-09-04）。`Last Updated` も触らない。
@@ -1259,20 +1627,8 @@ fn single_stage_run_committed(
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
     let slug = committed.stage();
-    // 担当エージェントは計画の表示属性から引く（upstream は `node.lead_agent`）。
-    let agent = plan
-        .display_of(slug)
-        .map(|display| display.lead_agent().to_string())
-        .ok_or_else(|| unknown(slug))?;
+    plan.find(slug).ok_or_else(|| unknown(slug))?;
     let workflow = synthetic_workflow_id(slug);
-    read_model.append_audit(&render_audit_block(
-        EventType::StageStarted,
-        at,
-        &AuditFields::new()
-            .with(key(key::STAGE)?, slug.as_str())
-            .with(key(key::AGENT)?, &agent)
-            .with(key(key::WORKFLOW)?, &workflow),
-    ));
     read_model.append_audit(&render_audit_block(
         EventType::StageCompleted,
         at,
@@ -1309,7 +1665,7 @@ fn skeleton_stance_recorded(
         recorded.stance().as_str(),
     )
     .map_err(|_| ProjectionError::ParkSectionMissing)?;
-    read_model.replace_state(next);
+    *read_model = read_model.clone().with_state(next);
     Ok(())
 }
 
@@ -1334,6 +1690,7 @@ fn review_requested(
     if requested.is_retry() {
         fields = fields.with(key(key::RETRY)?, RETRY_PENDING_REQUEST);
     }
+    let fields = review_binding_fields(fields, requested.evidence())?;
     read_model.append_audit(&render_audit_block(EventType::ReviewRequested, at, &fields));
     Ok(())
 }
@@ -1341,22 +1698,167 @@ fn review_requested(
 /// `ReviewCompleted` → `REVIEW_COMPLETED` の**監査 1 行だけ**。
 ///
 /// フィールドの並びは upstream `:916-919` / `:1128` / `:1135` の構築順である。
-/// `Artifact Fingerprint` / `Source Fingerprint` は繰延（設計 §1 — 凍結検査に属する）。
+/// 要求・完成文書・追記境界・ソースの結合も、本家2.7.1の欄順で描く。
 fn review_completed(
     completed: &ReviewCompleted,
     at: &DateTime<Utc>,
     read_model: &mut ReadModel,
 ) -> Result<(), ProjectionError> {
-    read_model.append_audit(&render_audit_block(
-        EventType::ReviewCompleted,
-        at,
-        &AuditFields::new()
-            .with(key(key::STAGE)?, completed.stage().as_str())
-            .with(key(key::REVIEWER)?, completed.reviewer())
-            .with(key(key::ITERATION)?, &completed.iteration().to_string())
-            .with(key(key::VERDICT)?, completed.verdict().as_str()),
-    ));
+    let fields = AuditFields::new()
+        .with(key(key::STAGE)?, completed.stage().as_str())
+        .with(key(key::REVIEWER)?, completed.reviewer())
+        .with(key(key::ITERATION)?, &completed.iteration().to_string())
+        .with(key(key::VERDICT)?, completed.verdict().as_str())
+        .with(
+            key("Request Fingerprint")?,
+            completed.evidence().request().fingerprint(),
+        )
+        .with(
+            key("Artifact Fingerprint")?,
+            completed.evidence().fingerprint(),
+        );
+    let fields = review_appendix_fields(fields, completed.evidence().request())?;
+    let fields = if let Some(source) = completed.evidence().request().source() {
+        fields
+            .with(key("Request Source Fingerprint")?, source)
+            .with(key("Source Fingerprint")?, source)
+    } else {
+        fields
+    };
+    read_model.append_audit(&render_audit_block(EventType::ReviewCompleted, at, &fields));
     Ok(())
+}
+
+fn review_binding_fields(
+    fields: AuditFields,
+    binding: &core_command_domain::orchestration::ReviewBinding,
+) -> Result<AuditFields, ProjectionError> {
+    let fields = fields.with(key("Artifact Fingerprint")?, binding.fingerprint());
+    let fields = review_appendix_fields(fields, binding)?;
+    Ok(if let Some(source) = binding.source() {
+        fields.with(key("Source Fingerprint")?, source)
+    } else {
+        fields
+    })
+}
+fn review_appendix_fields(
+    fields: AuditFields,
+    binding: &core_command_domain::orchestration::ReviewBinding,
+) -> Result<AuditFields, ProjectionError> {
+    let fields = fields
+        .with(
+            key("Review Appendix Artifact")?,
+            binding.appendix_artifact(),
+        )
+        .with(
+            key("Review Appendix Offset")?,
+            &binding.appendix_offset().to_string(),
+        )
+        .with(key("Review Appendix Prior Digest")?, binding.prior_digest())
+        .with(
+            key("Review Appendix Prior Length")?,
+            &binding.prior_length().to_string(),
+        );
+    Ok(if let Some(challenge) = binding.challenge() {
+        fields.with(key("Review Challenge")?, challenge)
+    } else {
+        fields
+    })
+}
+
+/// `LearningsCaptured` → メモリ層への実践行の追記と監査行 `RULE_LEARNED`。
+///
+/// 状態ファイルは動かさない — 学びは進行でも承認でもない。
+///
+/// # Errors
+///
+/// 実践行を書く学びが在るのにメモリ層が載っていない（`MemoryFilesMissing`）、監査キーの
+/// 綴り違反。
+fn learnings_captured(
+    captured: &LearningsCaptured,
+    at: &DateTime<Utc>,
+    read_model: &mut ReadModel,
+) -> Result<(), ProjectionError> {
+    let practice_lines = captured
+        .learnings()
+        .filter(|learning| learning.disposition().writes_practice_line());
+    if !practice_lines.is_empty() {
+        let memory = read_model
+            .memory()
+            .ok_or(ProjectionError::MemoryFilesMissing)?;
+        let (team, project) = append_practice_lines(
+            memory.team(),
+            memory.project(),
+            captured,
+            &practice_lines,
+            at.date_naive(),
+        )?;
+        *read_model = read_model.clone().with_rewritten_memory(team, project);
+    }
+    let rows = captured
+        .learnings()
+        .filter(|learning| learning.disposition().writes_audit_row());
+    let blocks = rows.fold_left(
+        Ok(String::new()),
+        |blocks: Result<String, ProjectionError>, entry| {
+            let mut blocks = blocks?;
+            let learning = entry.learning();
+            blocks.push_str(&render_audit_block(
+                EventType::RuleLearned,
+                at,
+                &AuditFields::new()
+                    .with(key(key::STAGE)?, captured.stage().as_str())
+                    .with(key(key::CANDIDATE_ID)?, learning.candidate_id().as_str())
+                    .with(key(key::CONTENT_HASH)?, learning.content_hash().as_str())
+                    .with(
+                        key(key::DESTINATION)?,
+                        &captured.provenance().destination(learning.scope()),
+                    )
+                    .with(key(key::HEADING)?, learning.heading().as_str())
+                    .with(key(key::SOURCE)?, learning.source().as_str()),
+            ));
+            Ok(blocks)
+        },
+    )?;
+    read_model.append_audit(&blocks);
+    Ok(())
+}
+
+/// メモリ層 2 本の新しい本文を組む（純粋 — ディスクは触らない）。
+///
+/// 選ばれた見出しは**足りなければ作ってから**追記する — orchestrator は配布の正本が持たない
+/// 見出しへも learnings を振れる（`aidlc-learnings.ts:836-841`）。
+fn append_practice_lines(
+    team: &str,
+    project: &str,
+    captured: &LearningsCaptured,
+    practice_lines: &CapturedLearnings,
+    learned_on: chrono::NaiveDate,
+) -> Result<(String, String), ProjectionError> {
+    practice_lines.fold_left(
+        Ok((team.to_string(), project.to_string())),
+        |faces: Result<(String, String), ProjectionError>, entry| {
+            let (team, project) = faces?;
+            let learning = entry.learning();
+            let heading = learning.heading().as_str();
+            let line = learning.practice_line(captured.provenance(), captured.stage(), learned_on);
+            let (file, before) = match learning.scope() {
+                LearningScope::Team => (TEAM_MD, team.as_str()),
+                LearningScope::Project => (PROJECT_MD, project.as_str()),
+            };
+            let with_heading = ensure_heading(before, heading);
+            let after = append_under_heading(&with_heading, heading, &line).map_err(|error| {
+                ProjectionError::MemoryHeadingMissing {
+                    file,
+                    heading: error.as_str().to_string(),
+                }
+            })?;
+            match learning.scope() {
+                LearningScope::Team => Ok((after, project)),
+                LearningScope::Project => Ok((team, after)),
+            }
+        },
+    )
 }
 
 /// `PracticesAffirmed` → メモリ層 2 本の書き替え・状態ファイルの 2 欄・監査 1 行。
@@ -1386,7 +1888,7 @@ fn practices_affirmed(
         .memory()
         .ok_or(ProjectionError::MemoryFilesMissing)?;
     let (team, project) = rewrite_memory(memory, affirmed)?;
-    read_model.replace_memory(team, project);
+    *read_model = read_model.clone().with_rewritten_memory(team, project);
 
     let stamp = iso8601_seconds(at);
     let next = with_field_or_insert(
@@ -1400,7 +1902,7 @@ fn practices_affirmed(
         file: STATE_FILE,
         heading: error.as_str().to_string(),
     })?;
-    read_model.replace_state(next);
+    *read_model = read_model.clone().with_state(next);
     set_field(read_model, field::LAST_UPDATED, &stamp)?;
 
     let sections = affirmed
@@ -1537,14 +2039,18 @@ fn set_phase_progress_for_advance(
 }
 
 /// `STAGE_STARTED` 行 1 本。
-fn stage_started_row(stage: &PlannedStage, at: &DateTime<Utc>) -> Result<String, ProjectionError> {
-    Ok(render_audit_block(
-        EventType::StageStarted,
-        at,
-        &AuditFields::new()
-            .with(key(key::STAGE)?, stage.slug().as_str())
-            .with(key(key::AGENT)?, stage.display().lead_agent()),
-    ))
+fn stage_started_row(
+    stage: &PlannedStage,
+    at: &DateTime<Utc>,
+    baseline: Option<&core_command_domain::orchestration::SourceBaseline>,
+) -> Result<String, ProjectionError> {
+    let mut fields = AuditFields::new()
+        .with(key(key::STAGE)?, stage.slug().as_str())
+        .with(key(key::AGENT)?, stage.display().lead_agent());
+    if let Some(baseline) = baseline {
+        fields = fields.with(key("Source Baseline")?, &baseline.fingerprint());
+    }
+    Ok(render_audit_block(EventType::StageStarted, at, &fields))
 }
 
 /// ワークフローを畳んだ経路（`WORKFLOW_COMPLETED` の材料が違う）。
@@ -1572,9 +2078,10 @@ fn leave_for(
     next: Option<&StageSlug>,
     completed: &StageSlug,
     completion: Completion<'_>,
+    baseline: Option<&core_command_domain::orchestration::SourceBaseline>,
 ) -> Result<(), ProjectionError> {
     match next {
-        Some(slug) => enter_stage(read_model, at, plan, slug),
+        Some(slug) => enter_stage(read_model, at, plan, slug, baseline),
         None => complete_workflow(read_model, at, plan, completed, completion),
     }
 }
@@ -1658,9 +2165,10 @@ fn enter_stage(
     at: &DateTime<Utc>,
     plan: &ResolvedPlan,
     slug: &StageSlug,
+    baseline: Option<&core_command_domain::orchestration::SourceBaseline>,
 ) -> Result<(), ProjectionError> {
     let stage = plan.find(slug).ok_or_else(|| unknown(slug))?;
-    read_model.append_audit(&stage_started_row(stage, at)?);
+    read_model.append_audit(&stage_started_row(stage, at, baseline)?);
     enter_stage_without_row(read_model, plan, slug)
 }
 
@@ -1818,7 +2326,7 @@ fn set_checkbox(
     state: CheckboxState,
 ) -> Result<(), ProjectionError> {
     let next = Checkboxes::with_marker(read_model.state(), slug, state)?;
-    read_model.replace_state(next);
+    *read_model = read_model.clone().with_state(next);
     Ok(())
 }
 
@@ -1829,14 +2337,14 @@ fn set_suffix(
     action: PlanAction,
 ) -> Result<(), ProjectionError> {
     let next = Checkboxes::with_suffix(read_model.state(), slug, action)?;
-    read_model.replace_state(next);
+    *read_model = read_model.clone().with_state(next);
     Ok(())
 }
 
 /// 状態ファイルのフィールド行を書き換える（不在は拒否 — 無言 no-op は検出不能なドリフト）。
 fn set_field(read_model: &mut ReadModel, field: &str, value: &str) -> Result<(), ProjectionError> {
     let next = with_field(read_model.state(), field, value)?;
-    read_model.replace_state(next);
+    *read_model = read_model.clone().with_state(next);
     Ok(())
 }
 
@@ -1905,14 +2413,14 @@ mod park_marker {
                 format!("{PARKED_AT_STAGE_PREFIX} {stage}"),
             ],
         );
-        read_model.replace_state(rejoin(&out, &cleared));
+        *read_model = read_model.clone().with_state(rejoin(&out, &cleared));
         Ok(())
     }
 
     /// park マーカーを除去する（不在は no-op — 二重 unpark で落ちない）。
     pub(super) fn clear(read_model: &mut ReadModel) {
         let next = removed(read_model.state());
-        read_model.replace_state(next);
+        *read_model = read_model.clone().with_state(next);
     }
 
     /// マーカー 2 行を落とした本文。
@@ -1941,7 +2449,98 @@ mod park_marker {
 mod tests {
     use super::*;
     use core_command_domain::orchestration::Created;
+    use core_command_domain::orchestration::{GateApproved, GateRejected, StageSkipped};
     use core_command_domain::workspace::{PromotedSections, RuleLines};
+
+    #[test]
+    fn protected_plan_answer_renders_its_evidence_without_changing_public_state() {
+        use core_command_domain::orchestration::{
+            CodeGenerationAuthority, PlanAnswerInput, PlanAnswerLogged, PlanApprovalEvidence,
+            PlanApprovalOperationId, PlanApprovalOrigin, PlanChoice, PlanDecisionEvidence,
+            PlanSession, PlanTarget,
+        };
+        let authority = CodeGenerationAuthority::new(
+            &PlanTarget::stage_level(),
+            &IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0001").unwrap(),
+            format!("sha256:{}", "a".repeat(64)),
+            "WORKFLOW_STARTED:2026-09-08T01:00:00Z#1".to_string(),
+            "b".repeat(64),
+            2,
+        )
+        .unwrap();
+        let evidence = PlanApprovalEvidence::new(
+            authority,
+            format!("sha256:{}", "c".repeat(64)),
+            "questions.md".to_string(),
+            "d".repeat(64),
+            "e".repeat(64),
+        )
+        .unwrap();
+        for (choice, event_type) in [
+            (PlanChoice::ApprovePlan, "PLAN_APPROVAL_RECORDED"),
+            (PlanChoice::RequestChanges, "QUESTION_ANSWERED"),
+        ] {
+            let input = PlanAnswerInput::new(
+                PlanApprovalOrigin::new(
+                    core_command_domain::workspace::SpaceName::default(),
+                    execution_id(),
+                ),
+                "code-generation".to_string(),
+                PlanDecisionEvidence::new(
+                    evidence.clone(),
+                    PlanSession::new("session".to_string()).unwrap(),
+                ),
+                choice,
+                Some("b".repeat(64)),
+            );
+            let mut actual = model();
+            let before = actual.state().to_string();
+            project(
+                &[entry(IntentExecutionEvent::PlanAnswerLogged(Box::new(
+                    PlanAnswerLogged::new(
+                        event_id(),
+                        execution_id(),
+                        PlanApprovalOperationId::generate(),
+                        input,
+                    ),
+                )))],
+                &plan(),
+                &mut actual,
+            )
+            .unwrap();
+            assert_eq!(actual.state(), before);
+            let fields = AuditFields::new()
+                .with(key("Stage").unwrap(), "code-generation")
+                .with(key("Details").unwrap(), choice.as_str())
+                .with(key("Checkpoint").unwrap(), "Code Generation Plan Approval")
+                .with(key("Plan Target").unwrap(), "stage:code-generation")
+                .with(
+                    key("Intent").unwrap(),
+                    "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0001",
+                )
+                .with(
+                    key("Directive Epoch").unwrap(),
+                    &format!("sha256:{}", "a".repeat(64)),
+                )
+                .with(
+                    key("Run floor").unwrap(),
+                    "WORKFLOW_STARTED:2026-09-08T01:00:00Z#1",
+                )
+                .with(
+                    key("Approval Fingerprint").unwrap(),
+                    &format!("sha256:{}", "c".repeat(64)),
+                )
+                .with(key("Questions File").unwrap(), "questions.md")
+                .with(key("Questions SHA-256").unwrap(), &"d".repeat(64))
+                .with(key("Prompt SHA-256").unwrap(), &"e".repeat(64))
+                .with(key("Session").unwrap(), "session");
+            let kind = EventType::parse(event_type).expect("本家2.7.1の監査語彙");
+            assert_eq!(
+                actual.appended_audit(),
+                render_audit_block(kind, &at(), &fields)
+            );
+        }
+    }
 
     /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
     fn event_id() -> IntentExecutionEventId {
@@ -2138,7 +2737,7 @@ mod tests {
         assert!(
             read_model
                 .state()
-                .contains("- **Next Action**: Execute Some Title\n")
+                .contains("- **Next Action**: Execute first\n")
         );
         // 計画一覧は触らない（畳まれた理由を導けないため）。
         assert!(
@@ -2205,9 +2804,24 @@ mod tests {
     #[test]
     fn an_isolated_run_appends_the_two_audit_rows_verbatim_and_touches_nothing_else() {
         let before = model();
-        let read_model = run(IntentExecutionEvent::SingleStageRunCommitted(
-            SingleStageRunCommitted::new(event_id(), execution_id(), slug("first")),
-        ));
+        let mut read_model = model();
+        project(
+            &[
+                entry(IntentExecutionEvent::SingleStageRunStarted(
+                    core_command_domain::orchestration::SingleStageRunStarted::new(
+                        event_id(),
+                        execution_id(),
+                        slug("first"),
+                    ),
+                )),
+                entry(IntentExecutionEvent::SingleStageRunCommitted(
+                    SingleStageRunCommitted::new(event_id(), execution_id(), slug("first")),
+                )),
+            ],
+            &plan(),
+            &mut read_model,
+        )
+        .unwrap();
         // 監査 2 行が upstream の順序・フィールド順で並ぶ (ピン `:5326-5343`)。
         assert_eq!(
             audit_events(&read_model),
@@ -2235,7 +2849,7 @@ mod tests {
     }
 
     #[test]
-    fn an_isolated_run_of_a_stage_outside_the_plan_stops_instead_of_guessing_the_agent() {
+    fn an_isolated_completion_of_a_stage_outside_the_plan_is_refused() {
         let mut read_model = model();
         let error = project(
             &[entry(IntentExecutionEvent::SingleStageRunCommitted(
@@ -2321,6 +2935,7 @@ mod tests {
             "aidlc-quality-agent",
             1,
             false,
+            crate::review_test_fixture::binding(),
         )));
         assert_eq!(audit_events(&read_model), ["REVIEW_REQUESTED"]);
         let appended = read_model.appended_audit();
@@ -2345,6 +2960,7 @@ mod tests {
             "aidlc-quality-agent",
             2,
             true,
+            crate::review_test_fixture::binding(),
         )));
         assert!(
             read_model.appended_audit().contains(
@@ -2365,6 +2981,7 @@ mod tests {
             "aidlc-architecture-reviewer-agent",
             2,
             ReviewVerdict::NotReady,
+            crate::review_test_fixture::completion(),
         )));
         assert_eq!(audit_events(&read_model), ["REVIEW_COMPLETED"]);
         assert!(
@@ -2374,12 +2991,10 @@ mod tests {
             "{}",
             read_model.appended_audit()
         );
-        // 成果物 fingerprint の 2 欄は繰延である (設計 §1)。
-        assert!(
-            !read_model.appended_audit().contains("Fingerprint"),
-            "{}",
-            read_model.appended_audit()
-        );
+        // 要求原文とReview節を含む完成原文を、別の固定指紋で監査へ束縛する。
+        assert!(read_model.appended_audit().contains(
+            "**Request Fingerprint**: sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d\n**Artifact Fingerprint**: sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0\n**Review Appendix Artifact**: stage/artifact.md\n**Review Appendix Offset**: 11\n**Review Appendix Prior Digest**: none\n**Review Appendix Prior Length**: 0\n"
+        ), "{}", read_model.appended_audit());
         assert_eq!(read_model.state(), before.state());
     }
 
@@ -2397,6 +3012,7 @@ mod tests {
                     "aidlc-quality-agent",
                     1,
                     false,
+                    crate::review_test_fixture::binding(),
                 ),
             ))],
             &plan(),
@@ -2569,6 +3185,8 @@ mod tests {
                 event_id(),
                 execution_id(),
                 slug("first"),
+                core_command_domain::orchestration::JumpDirection::Backward,
+                None,
             )))],
             &plan(),
             &mut read_model,
@@ -2686,6 +3304,8 @@ mod tests {
                 event_id(),
                 execution_id(),
                 slug("second"),
+                core_command_domain::orchestration::JumpDirection::Forward,
+                None,
             )))],
             &plan(),
             &mut read_model,
@@ -2767,6 +3387,8 @@ mod tests {
             event_id(),
             execution_id(),
             slug("state-init"),
+            core_command_domain::orchestration::JumpDirection::Redo,
+            None,
         )));
         assert!(
             read_model
@@ -2792,6 +3414,8 @@ mod tests {
                 event_id(),
                 execution_id(),
                 slug("first"),
+                core_command_domain::orchestration::JumpDirection::Forward,
+                None,
             )))],
             &plan(),
             &mut read_model,
@@ -3034,6 +3658,196 @@ old style.
             RuleLines::new(mandated.iter().map(|rule| (*rule).to_string()).collect()),
             RuleLines::new(forbidden.iter().map(|rule| (*rule).to_string()).collect()),
         )
+    }
+
+    // ---- 学びの儀式 (§13) ----
+
+    const GOLDEN_TEXT: &str = "ALWAYS 採取用の検証結果を記録する。";
+    const GOLDEN_HASH: &str = "f543ed24a72a9b57b8fac723a95fa0a2c04240a25c8a6a67229322acb3de9bd3";
+
+    fn learning(
+        text: &str,
+        scope: core_command_domain::orchestration::LearningScope,
+        heading: &str,
+        source: core_command_domain::orchestration::LearningSource,
+    ) -> core_command_domain::orchestration::Learning {
+        core_command_domain::orchestration::Learning::new(
+            core_command_domain::orchestration::LearningCandidateId::parse("fixture-1")
+                .expect("候補番号"),
+            scope,
+            core_command_domain::orchestration::PracticeHeading::from_routed(heading),
+            text,
+            source,
+        )
+    }
+
+    fn captured_event(
+        learnings: Vec<core_command_domain::orchestration::CapturedLearning>,
+    ) -> IntentExecutionEvent {
+        IntentExecutionEvent::LearningsCaptured(Box::new(
+            core_command_domain::orchestration::LearningsCaptured::new(
+                event_id(),
+                execution_id(),
+                slug("requirements-analysis"),
+                core_command_domain::orchestration::LearningProvenance::new(
+                    core_command_domain::workspace::SpaceName::default(),
+                    core_command_domain::workspace::IntentDirName::parse("260908-learnings")
+                        .expect("記録名"),
+                ),
+                core_command_domain::orchestration::CapturedLearnings::new(learnings),
+            ),
+        ))
+    }
+
+    /// ゴールデン `learnings/persist-one` の実践行と監査行を逐語で固定する。
+    #[test]
+    fn a_fresh_learning_writes_the_practice_line_and_the_audit_row() {
+        let read_model = run_with_memory(captured_event(vec![
+            core_command_domain::orchestration::CapturedLearning::new(
+                learning(
+                    GOLDEN_TEXT,
+                    core_command_domain::orchestration::LearningScope::Project,
+                    "Corrections",
+                    core_command_domain::orchestration::LearningSource::UserAddition,
+                ),
+                core_command_domain::orchestration::LearningDisposition::Fresh,
+            ),
+        ]));
+
+        let memory = read_model.memory().expect("面は載っている");
+        assert!(memory.is_dirty());
+        assert_eq!(memory.team(), TEAM_MD, "team.md は触らない");
+        assert_eq!(
+            memory.project(),
+            format!(
+                "{PROJECT_MD}- {GOLDEN_TEXT} (learned 2026-08-21) <!-- cid:260908-learnings:requirements-analysis:{GOLDEN_HASH} -->\n"
+            )
+        );
+        assert_eq!(
+            read_model.appended_audit(),
+            format!(
+                "\n## Rule Learned\n**Timestamp**: 2026-08-21T09:14:07Z\n**Event**: RULE_LEARNED\n**Stage**: requirements-analysis\n**Candidate-ID**: fixture-1\n**Content-Hash**: {GOLDEN_HASH}\n**Destination**: <project-dir>/aidlc/spaces/default/memory/project.md\n**Heading**: ## Corrections\n**Source**: user_addition\n\n---\n"
+            )
+        );
+        // 状態ファイルは動かない — 学びは進行でも承認でもない。
+        assert_eq!(read_model.state(), model().state());
+    }
+
+    /// 監査行だけを補う復旧では実践行を二重に足さない。
+    #[test]
+    fn an_audit_row_only_repair_leaves_the_method_file_untouched() {
+        let read_model = run_with_memory(captured_event(vec![
+            core_command_domain::orchestration::CapturedLearning::new(
+                learning(
+                    GOLDEN_TEXT,
+                    core_command_domain::orchestration::LearningScope::Project,
+                    "Corrections",
+                    core_command_domain::orchestration::LearningSource::Orchestrator,
+                ),
+                core_command_domain::orchestration::LearningDisposition::AuditRowOnly,
+            ),
+        ]));
+        let memory = read_model.memory().expect("面は載っている");
+        assert!(!memory.is_dirty(), "実践行は既に在るので書き替えない");
+        assert_eq!(memory.project(), PROJECT_MD);
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Event**: RULE_LEARNED\n")
+        );
+    }
+
+    /// 実践行だけを補う復旧では監査行を二重に立てない。
+    #[test]
+    fn a_practice_line_only_repair_writes_no_audit_row() {
+        let read_model = run_with_memory(captured_event(vec![
+            core_command_domain::orchestration::CapturedLearning::new(
+                learning(
+                    GOLDEN_TEXT,
+                    core_command_domain::orchestration::LearningScope::Project,
+                    "Corrections",
+                    core_command_domain::orchestration::LearningSource::Orchestrator,
+                ),
+                core_command_domain::orchestration::LearningDisposition::PracticeLineOnly,
+            ),
+        ]));
+        assert!(
+            read_model
+                .memory()
+                .expect("面")
+                .project()
+                .contains(GOLDEN_HASH)
+        );
+        assert_eq!(read_model.appended_audit(), "");
+    }
+
+    /// 選ばれた見出しが正本に無ければ作ってから足す（本家の ensure-exists）。
+    #[test]
+    fn a_routed_heading_the_method_file_lacks_is_created_first() {
+        let read_model = run_with_memory(captured_event(vec![
+            core_command_domain::orchestration::CapturedLearning::new(
+                learning(
+                    "ALWAYS run the suite",
+                    core_command_domain::orchestration::LearningScope::Team,
+                    "Testing Posture",
+                    core_command_domain::orchestration::LearningSource::Orchestrator,
+                ),
+                core_command_domain::orchestration::LearningDisposition::Fresh,
+            ),
+        ]));
+        let memory = read_model.memory().expect("面は載っている");
+        assert_eq!(memory.project(), PROJECT_MD, "project.md は触らない");
+        assert!(
+            memory.team().ends_with(
+                "\n## Testing Posture\n- ALWAYS run the suite (learned 2026-08-21) <!-- cid:260908-learnings:requirements-analysis:205b8933ecca515ff63f555e40b8fb01eeb738a8846bcbd0fef69a3113213b9e -->\n"
+            ),
+            "実測: {}",
+            memory.team()
+        );
+        assert!(
+            read_model
+                .appended_audit()
+                .contains("**Heading**: ## Testing Posture\n")
+        );
+    }
+
+    /// 何も選ばれなかった回は 1 バイトも書かない（メモリ層が載っていなくても通る）。
+    #[test]
+    fn an_empty_capture_writes_nothing_and_needs_no_memory_face() {
+        let mut read_model = model();
+        project(
+            &[entry(captured_event(Vec::new()))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        assert_eq!(read_model.appended_audit(), "");
+        assert_eq!(read_model.state(), model().state());
+        assert!(read_model.memory().is_none());
+    }
+
+    /// 実践行を書くのにメモリ層が載っていなければ fail-closed で止まる。
+    #[test]
+    fn a_practice_line_without_the_memory_face_is_refused() {
+        let mut read_model = model();
+        assert_eq!(
+            project(
+                &[entry(captured_event(vec![
+                    core_command_domain::orchestration::CapturedLearning::new(
+                        learning(
+                            GOLDEN_TEXT,
+                            core_command_domain::orchestration::LearningScope::Project,
+                            "Corrections",
+                            core_command_domain::orchestration::LearningSource::Orchestrator,
+                        ),
+                        core_command_domain::orchestration::LearningDisposition::Fresh,
+                    ),
+                ]))],
+                &plan(),
+                &mut read_model
+            ),
+            Err(ProjectionError::MemoryFilesMissing)
+        );
     }
 
     /// メモリ層を載せたリードモデルへ 1 件だけ投影する。
@@ -3288,6 +4102,7 @@ NEVER force-push. (affirmed 2026-09-05)
                     "aidlc-quality-agent",
                     1,
                     false,
+                    crate::review_test_fixture::binding(),
                 ),
             ))],
             &plan(),
@@ -3298,5 +4113,360 @@ NEVER force-push. (affirmed 2026-09-05)
         assert!(!memory.is_dirty());
         assert_eq!(memory.team(), TEAM_MD);
         assert_eq!(memory.project(), PROJECT_MD);
+    }
+
+    #[test]
+    fn a_pipeline_link_row_carries_the_repo_and_the_isolated_workflow() {
+        use core_command_domain::orchestration::{
+            PipelineHandoff, PipelineLinkCompleted, PipelineReceipt,
+        };
+        let read_model = run(IntentExecutionEvent::PipelineLinkCompleted(
+            PipelineLinkCompleted::new(
+                event_id(),
+                execution_id(),
+                PipelineReceipt::new(
+                    "first".to_string(),
+                    "aidlc-architect-agent".to_string(),
+                    Some("modules/app".to_string()),
+                    true,
+                    1,
+                    2,
+                    Some(
+                        PipelineHandoff::new(
+                            "aidlc/handoff.json".to_string(),
+                            format!("sha256:{}", "9".repeat(64)),
+                            "1700000000000".to_string(),
+                        )
+                        .expect("整合した受領"),
+                    ),
+                )
+                .expect("整合した受領証"),
+            ),
+        ));
+        let audit = read_model.appended_audit();
+        assert!(
+            audit.contains("**Event**: PIPELINE_LINK_COMPLETED\n"),
+            "{audit}"
+        );
+        assert!(audit.contains("**Position**: 1/2\n"), "{audit}");
+        assert!(
+            audit.contains("**Artifact Path**: aidlc/handoff.json\n"),
+            "{audit}"
+        );
+        assert!(audit.contains("**Repo**: modules/app\n"), "{audit}");
+        assert!(
+            audit.contains("**Workflow**: single-stage:first\n"),
+            "{audit}"
+        );
+    }
+
+    #[test]
+    fn an_attended_prompt_without_a_session_is_a_human_turn_row_without_the_session_field() {
+        use core_command_domain::orchestration::PromptObserved;
+        let read_model = run(IntentExecutionEvent::PromptObserved(PromptObserved::new(
+            event_id(),
+            execution_id(),
+            "",
+            "A",
+            false,
+        )));
+        let audit = read_model.appended_audit();
+        assert!(audit.contains("**Event**: HUMAN_TURN\n"), "{audit}");
+        assert!(!audit.contains("**Session**"), "{audit}");
+        let unattended = run(IntentExecutionEvent::PromptObserved(PromptObserved::new(
+            event_id(),
+            execution_id(),
+            "session-1",
+            "A",
+            true,
+        )));
+        assert!(
+            unattended.appended_audit().is_empty(),
+            "無人運転の応答は人間の在席証拠にならない"
+        );
+    }
+
+    #[test]
+    fn a_decision_row_carries_the_options_and_the_rationale() {
+        use core_command_domain::orchestration::{DecisionPrompt, DecisionRecorded};
+        let read_model = run(IntentExecutionEvent::DecisionRecorded(
+            DecisionRecorded::new(
+                event_id(),
+                execution_id(),
+                DecisionPrompt::new("first", "Pick one")
+                    .with_options("A,B")
+                    .with_rationale("because"),
+            ),
+        ));
+        let audit = read_model.appended_audit();
+        assert!(audit.contains("**Event**: DECISION_RECORDED\n"), "{audit}");
+        assert!(audit.contains("**Options**: A,B\n"), "{audit}");
+        assert!(audit.contains("**Rationale**: because\n"), "{audit}");
+    }
+
+    #[test]
+    fn an_approval_reported_with_a_validation_warning_carries_it_on_the_completion_row() {
+        use core_command_domain::orchestration::{
+            ReportId, ReportResult, ReportTransition, Reported, StageValidation, TransitionStep,
+            TransitionSteps,
+        };
+        let mut read_model = ReadModel::new(
+            SKELETON
+                .replace(
+                    "- **Current Stage**: state-init",
+                    "- **Current Stage**: first",
+                )
+                .replace("- [-] state-init — EXECUTE", "- [x] state-init — EXECUTE")
+                .replace("- [ ] first — EXECUTE", "- [?] first — EXECUTE"),
+        );
+        project(
+            &[entry(IntentExecutionEvent::Reported(
+                Reported::new(
+                    event_id(),
+                    execution_id(),
+                    ReportId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0555").expect("UUIDv7"),
+                    ReportResult::Committed {
+                        stage: slug("first"),
+                        scope: "classic".to_string(),
+                        steps: TransitionSteps::single(TransitionStep::Approve),
+                        transition: ReportTransition::GateApproved {
+                            user_input: Some("Approve".to_string()),
+                        },
+                    },
+                    Some(StageValidation::Warning("receipt unavailable".to_string())),
+                    None,
+                )
+                .expect("整合した報告"),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        let audit = read_model.appended_audit();
+        assert!(
+            audit.contains("**Validation Warning**: receipt unavailable\n"),
+            "{audit}"
+        );
+        assert!(!audit.contains("**Validation Basis**"), "{audit}");
+        assert!(
+            read_model.state().contains("- [x] first — EXECUTE"),
+            "{}",
+            read_model.state()
+        );
+    }
+
+    #[test]
+    fn a_backward_jump_with_an_observation_lists_the_changed_and_invalidated_artifacts() {
+        use core_command_domain::orchestration::{JumpArtifact, JumpObservation, SourceBaseline};
+        let mut read_model = ReadModel::new(
+            SKELETON
+                .replace(
+                    "- **Current Stage**: state-init",
+                    "- **Current Stage**: second",
+                )
+                .replace("- [-] state-init — EXECUTE", "- [x] state-init — EXECUTE")
+                .replace("- [ ] first — EXECUTE", "- [x] first — EXECUTE")
+                .replace("- [ ] second — EXECUTE", "- [-] second — EXECUTE"),
+        );
+        project(
+            &[entry(IntentExecutionEvent::Jumped(Jumped::new(
+                event_id(),
+                execution_id(),
+                slug("first"),
+                core_command_domain::orchestration::JumpDirection::Backward,
+                Some(JumpObservation::new(
+                    SourceBaseline::new(None).expect("束縛不能の基準"),
+                    vec![
+                        JumpArtifact::new(
+                            slug("first"),
+                            "inception/first/first.md".to_string(),
+                            true,
+                            true,
+                        ),
+                        JumpArtifact::new(
+                            slug("second"),
+                            "inception/second/second.md".to_string(),
+                            false,
+                            false,
+                        ),
+                    ],
+                )),
+            )))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        let audit = read_model.appended_audit();
+        assert!(audit.contains("**Direction**: BACKWARD\n"), "{audit}");
+        assert!(
+            audit.contains("**Source Baseline**: unbindable\n"),
+            "{audit}"
+        );
+        assert!(
+            audit.contains("**Changed Upstream Artifacts**: "),
+            "{audit}"
+        );
+        assert!(
+            audit.contains("**Invalidated Downstream Artifacts**: "),
+            "{audit}"
+        );
+        assert!(
+            audit.contains("**Invalidated Downstream Reviews**: "),
+            "{audit}"
+        );
+    }
+
+    #[test]
+    fn a_checkbox_row_with_an_unknown_action_falls_back_to_the_plan() {
+        // `EXECUTE` / `SKIP` 以外の綴りは計画の値へ戻す（読み替えず、行の嘘に従わない）。
+        let mut read_model = ReadModel::new(
+            SKELETON
+                .replace("- [ ] late — SKIP", "- [ ] late — MAYBE")
+                .replace("- **Stages to Skip**: 4.1 (late)", "- **Stages to Skip**: "),
+        );
+        project(
+            &[entry(IntentExecutionEvent::Recomposed(
+                core_command_domain::orchestration::Recomposed::new(
+                    event_id(),
+                    execution_id(),
+                    core_command_domain::orchestration::StageSlugSet::empty(),
+                    core_command_domain::orchestration::StageSlugSet::empty(),
+                ),
+            ))],
+            &plan(),
+            &mut read_model,
+        )
+        .expect("投影");
+        assert!(
+            read_model
+                .state()
+                .contains("- **Stages to Skip**: 4.1 (late)\n"),
+            "{}",
+            read_model.state()
+        );
+    }
+
+    /// 状態ファイルから欄を 1 行抜いた出発点で投影し、欠けた欄の名前で拒否されることを見る。
+    #[test]
+    fn a_state_file_missing_the_field_an_event_writes_is_refused_by_that_field_name() {
+        use core_command_domain::orchestration::{Recomposed, StageSlugSet, TaskSynchronized};
+        let task = || {
+            IntentExecutionEvent::TaskSynchronized(TaskSynchronized::new(
+                event_id(),
+                execution_id(),
+                slug("second"),
+            ))
+        };
+        let genesis = || IntentExecutionEvent::Started(started());
+        let approve_first = || {
+            IntentExecutionEvent::GateApproved(GateApproved::new(
+                event_id(),
+                execution_id(),
+                slug("first"),
+                None,
+            ))
+        };
+        let recompose = || {
+            IntentExecutionEvent::Recomposed(Recomposed::new(
+                event_id(),
+                execution_id(),
+                StageSlugSet::empty(),
+                StageSlugSet::empty(),
+            ))
+        };
+        let cases: Vec<(&str, IntentExecutionEvent)> = vec![
+            ("- **Lifecycle Phase**: INITIALIZATION\n", task()),
+            ("- **Active Agent**: orchestrator\n", task()),
+            ("- **Last Completed Stage**: \n", genesis()),
+            ("- **Total Stages**: 3\n", genesis()),
+            ("- **Active Agent**: orchestrator\n", approve_first()),
+            ("- **Lifecycle Phase**: INITIALIZATION\n", approve_first()),
+            ("- **Next Stage**: first\n", approve_first()),
+            ("- **Stages to Execute**: 0.1, 2.1, 2.2\n", recompose()),
+            ("- **Stages to Skip**: 4.1 (late)\n", recompose()),
+        ];
+        for (line, event) in cases {
+            assert!(SKELETON.contains(line), "{line}");
+            let mut read_model = ReadModel::new(SKELETON.replace(line, ""));
+            let field = line
+                .trim_start_matches("- **")
+                .split("**")
+                .next()
+                .expect("欄の名前");
+            let error = project(&[entry(event)], &plan(), &mut read_model)
+                .expect_err("欠けた欄を黙って読み飛ばさない");
+            assert_eq!(
+                error,
+                ProjectionError::StateField(FieldNotFound::new(
+                    super::super::wording::field_not_found_message(field)
+                )),
+                "{line}"
+            );
+        }
+    }
+
+    /// 初期化以外がすべて SKIP の計画では、誕生は次の位置へ入らず `Next Action` も書かない。
+    #[test]
+    fn a_genesis_whose_plan_has_no_stage_after_initialization_routes_nowhere() {
+        let intent = Intent::from((
+            Created::new(
+                intent_event_id(),
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                StartRequest::new("classic", "build it"),
+                StageEntries::new(vec![
+                    stage(
+                        "state-init",
+                        "0.1",
+                        PhaseId::Initialization,
+                        PlanAction::Execute,
+                    ),
+                    stage("first", "2.1", PhaseId::Inception, PlanAction::Skip),
+                ])
+                .expect("フィクスチャの計画は不変条件を満たす"),
+                WorkspaceScan::new(
+                    BrownfieldGreenfield::Greenfield,
+                    "Unknown",
+                    "Unknown",
+                    "Unknown",
+                )
+                .expect("単一行"),
+            ),
+            at(),
+        ));
+        let plan = ResolvedPlan::of(&intent);
+        let started = Started::new(
+            event_id(),
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").expect("UUIDv7"),
+            intent.id().clone(),
+            intent.stages().clone(),
+        );
+        let mut read_model = model();
+        project(
+            &[entry(IntentExecutionEvent::Started(started))],
+            &plan,
+            &mut read_model,
+        )
+        .expect("投影");
+        assert!(
+            read_model.state().contains("- [x] state-init — EXECUTE"),
+            "{}",
+            read_model.state()
+        );
+        assert!(
+            read_model
+                .state()
+                .contains("- **Next Action**: Execute Stage\n"),
+            "次の位置が無ければ Next Action は出発点のまま: {}",
+            read_model.state()
+        );
+        assert!(
+            !read_model
+                .appended_audit()
+                .contains("**Event**: STAGE_STARTED\n**Stage**: first"),
+            "{}",
+            read_model.appended_audit()
+        );
     }
 }

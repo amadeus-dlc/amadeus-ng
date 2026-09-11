@@ -9,4 +9,12 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+harness-infrastructure = { workspace = true }
+core-infrastructure = { workspace = true }
+core-command-domain = { workspace = true }
 core-command-interface-adapter = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
+
+[dev-dependencies]
+# 規則配送の封筒テストがペルソナ置き場を一時ディレクトリに作る。
+tempfile = "3"

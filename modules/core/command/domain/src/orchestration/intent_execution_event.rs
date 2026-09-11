@@ -1,4 +1,4 @@
-//! `IntentExecutionEvent` — 16 変種のドメインイベント (C5、entities.md)。
+//! `IntentExecutionEvent` — 29 変種のドメインイベント (C5、entities.md)。
 //!
 //! 変種はコマンドと 1:1 (BR1.1 / BR2.4)。ステージ参照はすべて `StageSlug` で、投影側 (U4) が
 //! 索引表を要さない自己記述形になっている。イベントは構築後 immutable で、材料はアクセサで
@@ -25,7 +25,32 @@
 use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
 
+mod single_stage_run_started;
+pub use single_stage_run_started::SingleStageRunStarted;
+mod pipeline_link_completed;
+pub use pipeline_link_completed::PipelineLinkCompleted;
+mod answer_recorded;
+mod plan_answer_logged;
+pub use plan_answer_logged::PlanAnswerLogged;
+mod directive_issued;
+pub use directive_issued::DirectiveIssued;
+mod directive_context_invalidated;
+pub use directive_context_invalidated::DirectiveContextInvalidated;
 mod autonomy_mode_set;
+mod command_failed;
+mod health_checked;
+pub use health_checked::HealthChecked;
+mod memory_journals_observed;
+pub use memory_journals_observed::MemoryJournalsObserved;
+mod learnings_captured;
+pub use learnings_captured::LearningsCaptured;
+mod task_synchronized;
+pub use task_synchronized::TaskSynchronized;
+mod decision_recorded;
+pub use answer_recorded::AnswerRecorded;
+pub use command_failed::CommandFailed;
+mod prompt_observed;
+pub use prompt_observed::PromptObserved;
 mod gate_approved;
 mod gate_opened;
 mod gate_rejected;
@@ -33,6 +58,8 @@ mod jumped;
 mod parked;
 mod practices_affirmed;
 mod recomposed;
+mod reported;
+pub use decision_recorded::DecisionRecorded;
 mod review_completed;
 mod review_requested;
 mod single_stage_run_committed;
@@ -41,6 +68,7 @@ mod stage_revised;
 mod stage_skipped;
 mod started;
 mod unparked;
+pub use reported::Reported;
 
 pub use autonomy_mode_set::AutonomyModeSet;
 pub use gate_approved::GateApproved;
@@ -59,7 +87,7 @@ pub use stage_skipped::StageSkipped;
 pub use started::Started;
 pub use unparked::Unparked;
 
-/// 16 変種のドメインイベント (C5)。
+/// 29 変種のドメインイベント (C5)。
 ///
 /// `#[non_exhaustive]` は**付けない** — 変種の追加は C5 の改訂を伴う設計事項であり、消費側の
 /// 網羅 match が落ちること自体が検出手段である (NFR1.3)。
@@ -78,6 +106,41 @@ pub use unparked::Unparked;
 /// [`IntentExecutionEventId`]: super::intent_execution_event_id::IntentExecutionEventId
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentExecutionEvent {
+    /// 単独pipeline試行の開始。
+    SingleStageRunStarted(SingleStageRunStarted),
+    /// 宣言されたpipeline linkの完了受領。
+    PipelineLinkCompleted(PipelineLinkCompleted),
+    /// 保護された計画回答を元の実行へ監査記録した。
+    PlanAnswerLogged(Box<PlanAnswerLogged>),
+    /// ハーネスへ指示を発行した事実。
+    DirectiveIssued(DirectiveIssued),
+    /// 発行済み文脈の失効。公開監査はPreCompactの観測が担う。
+    DirectiveContextInvalidated(DirectiveContextInvalidated),
+    /// 回答を受理した事実と結果。
+    AnswerRecorded(AnswerRecorded),
+    /// フックが受け取った応答。
+    PromptObserved(PromptObserved),
+    /// 通常の質問を提示した事実。
+    DecisionRecorded(DecisionRecorded),
+    /// コマンドが失敗した事実。
+    CommandFailed(CommandFailed),
+    /// 作業の診断を実施した事実。
+    HealthChecked(HealthChecked),
+    /// runtime-graph の compile がステージ日誌を読んだ事実。
+    ///
+    /// 観測は runtime-graph の材料、判定は `MEMORY_EMPTY` の材料である。作業の進行も
+    /// 承認も変えない。
+    MemoryJournalsObserved(Box<MemoryJournalsObserved>),
+    /// §13 の儀式が確定した学びをメモリ層へ書き写すと決めた事実。
+    ///
+    /// 実践行と監査行 `RULE_LEARNED` の材料である。作業の進行も承認も変えない。
+    LearningsCaptured(Box<LearningsCaptured>),
+    /// TaskUpdate が指す作業 stage へ現在位置を同期した事実。
+    ///
+    /// 他 stage の進捗は保持する。stage 開始監査もゲート承認も意味しない。
+    TaskSynchronized(TaskSynchronized),
+    /// 報告を受理した事実とその結果。
+    Reported(Reported),
     /// 実行の開始。
     Started(Started),
     /// 承認ゲートの開放。
@@ -113,10 +176,81 @@ pub enum IntentExecutionEvent {
 }
 
 impl IntentExecutionEvent {
+    /// 次の実効ステージへの前進を生じた、完了または読み飛ばしの対象。
+    pub(super) const fn advancing_stage(&self) -> Option<&crate::workflow_definition::StageSlug> {
+        match self {
+            Self::GateApproved(event) => Some(event.stage()),
+            Self::StageSkipped(event) => Some(event.stage()),
+            Self::Reported(event) => match event.result() {
+                super::ReportResult::Committed {
+                    stage,
+                    transition:
+                        super::ReportTransition::GateApproved { .. }
+                        | super::ReportTransition::StageSkipped { .. },
+                    ..
+                } => Some(stage),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn affects_progress(&self) -> bool {
+        match self {
+            Self::Reported(event) => matches!(
+                event.result(),
+                crate::orchestration::ReportResult::Committed { .. }
+            ),
+            Self::SingleStageRunStarted(_)
+            | Self::PipelineLinkCompleted(_)
+            | Self::PlanAnswerLogged(_)
+            | Self::DirectiveIssued(_)
+            | Self::DirectiveContextInvalidated(_)
+            | Self::DecisionRecorded(_)
+            | Self::CommandFailed(_)
+            | Self::HealthChecked(_)
+            | Self::MemoryJournalsObserved(_)
+            | Self::LearningsCaptured(_)
+            | Self::PromptObserved(_)
+            | Self::AnswerRecorded(_)
+            | Self::ReviewRequested(_)
+            | Self::ReviewCompleted(_)
+            | Self::SingleStageRunCommitted(_) => false,
+            Self::Started(_)
+            | Self::GateOpened(_)
+            | Self::GateApproved(_)
+            | Self::GateRejected(_)
+            | Self::StageRevised(_)
+            | Self::StageSkipped(_)
+            | Self::Jumped(_)
+            | Self::Parked(_)
+            | Self::Unparked(_)
+            | Self::Recomposed(_)
+            | Self::AutonomyModeSet(_)
+            | Self::SkeletonStanceRecorded(_)
+            | Self::TaskSynchronized(_)
+            | Self::PracticesAffirmed(_) => true,
+        }
+    }
+
     /// このイベント自身の識別子 (全変種が持つ — イベントはエンティティ)。
     #[must_use]
     pub const fn id(&self) -> &IntentExecutionEventId {
         match self {
+            IntentExecutionEvent::DecisionRecorded(payload) => payload.id(),
+            IntentExecutionEvent::CommandFailed(payload) => payload.id(),
+            IntentExecutionEvent::HealthChecked(payload) => payload.id(),
+            IntentExecutionEvent::MemoryJournalsObserved(payload) => payload.id(),
+            IntentExecutionEvent::LearningsCaptured(payload) => payload.id(),
+            IntentExecutionEvent::TaskSynchronized(payload) => payload.id(),
+            IntentExecutionEvent::PromptObserved(payload) => payload.id(),
+            IntentExecutionEvent::SingleStageRunStarted(payload) => payload.id(),
+            IntentExecutionEvent::PipelineLinkCompleted(payload) => payload.id(),
+            IntentExecutionEvent::PlanAnswerLogged(payload) => payload.id(),
+            IntentExecutionEvent::AnswerRecorded(payload) => payload.id(),
+            IntentExecutionEvent::DirectiveIssued(payload) => payload.id(),
+            IntentExecutionEvent::DirectiveContextInvalidated(payload) => payload.id(),
+            IntentExecutionEvent::Reported(payload) => payload.id(),
             IntentExecutionEvent::Started(payload) => payload.id(),
             IntentExecutionEvent::GateOpened(payload) => payload.id(),
             IntentExecutionEvent::GateApproved(payload) => payload.id(),
@@ -142,6 +276,20 @@ impl IntentExecutionEvent {
     #[must_use]
     pub const fn aggregate_id(&self) -> &IntentExecutionId {
         match self {
+            IntentExecutionEvent::DecisionRecorded(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::CommandFailed(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::HealthChecked(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::MemoryJournalsObserved(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::LearningsCaptured(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::TaskSynchronized(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::PromptObserved(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::SingleStageRunStarted(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::PipelineLinkCompleted(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::PlanAnswerLogged(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::AnswerRecorded(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::DirectiveIssued(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::DirectiveContextInvalidated(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::Reported(payload) => payload.aggregate_id(),
             IntentExecutionEvent::Started(payload) => payload.aggregate_id(),
             IntentExecutionEvent::GateOpened(payload) => payload.aggregate_id(),
             IntentExecutionEvent::GateApproved(payload) => payload.aggregate_id(),
@@ -215,9 +363,154 @@ mod tests {
         )
     }
 
-    /// 16 変種を 1 つずつ (同じ id / aggregate_id で組む)。
+    fn plan_answer_sample() -> PlanAnswerLogged {
+        use crate::orchestration::*;
+        let authority = CodeGenerationAuthority::new(
+            &PlanTarget::stage_level(),
+            &IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            format!("sha256:{}", "a".repeat(64)),
+            "unstarted#0".into(),
+            "b".repeat(64),
+            1,
+        )
+        .unwrap();
+        let evidence = PlanApprovalEvidence::new(
+            authority,
+            format!("sha256:{}", "c".repeat(64)),
+            "questions.md".into(),
+            "d".repeat(64),
+            "e".repeat(64),
+        )
+        .unwrap();
+        PlanAnswerLogged::new(
+            evid(),
+            agg(),
+            PlanApprovalOperationId::generate(),
+            PlanAnswerInput::new(
+                PlanApprovalOrigin::new(crate::workspace::SpaceName::default(), agg()),
+                "code-generation".into(),
+                PlanDecisionEvidence::new(evidence, PlanSession::new("session".into()).unwrap()),
+                PlanChoice::ApprovePlan,
+                Some("b".repeat(64)),
+            ),
+        )
+    }
+
+    /// 全変種を 1 つずつ (同じ id / aggregate_id で組む)。
     fn every_variant() -> Vec<IntentExecutionEvent> {
         vec![
+            IntentExecutionEvent::SingleStageRunStarted(SingleStageRunStarted::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+            )),
+            IntentExecutionEvent::PlanAnswerLogged(Box::new(plan_answer_sample())),
+            IntentExecutionEvent::DirectiveContextInvalidated(DirectiveContextInvalidated::new(
+                evid(),
+                agg(),
+                crate::orchestration::ActiveDirective::new(
+                    1,
+                    IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+                    crate::orchestration::DirectivePublication::new(
+                        "a".repeat(64),
+                        "b".repeat(64),
+                        crate::orchestration::PublishedDirective::Error {
+                            stage: slug("intent-capture"),
+                        },
+                    ),
+                    "b".repeat(64),
+                    "sessionless:1111111111111111".to_string(),
+                    0,
+                    0,
+                    1,
+                ),
+            )),
+            IntentExecutionEvent::DirectiveIssued(DirectiveIssued::new(
+                evid(),
+                agg(),
+                crate::orchestration::ActiveDirective::new(
+                    1,
+                    IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").unwrap(),
+                    crate::orchestration::DirectivePublication::new(
+                        "a".repeat(64),
+                        "b".repeat(64),
+                        crate::orchestration::PublishedDirective::RunStage {
+                            stage: slug("intent-capture"),
+                            unit: None,
+                        },
+                    ),
+                    "b".repeat(64),
+                    "sessionless:1111111111111111".to_string(),
+                    0,
+                    0,
+                    1,
+                ),
+            )),
+            IntentExecutionEvent::AnswerRecorded(AnswerRecorded::new(
+                evid(),
+                agg(),
+                crate::orchestration::AnswerId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6")
+                    .unwrap(),
+                "requirements-analysis",
+                "A",
+                crate::orchestration::AnswerDisposition::Recorded,
+            )),
+            IntentExecutionEvent::PromptObserved(PromptObserved::new(
+                evid(),
+                agg(),
+                "session",
+                "1",
+                false,
+            )),
+            IntentExecutionEvent::PipelineLinkCompleted(PipelineLinkCompleted::new(
+                evid(),
+                agg(),
+                crate::orchestration::PipelineReceipt::new(
+                    "reverse-engineering".into(),
+                    "aidlc-architect-agent".into(),
+                    None,
+                    false,
+                    2,
+                    2,
+                    None,
+                )
+                .unwrap(),
+            )),
+            IntentExecutionEvent::HealthChecked(HealthChecked::new(
+                evid(),
+                agg(),
+                crate::orchestration::HealthCheckResult::new(4, 1),
+            )),
+            IntentExecutionEvent::CommandFailed(CommandFailed::new(
+                evid(),
+                agg(),
+                crate::orchestration::CommandFailure::new(
+                    "aidlc-log".into(),
+                    "aidlc-log review".into(),
+                    "Missing --stage <slug>".into(),
+                ),
+            )),
+            IntentExecutionEvent::DecisionRecorded(DecisionRecorded::new(
+                evid(),
+                agg(),
+                crate::orchestration::DecisionPrompt::new("requirements-analysis", "質問"),
+            )),
+            IntentExecutionEvent::Reported(
+                Reported::new(
+                    evid(),
+                    agg(),
+                    crate::orchestration::ReportId::generate(),
+                    crate::orchestration::ReportResult::NoOp {
+                        scope: "bugfix".into(),
+                        no_op: crate::orchestration::ReportNoOp::AlreadyAwaiting {
+                            stage: slug("requirements-analysis"),
+                        },
+                    },
+                    None,
+                    None,
+                )
+                .unwrap(),
+            ),
             IntentExecutionEvent::Started(started()),
             IntentExecutionEvent::GateOpened(GateOpened::new(
                 evid(),
@@ -248,7 +541,13 @@ mod tests {
                 slug("market-research"),
                 "out of scope".to_string(),
             )),
-            IntentExecutionEvent::Jumped(Jumped::new(evid(), agg(), slug("state-init"))),
+            IntentExecutionEvent::Jumped(Jumped::new(
+                evid(),
+                agg(),
+                slug("state-init"),
+                crate::orchestration::JumpDirection::Redo,
+                None,
+            )),
             IntentExecutionEvent::Parked(Parked::new(evid(), agg(), slug("intent-capture"))),
             IntentExecutionEvent::Unparked(Unparked::new(evid(), agg())),
             IntentExecutionEvent::Recomposed(Recomposed::new(
@@ -279,6 +578,7 @@ mod tests {
                 "aidlc-product-lead-agent",
                 1,
                 false,
+                crate::orchestration::review_test_fixture::binding(),
             )),
             IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
                 evid(),
@@ -287,6 +587,7 @@ mod tests {
                 "aidlc-product-lead-agent",
                 1,
                 ReviewVerdict::Ready,
+                crate::orchestration::review_test_fixture::completion(),
             )),
             IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
                 evid(),
@@ -301,6 +602,32 @@ mod tests {
                 RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()]),
                 RuleLines::new(vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()]),
             )),
+            IntentExecutionEvent::TaskSynchronized(TaskSynchronized::new(
+                evid(),
+                agg(),
+                slug("intent-capture"),
+            )),
+            IntentExecutionEvent::LearningsCaptured(Box::new(LearningsCaptured::new(
+                evid(),
+                agg(),
+                slug("requirements-analysis"),
+                crate::orchestration::LearningProvenance::new(
+                    crate::workspace::SpaceName::default(),
+                    crate::workspace::IntentDirName::parse("260908-learnings").unwrap(),
+                ),
+                crate::orchestration::CapturedLearnings::new(vec![
+                    crate::orchestration::CapturedLearning::new(
+                        crate::orchestration::Learning::new(
+                            crate::orchestration::LearningCandidateId::parse("c1").unwrap(),
+                            crate::orchestration::LearningScope::Project,
+                            crate::orchestration::PracticeHeading::corrections(),
+                            "ALWAYS record the evidence",
+                            crate::orchestration::LearningSource::Orchestrator,
+                        ),
+                        crate::orchestration::LearningDisposition::Fresh,
+                    ),
+                ]),
+            ))),
         ]
     }
 
@@ -369,7 +696,13 @@ mod tests {
 
     #[test]
     fn the_control_payloads_carry_the_jump_park_and_recompose_material() {
-        let jumped = Jumped::new(evid(), agg(), slug("state-init"));
+        let jumped = Jumped::new(
+            evid(),
+            agg(),
+            slug("state-init"),
+            crate::orchestration::JumpDirection::Redo,
+            None,
+        );
         assert_eq!(jumped.target(), &slug("state-init"));
 
         let parked = Parked::new(evid(), agg(), slug("intent-capture"));
@@ -434,11 +767,26 @@ mod tests {
     }
 
     #[test]
-    fn the_sixteen_variants_are_matched_exhaustively() {
+    fn every_variant_is_matched_exhaustively() {
         // NFR1.3 — 変種の追加は C5 の改訂を伴うので `#[non_exhaustive]` は付けない。
         // 本テストは網羅 match をコンパイル時に固定する (腕が欠けたらビルドが落ちる)。
         const fn name(payload: &IntentExecutionEvent) -> &'static str {
             match payload {
+                IntentExecutionEvent::DirectiveIssued(_) => "DirectiveIssued",
+                IntentExecutionEvent::DirectiveContextInvalidated(_) => {
+                    "DirectiveContextInvalidated"
+                }
+                IntentExecutionEvent::PlanAnswerLogged(_) => "PlanAnswerLogged",
+                IntentExecutionEvent::AnswerRecorded(_) => "AnswerRecorded",
+                IntentExecutionEvent::PromptObserved(_) => "PromptObserved",
+                IntentExecutionEvent::DecisionRecorded(_) => "DecisionRecorded",
+                IntentExecutionEvent::CommandFailed(_) => "CommandFailed",
+                IntentExecutionEvent::HealthChecked(_) => "HealthChecked",
+                IntentExecutionEvent::MemoryJournalsObserved(_) => "MemoryJournalsObserved",
+                IntentExecutionEvent::LearningsCaptured(_) => "LearningsCaptured",
+                IntentExecutionEvent::SingleStageRunStarted(_) => "SingleStageRunStarted",
+                IntentExecutionEvent::PipelineLinkCompleted(_) => "PipelineLinkCompleted",
+                IntentExecutionEvent::Reported(_) => "Reported",
                 IntentExecutionEvent::Started(_) => "Started",
                 IntentExecutionEvent::GateOpened(_) => "GateOpened",
                 IntentExecutionEvent::GateApproved(_) => "GateApproved",
@@ -455,9 +803,21 @@ mod tests {
                 IntentExecutionEvent::ReviewRequested(_) => "ReviewRequested",
                 IntentExecutionEvent::ReviewCompleted(_) => "ReviewCompleted",
                 IntentExecutionEvent::PracticesAffirmed(_) => "PracticesAffirmed",
+                IntentExecutionEvent::TaskSynchronized(_) => "TaskSynchronized",
             }
         }
         let expected = [
+            "SingleStageRunStarted",
+            "PlanAnswerLogged",
+            "DirectiveContextInvalidated",
+            "DirectiveIssued",
+            "AnswerRecorded",
+            "PromptObserved",
+            "PipelineLinkCompleted",
+            "HealthChecked",
+            "CommandFailed",
+            "DecisionRecorded",
+            "Reported",
             "Started",
             "GateOpened",
             "GateApproved",
@@ -474,10 +834,12 @@ mod tests {
             "ReviewRequested",
             "ReviewCompleted",
             "PracticesAffirmed",
+            "TaskSynchronized",
+            "LearningsCaptured",
         ];
         let named: Vec<&'static str> = every_variant().iter().map(name).collect();
         assert_eq!(named, expected);
         let distinct: HashSet<&'static str> = named.iter().copied().collect();
-        assert_eq!(distinct.len(), 16);
+        assert_eq!(distinct.len(), 29);
     }
 }

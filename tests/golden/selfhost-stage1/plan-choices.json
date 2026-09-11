@@ -1,0 +1,148 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "fixture_origin": "upstream-a277af21/stage1/cases.json:plan/decision",
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-plan-choices.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/plan-choices.json"
+  ],
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "observations": [
+    {
+      "id": "canonical-approve",
+      "response": "Approve Plan",
+      "exact": false,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:7c84fb9ca5fbc1b4bd48b6be089a606343efe72606a32d1da7ddddbb0110f1a9",
+      "recorded": true,
+      "choice": "Approve Plan",
+      "response_sha256": "06a26f18664ec83f69387fc4490db709001e649dd1e336ea46d7d67701f92af9"
+    },
+    {
+      "id": "canonical-changes",
+      "response": "Request Changes",
+      "exact": false,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:7c84fb9ca5fbc1b4bd48b6be089a606343efe72606a32d1da7ddddbb0110f1a9",
+      "recorded": true,
+      "choice": "Request Changes",
+      "response_sha256": "99cff93b806fd79b0cd8e51cd2d5fdfc75f5e69a163de84044ffebd112e17172"
+    },
+    {
+      "id": "number-one",
+      "response": "1",
+      "exact": false,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:7c84fb9ca5fbc1b4bd48b6be089a606343efe72606a32d1da7ddddbb0110f1a9",
+      "recorded": true,
+      "choice": "Approve Plan",
+      "response_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+    },
+    {
+      "id": "number-two",
+      "response": "2",
+      "exact": false,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:7c84fb9ca5fbc1b4bd48b6be089a606343efe72606a32d1da7ddddbb0110f1a9",
+      "recorded": true,
+      "choice": "Request Changes",
+      "response_sha256": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+    },
+    {
+      "id": "number-bom",
+      "response": "﻿1",
+      "exact": false,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:7c84fb9ca5fbc1b4bd48b6be089a606343efe72606a32d1da7ddddbb0110f1a9",
+      "recorded": true,
+      "choice": "Approve Plan",
+      "response_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+    },
+    {
+      "id": "number-nel",
+      "response": "1",
+      "exact": false,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:7c84fb9ca5fbc1b4bd48b6be089a606343efe72606a32d1da7ddddbb0110f1a9",
+      "recorded": false,
+      "choice": null,
+      "response_sha256": null
+    },
+    {
+      "id": "exact-disallows-number",
+      "response": "1",
+      "exact": true,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:f0c08285adafcc496106f584e3b00dd64716df924f110666c555eff39684d607",
+      "recorded": false,
+      "choice": null,
+      "response_sha256": null
+    },
+    {
+      "id": "exact-allows-label",
+      "response": "approve plan",
+      "exact": true,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:f0c08285adafcc496106f584e3b00dd64716df924f110666c555eff39684d607",
+      "recorded": true,
+      "choice": "Approve Plan",
+      "response_sha256": "730d6cb743896fecc09fccc8de93d691a44e0e5b1f64ce2d24bda0b50f7b2142"
+    },
+    {
+      "id": "unrelated-text",
+      "response": "continue",
+      "exact": false,
+      "options": [
+        "Approve Plan",
+        "Request Changes"
+      ],
+      "session": "stage1-session",
+      "challenge_id": "sha256:7c84fb9ca5fbc1b4bd48b6be089a606343efe72606a32d1da7ddddbb0110f1a9",
+      "recorded": false,
+      "choice": null,
+      "response_sha256": null
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+   Compiling core-read-model-updater v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/read-model-updater)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.40s
+     Running tests/audit_block_golden_test.rs (target/debug/deps/audit_block_golden_test-3b15f09ae5d81611)
+
+running 1 test
+test every_upstream_audit_block_is_reproduced_byte_for_byte ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/projection_golden_test.rs (target/debug/deps/projection_golden_test-fafd94fb3ad17a3d)
+
+running 18 tests
+test opening_a_gate_writes_the_awaiting_approval_row_and_moves_the_checkbox ... ok
+test rejecting_a_gate_writes_two_rows_and_bumps_the_revision_count ... ok
+test parking_writes_the_marker_at_the_end_of_the_runtime_section ... ok
+test revising_a_stage_re_enters_the_gate_with_the_verbatim_details ... ok
+test recomposing_back_into_scope_drops_the_annotated_entry_whole ... ok
+test jumping_forward_across_a_phase_verifies_the_one_it_leaves ... ok
+test skipping_a_stage_moves_on_without_touching_the_completed_count ... ok
+test approving_the_last_stage_of_a_phase_counts_the_checkboxes_not_the_plan ... ok
+test recomposing_moves_a_stage_between_the_two_plan_lists ... ok
+test a_stage_outside_the_plan_is_refused_rather_than_drawn_wrong ... ok
+test jumping_forward_skips_the_source_and_opens_the_target ... ok
+test approving_a_gate_completes_the_stage_and_starts_the_next_one ... ok
+test recomposing_keeps_existing_skip_entries_where_they_are ... ok
+test jumping_backward_resets_the_downstream_and_hands_the_phase_row_back ... ok
+test the_genesis_draws_all_sixteen_initialization_rows ... ok
+test unparking_removes_both_marker_lines ... ok
+test projecting_the_same_entries_from_the_same_state_twice_yields_the_same_bytes ... ok
+test the_golden_corpus_is_where_the_test_thinks_it_is ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

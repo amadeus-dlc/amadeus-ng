@@ -1,0 +1,77 @@
+[
+  { "id": "01-explicit-path-beats-current-stage", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "follow .claude/skills/aidlc/stages/inception/requirements-analysis.md" } } },
+
+  { "id": "02-no-signal-binds-current-stage", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "please do the work described in the brief" } } },
+
+  { "id": "03-unique-slug-loses-to-current-stage", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "after scope-definition completes, continue" } } },
+
+  { "id": "04-explicit-path-unknown-slug-falls-back", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "see .claude/skills/aidlc/stages/construction/not-a-real-stage.md" } } },
+
+  { "id": "05-explicit-path-uppercase-slug-falls-back", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "see .claude/skills/aidlc/stages/Construction/Code-Generation.md" } } },
+
+  { "id": "06-explicit-path-backslash-separators", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "see stages\\ideation\\intent-capture.md" } } },
+
+  { "id": "07-explicit-path-mdx-suffix-rejected", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "see stages/ideation/intent-capture.mdx" } } },
+
+  { "id": "08-tool-agent", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Agent", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "09-tool-spawn-agent", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "spawn_agent", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "10-tool-name-uppercase", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "TASK", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "11-tool-not-a-dispatch-tool", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Write", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "12-agent-not-aidlc", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "general-purpose", "prompt": "work" } } },
+
+  { "id": "13-agent-exempt-composer", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-composer-agent", "prompt": "work" } } },
+
+  { "id": "14-agent-file-absent", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-nonexistent-agent", "prompt": "work" } } },
+
+  { "id": "15-agent-name-shape-rejected", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "AIDLC-Developer-Agent", "prompt": "work" } } },
+
+  { "id": "16-agent-field-agent-type", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "agent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "17-agent-field-agent", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "agent": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "18-agent-field-role", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "role": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "19-agent-field-precedence-subagent-type-wins", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "general-purpose", "role": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "20-prompt-field-message", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "message": "work" } } },
+
+  { "id": "21-prompt-field-description", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "description": "work" } } },
+
+  { "id": "22-prompt-field-task", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "task": "work" } } },
+
+  { "id": "23-prompt-field-priority-prompt-over-message", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "message": "see stages/ideation/intent-capture.md", "subagent_type": "aidlc-developer-agent", "prompt": "see stages/inception/domain-design.md" } } },
+
+  { "id": "24-prompt-empty-string", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "" } } },
+
+  { "id": "25-prompt-non-string-falls-to-items", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": 7, "items": [ { "type": "text", "text": "see stages/inception/domain-design.md" } ] } } },
+
+  { "id": "26-items-two-entries-joined", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "items": [ { "type": "text", "text": "part one" }, { "type": "text", "text": "see stages/inception/domain-design.md" } ] } } },
+
+  { "id": "27-items-with-non-text-entry", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "items": [ { "type": "image" }, { "type": "text", "text": "see stages/inception/domain-design.md" } ] } } },
+
+  { "id": "28-no-prompt-fields-at-all", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent" } } },
+
+  { "id": "29-key-order-is-preserved", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "zeta": 1, "prompt": "work", "alpha": 2, "subagent_type": "aidlc-developer-agent", "middle": 3 } } },
+
+  { "id": "30-subagent-stages", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "subagent", "tool_input": { "stages": [ { "role": "aidlc-developer-agent", "prompt_template": "see stages/inception/domain-design.md" } ] } } },
+
+  { "id": "31-subagent-two-stages-different-paths", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "subagent", "tool_input": { "stages": [ { "role": "aidlc-developer-agent", "prompt_template": "see stages/inception/domain-design.md" }, { "role": "aidlc-quality-agent", "prompt_template": "see stages/ideation/intent-capture.md" } ] } } },
+
+  { "id": "32-subagent-stage-role-not-aidlc", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "subagent", "tool_input": { "stages": [ { "role": "general-purpose", "prompt_template": "see stages/inception/domain-design.md" } ] } } },
+
+  { "id": "33-subagent-stage-template-not-string", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "subagent", "tool_input": { "stages": [ { "role": "aidlc-developer-agent", "prompt_template": 7 } ] } } },
+
+  { "id": "34-subagent-stage-not-an-object", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "subagent", "tool_input": { "stages": [ null, "x", { "role": "aidlc-developer-agent", "prompt_template": "see stages/inception/domain-design.md" } ] } } },
+
+  { "id": "35-subagent-stages-missing", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "subagent", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "36-tool-input-missing", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task" } },
+
+  { "id": "37-tool-name-missing", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "38-slug-adjacent-word-char-is-not-a-mention", "input": { "cwd": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1", "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "xscope-definitionx" } } }
+]

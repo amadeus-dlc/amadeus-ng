@@ -39,6 +39,7 @@ mod continue_token_dto;
 mod definition_dao_impl;
 mod definition_stage_dao_impl;
 mod execution_dao_impl;
+mod hook_health_dao_impl;
 mod jump_dao_impl;
 mod jump_phase_dao_impl;
 mod memory;
@@ -55,6 +56,8 @@ mod scope_keyword_dao_impl;
 mod state_file_dao_impl;
 mod steering_part_dao_impl;
 mod steering_plan_dao_impl;
+
+pub use hook_health_dao_impl::HookHealthDaoImpl;
 
 // 12 実装を建てる唯一の口 (1 要求 = 1 接続)。
 pub use read_model_daos::ReadModelDaos;
@@ -88,3 +91,42 @@ pub use memory::{
 
 // 継続トークンの封緘・開封 (輸送形の境界)。
 pub use continue_token_dto::{InvalidContinueToken, mint_continue_token, verify_continue_token};
+
+mod report_result_dao_impl;
+pub use report_result_dao_impl::ReportResultDaoImpl;
+
+mod initialization_dao_impl;
+pub use initialization_dao_impl::InitializationDaoImpl;
+
+mod answer_result_dao_impl;
+pub use answer_result_dao_impl::AnswerResultDaoImpl;
+mod testing_contract_dao_impl;
+pub use testing_contract_dao_impl::TestingContractDaoImpl;
+mod plan_fingerprint_dao_impl;
+pub use plan_fingerprint_dao_impl::PlanFingerprintDaoImpl;
+
+mod plan_approval_operation_dao_impl;
+pub use plan_approval_operation_dao_impl::PlanApprovalOperationDaoImpl;
+
+mod intent_record_dao_impl;
+pub use intent_record_dao_impl::IntentRecordDaoImpl;
+
+mod plan_answer_dao_impl;
+pub use plan_answer_dao_impl::PlanAnswerDaoImpl;
+
+mod plan_generation_dao_impl;
+pub use plan_generation_dao_impl::PlanGenerationDaoImpl;
+
+mod artifact_audit_dao_impl;
+pub use artifact_audit_dao_impl::ArtifactAuditDaoImpl;
+mod continuation_result_dao_impl;
+pub use continuation_result_dao_impl::ContinuationResultDaoImpl;
+
+mod session_audit_dao_impl;
+pub use session_audit_dao_impl::SessionAuditDaoImpl;
+
+mod pipeline_progress_dao_impl;
+pub use pipeline_progress_dao_impl::PipelineProgressDaoImpl;
+
+mod jump_result_dao_impl;
+pub use jump_result_dao_impl::JumpResultDaoImpl;

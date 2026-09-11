@@ -2,7 +2,8 @@
 
 use core_command_domain::orchestration::StageKey;
 use core_command_domain::workflow_definition::{
-    PhaseId, ReviewClass, StageMode, StageNode, StageRoute, WorkflowDefinitionId,
+    BrownfieldGreenfield, PhaseId, ReviewClass, StageMode, StageNode, StageRoute,
+    WorkflowDefinitionId,
 };
 
 use super::digest;
@@ -30,7 +31,9 @@ use super::row_id;
 /// | --- | --- | --- |
 /// | `stage_file_rel` | ステージ本体の置き場 | `{phase}/{slug}.md` |
 /// | `memory_path_rel` | record | `{phase}/{slug}/memory.md` |
-/// | `consumes_rel` | record | `{artifact}` |
+/// | `consumes_rel` | record | `{artifact}` (種別を問わず全宣言) |
+/// | `consumes_brownfield_rel` | record | `{artifact}` (Brownfield で残る宣言) |
+/// | `consumes_greenfield_rel` | record | `{artifact}` (Greenfield で残る宣言) |
 /// | `produces_rel` | record | `{phase}/{slug}/{artifact}` |
 /// | `inline_context_paths_rel` | ハーネス根 | `agents/{agent}.md` |
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +53,8 @@ pub struct RunStageRow {
     stage_file_rel: String,
     memory_path_rel: String,
     consumes_rel: String,
+    consumes_brownfield_rel: String,
+    consumes_greenfield_rel: String,
     produces_rel: String,
     sensors_applicable: String,
     reviewer: Option<String>,
@@ -99,21 +104,24 @@ impl RunStageRow {
             gate_default: StageKey::new(node.slug().clone(), node.phase()).is_gated(),
             in_scope,
             inline_context_paths_rel: json_column::strings(&inline_context_paths(node)),
-            consumes_rel: json_column::strings(
-                &node
-                    .consumes()
-                    .iter()
-                    .map(|consume| consume.artifact().to_string())
-                    .collect::<Vec<_>>(),
-            ),
+            consumes_rel: consumes_for(node, None),
+            consumes_brownfield_rel: consumes_for(node, Some(BrownfieldGreenfield::Brownfield)),
+            consumes_greenfield_rel: consumes_for(node, Some(BrownfieldGreenfield::Greenfield)),
             produces_rel: json_column::strings(
                 &node
                     .produces()
                     .iter()
-                    .map(|artifact| format!("{phase_dir}/{slug}/{artifact}"))
+                    .map(|artifact| format!("{phase_dir}/{slug}/{}", artifact_filename(artifact)))
                     .collect::<Vec<_>>(),
             ),
-            sensors_applicable: json_column::sensors_applicable(node.sensors_applicable()),
+            // run-stageの公開面は参照のIDだけを運ぶ。定義表の完全な参照とは別の列である。
+            sensors_applicable: json_column::strings(
+                &node
+                    .sensors_applicable()
+                    .iter()
+                    .map(|sensor| sensor.id().to_string())
+                    .collect::<Vec<_>>(),
+            ),
             reviewer: review.map(|(reviewer, _)| reviewer.to_string()),
             reviewer_max_iterations: review.map(|_| {
                 node.reviewer_max_iterations()
@@ -223,10 +231,24 @@ impl RunStageRow {
         &self.memory_path_rel
     }
 
-    /// record からの相対で並べた上流成果物の 1 行 JSON 配列。
+    /// record からの相対で並べた上流成果物の 1 行 JSON 配列 (種別を問わず全宣言)。
     #[must_use]
     pub fn consumes_rel(&self) -> &str {
         &self.consumes_rel
+    }
+
+    /// Brownfield の作業で残る上流成果物の 1 行 JSON 配列 (`conditional_on: greenfield`
+    /// を落としたもの)。
+    #[must_use]
+    pub fn consumes_brownfield_rel(&self) -> &str {
+        &self.consumes_brownfield_rel
+    }
+
+    /// Greenfield の作業で残る上流成果物の 1 行 JSON 配列 (`conditional_on: brownfield`
+    /// を落としたもの)。
+    #[must_use]
+    pub fn consumes_greenfield_rel(&self) -> &str {
+        &self.consumes_greenfield_rel
     }
 
     /// record からの相対で並べた産出成果物の 1 行 JSON 配列。
@@ -284,6 +306,18 @@ impl RunStageRow {
     }
 }
 
+/// 本家の成果物語彙からファイル名への写像。
+fn artifact_filename(name: &str) -> String {
+    if name.ends_with(".md") || name.ends_with(".json") {
+        return name.to_string();
+    }
+    match name {
+        "build-test-results" | "load-test-results" => "test-results.md".to_string(),
+        "traceability" => "traceability.json".to_string(),
+        _ => format!("{name}.md"),
+    }
+}
+
 /// 定義が回数を宣言しないときのレビュー往復上限。
 const DEFAULT_REVIEW_ITERATIONS: u32 = 1;
 
@@ -318,4 +352,23 @@ fn protocol_modules(node: &StageNode) -> Vec<String> {
         modules.push("construction".to_string());
     }
     modules
+}
+
+/// ある種別の作業で残る `consumes[]` の語彙名を 1 行 JSON 配列にする。
+///
+/// 本家 `resolveConsumes` (`aidlc-orchestrate.ts:2519-2534` @a277af21) は
+/// `conditional_on` が作業の種別と食い違う宣言を落とし、種別が不明 (`None`) なら全宣言を
+/// 残す。行は 3 通りすべてを持ち、どれを読むかは描く側が作業の種別で選ぶ。
+fn consumes_for(node: &StageNode, kind: Option<BrownfieldGreenfield>) -> String {
+    json_column::strings(
+        &node
+            .consumes()
+            .iter()
+            .filter(|consume| match (consume.conditional_on(), kind) {
+                (Some(condition), Some(kind)) => condition == kind,
+                _ => true,
+            })
+            .map(|consume| consume.artifact().to_string())
+            .collect::<Vec<_>>(),
+    )
 }

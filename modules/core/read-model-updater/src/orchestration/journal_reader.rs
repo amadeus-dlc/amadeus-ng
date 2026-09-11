@@ -136,4 +136,34 @@ pub trait JournalReader {
     ///
     /// ストア I/O (`Io`) を返す。
     async fn replace_steering(&mut self, tables: &SteeringTables) -> Result<(), JournalReadError>;
+    /// 保存されたテスト契約の参照入力照合子。
+    /// # Errors
+    /// 読取り媒体を取得できない場合。
+    async fn testing_source_digest(&self) -> Result<Option<String>, JournalReadError>;
+    /// テスト契約の参照面を単独のトランザクションで置き換える。
+    /// # Errors
+    /// 読取りモデルを書き込めない場合。
+    async fn replace_testing(
+        &mut self,
+        tables: &crate::read_tables::TestingTables,
+    ) -> Result<(), JournalReadError>;
+    /// 対象ごとの計画指紋の参照面を差し替える。
+    /// # Errors
+    /// 読取りモデルへ保存できない場合。
+    async fn replace_plan_fingerprint(
+        &mut self,
+        row: &crate::read_tables::PlanFingerprintRow,
+    ) -> Result<(), JournalReadError>;
+    /// Pipelineの参照入力面を原子的に置き換える。
+    /// # Errors
+    /// この参照投影を提供しない実装または保存失敗。
+    async fn replace_pipeline(
+        &mut self,
+        _tables: &crate::read_tables::PipelineTables,
+    ) -> Result<(), JournalReadError> {
+        Err(JournalReadError::Io {
+            kind: std::io::ErrorKind::Unsupported,
+            path: None,
+        })
+    }
 }

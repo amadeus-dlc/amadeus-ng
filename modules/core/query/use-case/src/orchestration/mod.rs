@@ -186,3 +186,67 @@ pub use stage_slug_error::StageSlugError;
 pub use unit_name_error::UnitNameError;
 pub use unknown_unit_kind::UnknownUnitKind;
 pub use unknown_value::UnknownValue;
+
+mod report_result_use_case;
+pub use port::{ReportResultDao, ReportResultView};
+pub use report_result_use_case::ReportResultUseCase;
+
+mod find_initialization_use_case;
+pub use find_initialization_use_case::FindInitializationUseCase;
+pub use port::{InitializationDao, InitializationView};
+
+mod pipeline_directive;
+pub use pipeline_directive::PipelineDirective;
+
+mod answer_result_use_case;
+pub use answer_result_use_case::AnswerResultUseCase;
+
+pub use port::{AnswerResultDao, AnswerResultView};
+
+mod state_text_digest;
+pub use state_text_digest::StateTextDigest;
+mod find_testing_contract_use_case;
+pub use find_testing_contract_use_case::FindTestingContractUseCase;
+pub use port::{TestingContractDao, TestingContractView};
+mod find_plan_fingerprint_use_case;
+pub use find_plan_fingerprint_use_case::FindPlanFingerprintUseCase;
+pub use port::{PlanFingerprintDao, PlanFingerprintView};
+
+pub use port::{PlanApprovalOperationDao, PlanApprovalOperationView};
+mod plan_approval_operation_use_case;
+pub use plan_approval_operation_use_case::PlanApprovalOperationUseCase;
+
+pub use port::{IntentRecordDao, IntentRecordView};
+mod find_intent_record_use_case;
+pub use find_intent_record_use_case::FindIntentRecordUseCase;
+
+mod plan_answer_use_case;
+pub use plan_answer_use_case::PlanAnswerUseCase;
+pub use port::{PlanAnswerDao, PlanAnswerView};
+
+mod plan_generation_use_case;
+pub use plan_generation_use_case::PlanGenerationUseCase;
+pub use port::{PlanGenerationDao, PlanGenerationView};
+
+mod hook_health_use_case;
+pub use hook_health_use_case::HookHealthUseCase;
+pub use port::{HookHealthDao, HookHealthView};
+
+mod artifact_audit_use_case;
+pub use artifact_audit_use_case::ArtifactAuditUseCase;
+pub use port::{ArtifactAuditDao, ArtifactAuditView};
+mod continuation_result_use_case;
+pub use continuation_result_use_case::ContinuationResultUseCase;
+pub use port::{ContinuationResultDao, ContinuationResultView};
+
+mod session_audit_use_case;
+pub use port::{SessionAuditDao, SessionAuditView};
+pub use session_audit_use_case::SessionAuditUseCase;
+
+mod pipeline_progress_use_case;
+pub use pipeline_progress_use_case::PipelineProgressUseCase;
+pub use port::{PipelineProgressDao, PipelineProgressView};
+
+mod jump_result_use_case;
+pub use jump_result_use_case::JumpResultUseCase;
+pub use port::{JumpResultDao, JumpResultView};

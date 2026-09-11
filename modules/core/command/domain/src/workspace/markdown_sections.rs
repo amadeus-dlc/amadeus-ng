@@ -60,6 +60,27 @@ pub fn replace_section(
     ))
 }
 
+/// 見出しが無ければ本文末に足す (`ensureHeading`)。在れば 1 バイトも変えない。
+///
+/// [`append_under_heading`] は見出し不在を `Err` にするので、書く側が先に通す。学びの儀式は
+/// orchestrator が選んだ見出しを受けるため、配布の正本が持たない見出しでも書けるようにする
+/// (固定本家 2.7.1 `a277af21` `aidlc-learnings.ts:620-630`)。
+#[must_use]
+pub fn ensure_heading(content: &str, heading: &str) -> String {
+    let lines: Vec<&str> = content.split('\n').collect();
+    if heading_line(&lines, heading).is_some() {
+        return content.to_string();
+    }
+    let separator = if content.is_empty() {
+        ""
+    } else if content.ends_with('\n') {
+        "\n"
+    } else {
+        "\n\n"
+    };
+    format!("{content}{separator}{heading}\n")
+}
+
 /// 節の**末尾** (次の `## ` 見出しの直前、無ければ本文末) にテキストを差し込む
 /// (`appendUnderHeading`)。
 ///
@@ -157,6 +178,41 @@ fn strip_fenced_code_blocks(content: &str) -> String {
         out.push(if in_fence { "" } else { line });
     }
     out.join("\n")
+}
+
+#[cfg(test)]
+mod ensure_heading_tests {
+    use super::ensure_heading;
+
+    #[test]
+    fn an_existing_heading_is_left_untouched() {
+        let content = "# Project\n\n## Corrections\n\n- a\n";
+        assert_eq!(ensure_heading(content, "## Corrections"), content);
+        // 末尾空白のある見出し行も同じ見出しである。
+        let padded = "# Project\n\n## Corrections  \n";
+        assert_eq!(ensure_heading(padded, "## Corrections"), padded);
+    }
+
+    #[test]
+    fn a_missing_heading_is_appended_at_the_end() {
+        assert_eq!(
+            ensure_heading("# Project\n", "## Corrections"),
+            "# Project\n\n## Corrections\n"
+        );
+        assert_eq!(
+            ensure_heading("# Project", "## Corrections"),
+            "# Project\n\n## Corrections\n"
+        );
+        assert_eq!(ensure_heading("", "## Corrections"), "## Corrections\n");
+    }
+
+    #[test]
+    fn a_sub_heading_does_not_satisfy_the_h2() {
+        assert_eq!(
+            ensure_heading("### Corrections\n", "## Corrections"),
+            "### Corrections\n\n## Corrections\n"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -25,6 +25,7 @@ pub use continue_token_builder::ContinueTokenBuilder;
 /// steering 連鎖の継続ペイロード。キーは upstream の 1 文字綴り (`v`/`s`/`c`/…) に対応する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContinueToken {
+    state_text_digest: Option<super::StateTextDigest>,
     version: TokenVersion,
     stage: StageSlugView,
     scope: ScopeSlugView,
@@ -37,6 +38,18 @@ pub struct ContinueToken {
 }
 
 impl ContinueToken {
+    /// 入力境界で観測した本文ハッシュを封緘する。
+    #[must_use]
+    pub fn with_state_text_digest(mut self, digest: super::StateTextDigest) -> Self {
+        self.state_text_digest = Some(digest);
+        self
+    }
+    /// 公開本文の照合値。Query側では解釈・再計算しない。
+    #[must_use]
+    pub const fn state_text_digest(&self) -> Option<&super::StateTextDigest> {
+        self.state_text_digest.as_ref()
+    }
+
     /// バージョン (常に現行版)。
     #[must_use]
     pub const fn version(&self) -> TokenVersion {

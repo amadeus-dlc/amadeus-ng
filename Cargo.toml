@@ -84,6 +84,7 @@ if_same_then_else = "deny"
 cmp_null = "deny"
 
 [workspace.dependencies]
+harness-claude = { path = "modules/harness/claude" }
 # 内部クレート (層 = クレート)
 core-command-domain = { path = "modules/core/command/domain" }
 # CQRS の側分割 (2026-08-29 オーナー裁定 / ADR-009)。コマンド側とクエリ側は互いの

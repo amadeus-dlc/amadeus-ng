@@ -22,22 +22,46 @@ use super::memory_faces::MemoryFaces;
 /// 投影の書込先。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadModel {
+    active_directive: Option<String>,
     state: String,
     appended_audit: String,
     memory: Option<MemoryFaces>,
 }
 
 impl ReadModel {
+    const fn of_faces(
+        active_directive: Option<String>,
+        state: String,
+        appended_audit: String,
+        memory: Option<MemoryFaces>,
+    ) -> Self {
+        Self {
+            active_directive,
+            state,
+            appended_audit,
+            memory,
+        }
+    }
+
+    /// 保存済みの指示発行の事実から、今回投影するマーカーを描く。
+    pub(crate) fn apply_directive_issue(
+        &mut self,
+        directive: &core_command_domain::orchestration::ActiveDirective,
+    ) {
+        self.active_directive = Some(super::active_directive::render(directive));
+    }
+    /// 今回の指示発行で更新するマーカー。
+    #[must_use]
+    pub fn active_directive(&self) -> Option<&str> {
+        self.active_directive.as_deref()
+    }
+
     /// いまの状態ファイル本文から投影の作業面を作る。
     ///
     /// 監査側は空で始まる — 追記する分だけを持つからである。
     #[must_use]
     pub fn new(state: impl Into<String>) -> ReadModel {
-        ReadModel {
-            state: state.into(),
-            appended_audit: String::new(),
-            memory: None,
-        }
+        Self::of_faces(None, state.into(), String::new(), None)
     }
 
     /// メモリ層 2 本の本文を載せる（取得ループが**両方在るとき**だけ呼ぶ）。
@@ -53,11 +77,15 @@ impl ReadModel {
         self.memory.as_ref()
     }
 
-    /// メモリ層 2 本の本文を差し替える（載っていなければ何もしない）。
-    pub(crate) fn replace_memory(&mut self, team: String, project: String) {
-        if let Some(memory) = &mut self.memory {
-            memory.replace(team, project);
-        }
+    /// 載っているメモリ面の描画結果を持つ完成値を返す。不在ならそのまま返す。
+    pub(crate) fn with_rewritten_memory(self, team: String, project: String) -> Self {
+        let memory = self.memory.map(|_| MemoryFaces::rewritten(team, project));
+        Self::of_faces(
+            self.active_directive,
+            self.state,
+            self.appended_audit,
+            memory,
+        )
     }
 
     /// 状態ファイルの現在の本文。
@@ -72,9 +100,14 @@ impl ReadModel {
         &self.appended_audit
     }
 
-    /// 状態ファイル本文を差し替える（writer 4 種の結果を受け取る口）。
-    pub(crate) fn replace_state(&mut self, next: String) {
-        self.state = next;
+    /// 描画済みの状態本文を持つ完成値を返す。監査追記・指示・メモリ面は保持する。
+    pub(crate) fn with_state(self, state: String) -> Self {
+        Self::of_faces(
+            self.active_directive,
+            state,
+            self.appended_audit,
+            self.memory,
+        )
     }
 
     /// 監査ブロックを 1 つ足す。
@@ -117,7 +150,7 @@ mod tests {
     fn the_memory_face_is_loaded_and_replaced_together() {
         let mut model = ReadModel::new(SAMPLE).with_memory("# Team\n", "# Project\n");
         assert!(model.memory().is_some_and(|memory| !memory.is_dirty()));
-        model.replace_memory("# Team 2\n".to_string(), "# Project 2\n".to_string());
+        model = model.with_rewritten_memory("# Team 2\n".to_string(), "# Project 2\n".to_string());
         let memory = model.memory().expect("載せた面は在る");
         assert_eq!(memory.team(), "# Team 2\n");
         assert_eq!(memory.project(), "# Project 2\n");
@@ -128,7 +161,7 @@ mod tests {
     #[test]
     fn replacing_an_absent_memory_face_is_a_no_op() {
         let mut model = ReadModel::new(SAMPLE);
-        model.replace_memory("x".to_string(), "y".to_string());
+        model = model.with_rewritten_memory("x".to_string(), "y".to_string());
         assert!(model.memory().is_none());
     }
 
@@ -136,7 +169,7 @@ mod tests {
     fn replacing_the_state_does_not_touch_the_audit_side() {
         let mut model = ReadModel::new(SAMPLE);
         model.append_audit("\n## A\n\n---\n");
-        model.replace_state("changed".to_string());
+        model = model.with_state("changed".to_string());
         assert_eq!(model.state(), "changed");
         assert_eq!(model.appended_audit(), "\n## A\n\n---\n");
     }

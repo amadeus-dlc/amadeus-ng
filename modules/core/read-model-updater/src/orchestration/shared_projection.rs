@@ -18,6 +18,22 @@ pub(super) struct Head {
     verified: bool,
 }
 impl Head {
+    const fn new(
+        position: i64,
+        generation: i64,
+        revision: String,
+        digest: String,
+        verified: bool,
+    ) -> Self {
+        Self {
+            position,
+            generation,
+            revision,
+            digest,
+            verified,
+        }
+    }
+
     pub(super) const fn position(&self) -> i64 {
         self.position
     }
@@ -48,7 +64,7 @@ pub(super) fn initialize(connection: &Connection, path: &Path) -> Result<(), Jou
 }
 
 pub(super) fn read(connection: &Connection, path: &Path) -> Result<Option<Head>, JournalReadError> {
-    connection.query_row("SELECT position,generation,revision,content_digest,verified FROM amadeus_read_model_head WHERE singleton=1",[],|row|Ok(Head {position:row.get(0)?,generation:row.get(1)?,revision:row.get(2)?,digest:row.get(3)?,verified:row.get(4)?}))
+    connection.query_row("SELECT position,generation,revision,content_digest,verified FROM amadeus_read_model_head WHERE singleton=1",[],|row|Ok(Head::new(row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)))
         .optional().at_store(path)
 }
 
@@ -91,13 +107,7 @@ pub(super) fn record(
     let revision = PublicationBatch::current_transform_revision();
     transaction.execute("INSERT INTO amadeus_read_model_head VALUES (1,?1,?2,?3,?4,1) ON CONFLICT(singleton) DO UPDATE SET position=excluded.position,generation=excluded.generation,revision=excluded.revision,content_digest=excluded.content_digest,verified=1",
         params![position,generation,revision,digest]).at_store(path)?;
-    Ok(Head {
-        position,
-        generation,
-        revision,
-        digest,
-        verified: true,
-    })
+    Ok(Head::new(position, generation, revision, digest, true))
 }
 
 pub(super) fn verify(transaction: &Transaction<'_>, path: &Path) -> Result<Head, JournalReadError> {

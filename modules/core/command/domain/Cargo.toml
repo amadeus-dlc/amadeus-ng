@@ -26,7 +26,11 @@ uuid = { workspace = true, features = ["v7"] }
 # (issue #45。規則正本への射程注記の追記はオーナー確認事項)。
 core-infrastructure = { workspace = true }
 
+# Testing Postureの公開された語句規則を解釈する純粋な文字列照合。
+regex = { workspace = true }
+
 [dev-dependencies]
+base64 = { workspace = true }
 proptest = { workspace = true }
 # ITF 準拠テストが Quint のトレース JSON を読む手段 (`serde_json::Value` の読取のみで
 # derive は使わない)。外部フィクスチャの読取であって、ドメインの永続化記述ではない。

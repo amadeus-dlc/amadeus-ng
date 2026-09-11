@@ -57,6 +57,14 @@ use super::repository_error::RepositoryError;
               自動 trait 境界を書けないという注意喚起は本 trait では設計どおりである。"
 )]
 pub trait IntentExecutionRepository {
+    /// 承認操作が参照する実行を、関連参照から完全に再構成する。
+    /// # Errors
+    /// 対応する実行の不在、媒体の失敗、記録の破損。
+    async fn find_for_approval_origin(
+        &self,
+        origin: &core_command_domain::orchestration::PlanApprovalOrigin,
+    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>>;
+
     /// 集約を**完全に**再構成して返す (部分データを返さない — C3 ①)。
     ///
     /// 最新スナップショットを復元し、その `seq_nr` より後のイベントを昇順に適用して返す

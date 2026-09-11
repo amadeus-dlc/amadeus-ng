@@ -13,10 +13,19 @@ pub const EMPTY_LIST_LITERAL: &str = "[empty list]";
 
 /// `Bolt Refs` フィールドの値 — 進行中 Bolt の slug 集合 (fork で追加、merge で除去)。
 /// 重複を持たず、放出順は入力順によらず整列。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoltRefs(BTreeSet<String>);
 
+impl Default for BoltRefs {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl BoltRefs {
+    const fn of_items(items: BTreeSet<String>) -> Self {
+        Self(items)
+    }
+
     /// 和集合の単位元となる空集合。
     #[must_use]
     pub fn empty() -> Self {
@@ -26,19 +35,19 @@ impl BoltRefs {
     /// 両方の参照を含む和集合。重複を除き辞書順に並べる。
     #[must_use]
     pub fn combine(&self, other: &Self) -> Self {
-        Self(self.0.union(&other.0).cloned().collect())
+        BoltRefs::of_items(self.0.union(&other.0).cloned().collect())
     }
 
     /// 他方に含まれる参照を除いた差集合。元の集合は変更しない。
     #[must_use]
     pub fn divide(&self, other: &Self) -> Self {
-        Self(self.0.difference(&other.0).cloned().collect())
+        BoltRefs::of_items(self.0.difference(&other.0).cloned().collect())
     }
 
     /// 条件に一致する参照の集合。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(&str) -> bool) -> Self {
-        Self(
+        BoltRefs::of_items(
             self.0
                 .iter()
                 .filter(|slug| predicate(slug))
@@ -66,7 +75,7 @@ impl BoltRefs {
             }
             mapped.insert(next);
         }
-        Ok(Self(mapped))
+        Ok(BoltRefs::of_items(mapped))
     }
 
     /// 辞書順に左から畳み込む。空なら初期値を返す。
@@ -101,7 +110,7 @@ impl BoltRefs {
             }
             set.insert(slug.to_string());
         }
-        Ok(BoltRefs(set))
+        Ok(BoltRefs::of_items(set))
     }
 
     /// 放出形は決定的: 空 → `[empty list]`、非空 → ソート済み `[a, b]` (upstream `emitRefsList`)。

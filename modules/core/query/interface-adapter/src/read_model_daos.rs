@@ -46,6 +46,86 @@ pub struct ReadModelDaos {
 }
 
 impl ReadModelDaos {
+    /// イベントIDに属する移動結果を読む。
+    #[must_use]
+    pub fn jump_result(&self) -> super::JumpResultDaoImpl {
+        super::JumpResultDaoImpl::new(Rc::clone(&self.store))
+    }
+    /// Pipeline参照投影を読むDAO。
+    #[must_use]
+    pub fn pipeline_progress(&self) -> crate::PipelineProgressDaoImpl {
+        crate::PipelineProgressDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// セッション監査の通知ID結果を読む。
+    #[must_use]
+    pub fn session_audit(&self) -> crate::SessionAuditDaoImpl {
+        crate::SessionAuditDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// 停止要求IDの投影結果を読むDAO。
+    #[must_use]
+    pub fn continuation_result(&self) -> crate::ContinuationResultDaoImpl {
+        crate::ContinuationResultDaoImpl::new(Rc::clone(&self.store))
+    }
+    /// ArtifactAuditをIDで読むDAO。
+    #[must_use]
+    pub fn artifact_audit(&self) -> crate::ArtifactAuditDaoImpl {
+        crate::ArtifactAuditDaoImpl::new(Rc::clone(&self.store))
+    }
+    /// HookHealthの稼働観測行をIDで読むDAO。
+    #[must_use]
+    pub fn hook_health(&self) -> crate::HookHealthDaoImpl {
+        crate::HookHealthDaoImpl::new(Rc::clone(&self.store))
+    }
+    /// 実装開始の操作結果を読むDAO。
+    #[must_use]
+    pub fn plan_generation(&self) -> crate::PlanGenerationDaoImpl {
+        crate::PlanGenerationDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// 計画回答の結果行を読むDAO。
+    #[must_use]
+    pub fn plan_answer(&self) -> crate::PlanAnswerDaoImpl {
+        crate::PlanAnswerDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// ワークスペース全体の承認操作をIDで読むDAO。
+    #[must_use]
+    pub fn plan_approval_operation(&self) -> crate::PlanApprovalOperationDaoImpl {
+        crate::PlanApprovalOperationDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// 計画指紋を読む実装。
+    #[must_use]
+    pub fn plan_fingerprint(&self) -> super::PlanFingerprintDaoImpl {
+        super::PlanFingerprintDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// テスト契約を読む実装。
+    #[must_use]
+    pub fn testing_contract(&self) -> super::TestingContractDaoImpl {
+        super::TestingContractDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// 開始結果を引く実装。
+    #[must_use]
+    pub fn initialization(&self) -> super::InitializationDaoImpl {
+        super::InitializationDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// 指定IDの回答結果DAO。
+    #[must_use]
+    pub fn answer_result(&self) -> crate::AnswerResultDaoImpl {
+        crate::AnswerResultDaoImpl::new(self.store.clone())
+    }
+
+    /// 報告結果を引く実装。
+    #[must_use]
+    pub fn report_result(&self) -> super::ReportResultDaoImpl {
+        super::ReportResultDaoImpl::new(Rc::clone(&self.store))
+    }
+
     /// 構造化リードモデルのストアを読取専用で 1 度だけ開く。
     ///
     /// # Errors

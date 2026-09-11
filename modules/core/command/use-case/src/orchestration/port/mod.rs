@@ -31,3 +31,17 @@ pub use intent_execution_repository::IntentExecutionRepository;
 pub use intent_repository::IntentRepository;
 pub use repository_error::RepositoryError;
 pub use workflow_definition_repository::WorkflowDefinitionRepository;
+
+mod plan_approval_runtime_repository;
+pub use plan_approval_runtime_repository::PlanApprovalRuntimeRepository;
+
+mod hook_health_repository;
+pub use hook_health_repository::HookHealthRepository;
+
+mod artifact_audit_repository;
+pub use artifact_audit_repository::ArtifactAuditRepository;
+mod workflow_continuation_repository;
+pub use workflow_continuation_repository::WorkflowContinuationRepository;
+
+mod session_audit_repository;
+pub use session_audit_repository::SessionAuditRepository;

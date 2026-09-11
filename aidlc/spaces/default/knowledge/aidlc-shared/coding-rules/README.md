@@ -2,8 +2,18 @@
 
 オーナー裁定で確定した**リポジトリ横断の設計ルール**を置く。特定エージェントのプライベートメモリには置かない（アクセスできない主体が出るため）。1 ルール 1 ファイル。ルールを追加・改訂したら本 README の一覧も更新する。
 
-各ルールには裁定日・適用例（PR）・機械強制の有無（`cargo lint` ルール / clippy / 型）を記す。**設計の前提はまずスキル正典から** — 設計・命名・配置を自分で考える前に、インストール済みの j5ik2o-* 設計スキル（software-design プラグイン約 29 本。`j5ik2o-ddd-repository-design` / `-repository-placement` / `-custom-linter-creator` 等）を列挙し、該当スキルの SKILL.md と references/ を**先に**読む。前提はスキルに書いてある（実例: Reader 造語と `load` メソッドはどちらもスキル未読のまま設計して差し戻された）。**オーナーの指摘（裁定）は可能な限り機械的な強制へ落とし込む** — 優先順は 型（E1）→ 既存 lint（clippy / rustc）→ `cargo lint` カスタムルール。カスタムルールは検出力を証明する赤例テストが必須（Quint ゲートと同じ DoD）。仕様（upstream 互換の観測可能契約）の正本はゴールデン `tests/golden/upstream-3c3146cf/`（ピン `3c3146cf` = v2.6.40 の配布実バイト）と配布元 submodule `vendor/aidlc-workflows/`であり（手書きの `docs/specs/` は 2026-09-07 に削除した）、ここに置くのは**書き方のルール**である。
+各ルールには裁定日・適用例（PR）・機械強制の有無（`cargo lint` ルール / clippy / 型）を記す。**設計の前提はまずスキル正典から** — 設計・命名・配置を自分で考える前に、インストール済みの j5ik2o-* 設計スキル（software-design プラグイン約 29 本。`j5ik2o-ddd-repository-design` / `-repository-placement` / `-custom-linter-creator` 等）を列挙し、該当スキルの SKILL.md と references/ を**先に**読む。前提はスキルに書いてある（実例: Reader 造語と `load` メソッドはどちらもスキル未読のまま設計して差し戻された）。**オーナーの指摘（裁定）は可能な限り機械的な強制へ落とし込む** — 優先順は 型（E1）→ 既存 lint（clippy / rustc）→ `cargo lint` カスタムルール。カスタムルールは検出力を証明する赤例テストが必須（Quint ゲートと同じ DoD）。仕様（upstream 互換の観測可能契約）の正本はゴールデン `tests/golden/upstream-a277af21/`（ピン `a277af21` = v2.7.1 の配布実バイト）と配布元 submodule `vendor/aidlc-workflows/`であり（手書きの `docs/specs/` は 2026-09-07 に削除した）、ここに置くのは**書き方のルール**である。
 
+
+## 2026-09-08に再確認した必須規則
+
+- 集約IDの型名は **集約名 + `Id`**。[ubiquitous-language.md](ubiquitous-language.md) の対応規則で確認する。
+- 完成型の初期化は **完全コンストラクタ** に集約し、**setterは禁止**する。初期化漏れと、ドメインの文脈を無視した任意の状態変更を防ぐためである。
+- **`with_*` はビルダーのファクトリメソッドであり、setterとは区別する。** `build()` は完成型の完全コンストラクタを呼ぶ。詳しい判定と点検項目は [factory-naming.md](factory-naming.md) を参照する。
+- **ユースケースからドメインのgetterを呼ばない。** ドメインモデル貧血症を防ぐため、判断を状態の所有者へ委譲する。実装・是正の区切りで `cargo lint` を実行する。既存の禁止範囲と点検方法は [tell-dont-ask.md](tell-dont-ask.md) を参照する。
+- **ドメインのFCCの要素はドメイン固有型とし、プリミティブ型を使わない。** `PendingIterations` の要素は `PendingIteration` とする。既存移行とリンター追加は利用者が許可した後続Issueで管理する。詳細は [first-class-collections.md](first-class-collections.md) を参照する。
+
+記録だけで是正済みとは扱わず、コードの構築・更新経路を点検し、結果を現在のintent記録へ残す。
 
 ## 規則が衝突したら（優先順）
 
@@ -12,7 +22,7 @@
 旧 memory 層 `project.md` の Corrections に記録されていたが、memory 層は 2026-09-07 に初期化したため本節が正本である）。
 どちらが正かは次の順で決める。
 
-1. **観測互換**（ゴールデン `tests/golden/upstream-3c3146cf/`（ピン `3c3146cf` = v2.6.40 の配布実バイト）と配布元 submodule `vendor/aidlc-workflows/`が定める upstream 契約）— これだけは設計規則より上。
+1. **観測互換**（ゴールデン `tests/golden/upstream-a277af21/`（ピン `a277af21` = v2.7.1 の配布実バイト）と配布元 submodule `vendor/aidlc-workflows/`が定める upstream 契約）— これだけは設計規則より上。
    Published Language の逐語は常に勝つ。
 2. **「例外を認めない」と明記した規則** — 現在は [field-visibility.md](field-visibility.md) のみ
    （ただし「例外なし」は**射程の中で**の話。射程外＝対象外は各規則の §射程 / §対象外 を見る）。
@@ -53,7 +63,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | [domain-object-kinds.md](domain-object-kinds.md) | ドメインオブジェクトは**エンティティ**（集約ルート = グローバル / ローカル）・**値オブジェクト**・**ファーストクラスコレクション**・**ドメインイベント**の 4 種が基本。**ドメインサービスの新設は人間の裁定が必須**。それ以外の種類は実測ありの問題と対策内容を添えて人間の裁定にかけてから（2026-09-02 オーナー規律） | レビュー基準 |
 | [domain-services.md](domain-services.md) | ドメインサービスは**最後の手段** — 構築規則・導出・判断はまず所有する型の関連メソッドへ。自由関数は「どの型も所有できない」説明を doc に書けるときだけ | レビュー基準 |
 | [infrastructure-layer.md](infrastructure-layer.md) | infrastructure 層は**言語拡張**（原子的 I/O・時計・ID・ロギング等の汎用機構）だけ — **RPC クライアント・DB アクセスは置かない**（相手方契約を知る gateway は interface-adapter へ）。配置は core-infrastructure / harness-infrastructure | Cargo クレート分離 + レビュー基準 |
-| [factory-naming.md](factory-naming.md) | **基本コンストラクタ 1 本に構築経路を集約**し、補助コンストラクタは必ずそれへ委譲する（Scala の primary/auxiliary を Rust へ。検査可能な性質 = 構造体リテラルが型ごとに 1 箇所）。setter は使わない。コンストラクタ相当は `fn new(..) -> Self` に統一。それ以外は用途で選ぶ（`of` 集約 / `from`(`From`・`from_<源>`) 変換 / `parse` 文字列 / `open` リソース / `generate` 算出 / `create` エンティティ、ドメイン語があれば優先）。`valueOf`・`getInstance`・`newInstance` は Rust 慣用と衝突するので不採用 | レビュー基準（機械化ロードマップ 1・3） |
+| [factory-naming.md](factory-naming.md) | **基本コンストラクタ 1 本に構築経路を集約**し、補助コンストラクタは必ずそれへ委譲する（Scala の primary/auxiliary を Rust へ。検査可能な性質 = 構造体リテラルが型ごとに 1 箇所）。setter は使わない。コンストラクタ相当は `fn new(..) -> Self` に統一。それ以外は用途で選ぶ（`of` 集約 / `from`(`From`・`from_<源>`) 変換 / `parse` 文字列 / `open` リソース / `generate` 算出 / `create` エンティティ、ドメイン語があれば優先）。`valueOf`・`getInstance`・`newInstance` は Rust 慣用と衝突するので不採用 | `cargo lint`（`setter-method`）。完全初期化・構築経路・その他の命名はレビュー基準 |
 | [ubiquitous-language.md](ubiquitous-language.md) | ドメインモデル（`core/domain` の集約・エンティティ・値オブジェクト・ドメインイベント）の型名・フィールド名・メソッド名はユビキタス言語にする。例外は認めるが**doc コメントに理由の記述が必須** | レビュー基準 |
 | [upstream-contracts.md](upstream-contracts.md) | **借り物の契約を自分のドメインに合わせて曲げない**。ライブラリには別のドメインがある。取りうる関係は Conformist か腐敗防止層の 2 つで、契約を書き換えるのはどちらでもない。食い違いは**境界で変換**する | レビュー基準 |
 | [domain-persistence-neutrality.md](domain-persistence-neutrality.md) | **ドメインは永続化知識から中立** — serde 属性・ストア trait 実装・ジャーナル語彙・復号中間表現を domain に書かない。永続化モデル（DTO）はアダプタが所有し、復号は検査付き再構成コンストラクタへ渡す。読む側（RMU）は自前 DTO（側ごと専用化） | クレート依存（domain の Cargo.toml に serde / ESA が無いこと）+ レビュー基準 |

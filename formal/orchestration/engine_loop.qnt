@@ -4,6 +4,35 @@
 //       park/jump/recompose×stale re-report。upstream aidlc-workflows v2 @ 3c3146cf の
 //       02-orchestration-engine.md を抽象化 (根拠: ピン 3c3146cf の配布資産。旧契約マップ
 //       docs/specs/research/ は 2026-09-07 に削除した)。
+// v2.10 (2026-09-10): redo (別 scope を名指さない直接 execute) のガードを実装へ揃えた
+//   (裁定 jump-redo-guard Q1 = A)。actJumpRedo は status == Running と cursor != 0 だけを
+//   要求していたので、TaskUpdate 同期 (synced) や別 scope の跳躍 (foreign) が実効 SKIP へ
+//   置いたカーソルへの redo を許していた。集約の jump_execute_guard は別 scope 無しの跳躍に
+//   jump_plan(None) = in_scope を要求するため同じ redo を InvalidTarget で拒否する。
+//   モデルが許し実装が拒否する向きの差であり、実装の振る舞いは変えない。
+//   - actJumpRedo に inScope(cursor) を追加。
+//   - 不変条件 jump_redo_on_plan (lastAction == "jump_redo" ⟹ effectivePlan(cursor) == Execute)
+//     を追加 — 追加前の同じ seed で violation を採取済み (red)。
+//   - witness w_jump_redo を追加 — ガードが redo 経路を死なせていないことを固定する。
+// v2.9 (2026-09-10): 別 scope を名指した直接 execute (裁定 jump-contract Q1 = A の
+//   foreign-scope 部分) をモデル化 — 本家 2.7.1 (a277af21 `aidlc-jump.ts:257-296, 308-375`)
+//   は `--scope <名前>` の直接 execute を、その scope の静的な列で到達可否と読み飛ばしを
+//   導いて受理する。到達点が自 scope の実効計画では EXECUTE でなくても届く。
+//   - foreignPlan: int -> PlanAction (immutable — init で nondet に 1 度選ぶ。stage 0 は
+//     Execute 固定 — plan と同じ規律)。名指された別 scope の静的な列の射影。
+//   - foreign: bool — 別 scope 由来の跳躍がカーソルを自実効計画の外へ置いた印
+//     (Rust 側 IntentExecution::cursor_foreign_scoped)。synced (TaskUpdate 同期由来) とは
+//     由来が違うので別の印であり、cursor_in_scope は両方が立っていないときだけ適用する。
+//   - actForeignJumpForward: actJumpForward と同じ枠組みで、到達可否・介在の読み飛ばしの
+//     membership を inScope から foreignPlan へ置き換えたもの。
+//   - witness w_foreign_jump (= foreign) を追加 — foreign-scope の跳躍経路が実在することを
+//     固定する。
+//
+//   抽象化の対応表 (Rust 側 IntentExecution との射影):
+//     foreignPlan ↔ JumpScope の静的な列 (名指された scope が EXECUTE と言う位置の集合)。
+//                   scope の内容は定義の静的な材料なので、実行中は変わらない
+//     foreign     ↔ IntentExecution::cursor_foreign_scoped() — エンジン遷移 (advance) や
+//                   TaskUpdate 同期がカーソルを動かすと偽へ戻る
 // v2.7 (2026-09-05): set-autonomy の受理集合を upstream に揃えた (#72 / b50、オーナー裁定 A) —
 //   actSetAutonomy から status == Running を外した。upstream handleSetAutonomy
 //   (3c3146cf aidlc-bolt.ts:799-859) は状態ファイルを受理条件として読まないので、park 中でも
@@ -61,6 +90,17 @@
 //                        持たず「終端受領証が在るか」の 1 bit に射影する
 //     retry-pending    ↔ actRetryReview (フレーム空 — 呼び直しは依頼に数えず、
 //                        判定待ち集合も既にその番号を含む)
+// v2.8 (2026-09-09): TaskUpdate 同期 (actTaskSync) と明示 direction の直接 execute に伴う
+//   2 つの裁定 (U2 task-update-contract Q1 = A / jump-contract Q1 = A) を反映 —
+//   - at_most_one_active を**降格** (削除)。本家 2.7.1 の実観測に反例が 2 つある: 明示
+//     backward の直接 execute は出発点と到達点の両方を `[-]` に残し、別 stage への TaskUpdate
+//     同期は旧 stage の checkbox を戻さない (jump-logs / runtime-sync-observations)。
+//   - actTaskSync: `set-status --stage <slug>` の射影。任意の stage (実効 SKIP を含む) を
+//     現在位置にし、その checkbox を InProgress にする。他の状態は動かさない。
+//   - synced: 同期が実効 EXECUTE の外へカーソルを置いたか。cursor_in_scope はこの印が立って
+//     いる間だけ適用を外す (エンジン遷移がカーソルを動かすと印は消える)。
+//   - actRequestReview に「判定待ちが無い」ガードを追加 — 集約は `PendingIterations` で
+//     同一試行内の重複依頼を拒否する (upstream "still waiting for a verdict")。
 // v2.4 (2026-09-04): --single 隔離実行と walking-skeleton stance の分類往復をモデル化
 //   (#73 / b47) — 状態変数 stanceRecorded を足し、フレーム空アクション actSingleRun
 //   (全状態変数が不変) と actRecordSkeletonStance (stanceRecorded だけを立てる) を追加した。
@@ -109,6 +149,9 @@
 //                    Stage」の合成状態のみを表す。stale-by-progress parked は slice 2
 //   DirectiveKind  ↔ Directive enum の観測射影 (run-stage/done/parked/error のみ、slice 1)
 //   approved       ↔ ゲート承認履歴 (GATE_APPROVED 監査行の射影)
+//   foreignPlan    ↔ JumpScope の静的な列 (別 scope を名指した直接 execute が使う計画 — v2.9)
+//   foreign        ↔ IntentExecution::cursor_foreign_scoped() (別 scope 由来の跳躍がカーソルを
+//                    自実効計画の外へ置いた印 — v2.9。synced (同期由来) とは別の印)
 //   stanceRecorded ↔ skeleton_stance: Option<SkeletonStance> の「記録済みか」射影。
 //                    stance の 3 値 (on/off/scope-dependent) は未モデル化 — upstream の
 //                    resolveSkeletonGate はどの値でも同じ答え (gated) を返すため、
@@ -161,7 +204,7 @@
 //   engine_loop::no_run_stage_for_skip / cursor_in_scope / no_gate_bypass /
 //   gate_lifecycle_preconditions / parked_position / parked_marker_status /
 //   unpark_restores_position / stale_rereport_yields_done / stale_rereport_frame /
-//   at_most_one_active / single_run_frame / stance_frame /
+//   single_run_frame / stance_frame / (at_most_one_active は v2.8 で降格) /
 //   approve_requires_terminal_receipt / review_attempt_floor / review_budget / review_frame /
 //   approve_requires_practices_receipt / practices_receipt_floor / promote_frame
 
@@ -175,10 +218,13 @@ module engine_loop {
   type DirectiveKind = DRunStage(int) | DDone | DParked | DError | DNone
 
   var plan: int -> PlanAction        // 静的 scope grid (immutable — 裁定 B1)
+  var foreignPlan: int -> PlanAction // 別 scope の静的な列 (immutable — v2.9。stage 0 は Execute 固定)
   var overlay: int -> PlanAction     // recompose オーバレイ (実効プランの源)
   var conditional: int -> bool       // execution: CONDITIONAL 宣言 (stage 0 は常に false)
   var checkbox: int -> CheckboxState
   var cursor: int
+  var synced: bool                   // TaskUpdate 同期が実効 EXECUTE の外へカーソルを置いた印 (v2.8)
+  var foreign: bool                  // 別 scope 由来の跳躍が自実効計画の外へカーソルを置いた印 (v2.9)
   var status: WorkflowStatus
   var parkedAt: int                  // -1 = 非 park
   var autonomous: bool               // Construction Autonomy Mode
@@ -241,6 +287,9 @@ module engine_loop {
   action init = {
     nondet execSet = STAGES.powerset().oneOf()
     nondet condSet = STAGES.powerset().oneOf()
+    // 別 scope の静的な列 (v2.9)。plan と同じ規律で 1 度だけ選び、以後どのアクションでも
+    // 動かない (定義の静的な材料の射影)。stage 0 は Execute 固定。
+    nondet foreignExecSet = STAGES.powerset().oneOf()
     // レビューの静的材料。init で 1 度だけ選び、以後どのアクションでも動かない
     // (定義 × scope × override から解決される値の射影 — 実行中は変わらない)。
     nondet reviewedSet = STAGES.powerset().oneOf()
@@ -259,10 +308,13 @@ module engine_loop {
     val ap0 = STAGES.mapBy(s => false)
     all {
       plan' = p,
+      foreignPlan' = STAGES.mapBy(s => if (s == 0 or foreignExecSet.contains(s)) Execute else SkipPlan),
       overlay' = p,
       conditional' = STAGES.mapBy(s => s != 0 and condSet.contains(s)),
       checkbox' = cb0,
       cursor' = cur0,
+      synced' = false,
+      foreign' = false,
       status' = Running,
       parkedAt' = -1,
       autonomous' = false,
@@ -312,7 +364,7 @@ module engine_loop {
   // 完了済みなら次の in-scope、無ければ done (branch 10)
   action actNext = all {
     status == Running,
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     lastDirective' =
@@ -325,12 +377,14 @@ module engine_loop {
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "next",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   // parked ワークフローへの next は parked directive (branch 2.5)
   action actNextParked = all {
     status == WorkflowParked,
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     lastDirective' = DParked,
@@ -339,6 +393,8 @@ module engine_loop {
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "next_parked",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   // report forward verdict: gated は approve 経由 (in-progress は gate-start --recovered + approve)、
@@ -359,7 +415,7 @@ module engine_loop {
         else checkbox.set(s, CompletedBox).set(nxt, InProgress),
       cursor' = if (nxt == -1) s else nxt,
       status' = if (nxt == -1) WorkflowCompleted else Running,
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       parkedAt' = parkedAt, autonomous' = autonomous,
       lastDirective' = DDone,
       stanceRecorded' = stanceRecorded,
@@ -371,6 +427,8 @@ module engine_loop {
       pending' = if (nxt == -1) pending else pending.set(nxt, Set()),
       terminal' = if (nxt == -1) terminal else terminal.set(nxt, false),
       lastAction' = "report_forward",
+      synced' = false,
+      foreign' = false,
     }
   }
 
@@ -380,7 +438,7 @@ module engine_loop {
     gated(cursor),
     checkbox.get(cursor) == InProgress,
     checkbox' = checkbox.set(cursor, AwaitingApproval),
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     cursor' = cursor, status' = status, parkedAt' = parkedAt,
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
@@ -389,6 +447,8 @@ module engine_loop {
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "report_awaiting_approval",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   action actReject = all {
@@ -396,7 +456,7 @@ module engine_loop {
     gated(cursor),
     or { checkbox.get(cursor) == InProgress, checkbox.get(cursor) == AwaitingApproval },
     checkbox' = checkbox.set(cursor, Revising),
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     cursor' = cursor, status' = status, parkedAt' = parkedAt,
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
@@ -409,13 +469,15 @@ module engine_loop {
     pending' = pending.set(cursor, Set()),
     terminal' = terminal.set(cursor, false),
     lastAction' = "report_rejected",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   action actRevise = all {
     status == Running,
     checkbox.get(cursor) == Revising,
     checkbox' = checkbox.set(cursor, AwaitingApproval),
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     cursor' = cursor, status' = status, parkedAt' = parkedAt,
     autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
@@ -424,6 +486,8 @@ module engine_loop {
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "report_revised",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   // skipped: routed lifecycle outcome。dispatch 成功のエピローグは done (02 §7.3)
@@ -439,7 +503,7 @@ module engine_loop {
         else checkbox.set(s, SkippedBox).set(nxt, InProgress),
       cursor' = if (nxt == -1) s else nxt,
       status' = if (nxt == -1) WorkflowCompleted else Running,
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DDone,
       stanceRecorded' = stanceRecorded,
@@ -451,6 +515,8 @@ module engine_loop {
       pending' = if (nxt == -1) pending else pending.set(nxt, Set()),
       terminal' = if (nxt == -1) terminal else terminal.set(nxt, false),
       lastAction' = "report_skipped",
+      synced' = false,
+      foreign' = false,
     }
   }
 
@@ -462,7 +528,7 @@ module engine_loop {
       status == Running,
       s < cursor,
       checkbox.get(s) == CompletedBox,
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DDone,
@@ -471,6 +537,8 @@ module engine_loop {
       practicesStage' = practicesStage, affirmed' = affirmed,
       reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastAction' = "report_stale",
+      synced' = synced,
+      foreign' = foreign,
     }
   }
 
@@ -488,7 +556,7 @@ module engine_loop {
         else if (u > cursor and u < t and inScope(u) and isInFlight(checkbox.get(u))) SkippedBox
         else checkbox.get(u)),
       cursor' = t,
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       status' = status, parkedAt' = parkedAt, autonomous' = autonomous,
       approved' = approved,
       lastDirective' = DNone,
@@ -502,6 +570,43 @@ module engine_loop {
       pending' = STAGES.mapBy(u => Set()),
       terminal' = STAGES.mapBy(u => false),
       lastAction' = "jump_forward",
+      synced' = false,
+      foreign' = false,
+    }
+  }
+
+  // foreign jump forward (v2.9): `--scope <名前>` を名指した直接 execute (裁定
+  // jump-contract Q1 = A)。到達可否と介在の読み飛ばしは**別 scope の静的な列**
+  // (foreignPlan) で導く — 自 scope の実効計画 (inScope) では EXECUTE でない到達点にも
+  // 届き、その場合は foreign を立てて cursor_in_scope の適用を外す。それ以外の枠組み
+  // (checkbox の導出・フロアの全リセット) は actJumpForward と同じである。
+  action actForeignJumpForward = {
+    nondet t = STAGES.oneOf()
+    all {
+      status == Running,
+      t > cursor, t != 0, foreignPlan.get(t) == Execute,
+      checkbox' = STAGES.mapBy(u =>
+        if (u == t) InProgress
+        else if (u == cursor and isInFlight(checkbox.get(u)) and checkbox.get(u) != Pending) SkippedBox
+        else if (u > cursor and u < t and foreignPlan.get(u) == Execute and isInFlight(checkbox.get(u))) SkippedBox
+        else checkbox.get(u)),
+      cursor' = t,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
+      status' = status, parkedAt' = parkedAt, autonomous' = autonomous,
+      approved' = approved,
+      lastDirective' = DNone,
+      stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage,
+      // フロア — ジャーナルの STAGE_JUMPED はステージ非依存のフロアである
+      // (fail-closed over precise)。全ステージの試行を空へ戻す。
+      affirmed' = false,
+      reqCount' = STAGES.mapBy(u => 0),
+      pending' = STAGES.mapBy(u => Set()),
+      terminal' = STAGES.mapBy(u => false),
+      lastAction' = "foreign_jump",
+      synced' = false,
+      foreign' = not(inScope(t)),
     }
   }
 
@@ -515,9 +620,11 @@ module engine_loop {
         if (u == t) InProgress
         else if (u > t and inScope(u) and checkbox.get(u) != Pending) Pending
         else checkbox.get(u)),
-      approved' = STAGES.mapBy(u => if (u >= t) false else approved.get(u)),
+      // 承認の無効化は「pending へ戻す stage + 到達点」に限る (v2.8) — 巻き戻さない実効 SKIP の
+      // 完了 (TaskUpdate 同期の後に承認された stage) は checkbox と承認を保つ。
+      approved' = STAGES.mapBy(u => if (u == t or (u > t and inScope(u))) false else approved.get(u)),
       cursor' = t,
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       status' = status, parkedAt' = parkedAt, autonomous' = autonomous,
       lastDirective' = DNone,
       stanceRecorded' = stanceRecorded,
@@ -530,15 +637,22 @@ module engine_loop {
       pending' = STAGES.mapBy(u => Set()),
       terminal' = STAGES.mapBy(u => false),
       lastAction' = "jump_backward",
+      synced' = false,
+      foreign' = false,
     }
   }
 
   action actJumpRedo = all {
     status == Running,
     cursor != 0,
+    // 別 scope を名指さない跳躍は自実効計画の EXECUTE にしか届かない (集約の
+    // jump_execute_guard / jump_plan(None) と同じ規則)。同期 (synced) や別 scope の跳躍
+    // (foreign) が計画外へ置いたカーソルへの redo は本家でも InvalidTarget である —
+    // 裁定 jump-redo-guard Q1 = A (モデルを実装へ揃える)。
+    inScope(cursor),
     checkbox' = checkbox.set(cursor, InProgress),
     approved' = approved.set(cursor, false),
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     cursor' = cursor, status' = status, parkedAt' = parkedAt,
     autonomous' = autonomous,
     lastDirective' = DNone,
@@ -552,6 +666,8 @@ module engine_loop {
     pending' = STAGES.mapBy(u => Set()),
     terminal' = STAGES.mapBy(u => false),
     lastAction' = "jump_redo",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   // park: autonomous 中は拒否 (unattended run has no human to resume it)。
@@ -565,7 +681,7 @@ module engine_loop {
     not(autonomous),
     status' = WorkflowParked,
     parkedAt' = cursor,
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, autonomous' = autonomous,
     approved' = approved,
     lastDirective' = DParked,
@@ -574,13 +690,15 @@ module engine_loop {
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "park",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   action actUnpark = all {
     status == WorkflowParked,
     status' = Running,
     parkedAt' = -1,
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, autonomous' = autonomous,
     approved' = approved,
     lastDirective' = DNone,
@@ -589,6 +707,8 @@ module engine_loop {
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "unpark",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   // recompose: Running・非 autonomous・pending・カーソル前方のみ flip (slice 1 は 8 ガード中 4)
@@ -600,7 +720,7 @@ module engine_loop {
       s > cursor,
       checkbox.get(s) == Pending,
       overlay' = overlay.set(s, if (overlay.get(s) == Execute) SkipPlan else Execute),
-      plan' = plan, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       lastDirective' = DNone,
@@ -609,13 +729,15 @@ module engine_loop {
       practicesStage' = practicesStage, affirmed' = affirmed,
       reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastAction' = "recompose",
+      synced' = synced,
+      foreign' = foreign,
     }
   }
 
   // 受理集合は状態に依らない (v2.7 / b50) — upstream は状態ファイルを読まない。
   action actSetAutonomy = all {
     autonomous' = not(autonomous),
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, approved' = approved,
     lastDirective' = DNone,
@@ -624,12 +746,14 @@ module engine_loop {
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "set_autonomy",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   // 完了後のスタッタ (デッドロック回避)
   action actDoneStutter = all {
     status == WorkflowCompleted,
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     lastDirective' = DDone,
@@ -638,6 +762,8 @@ module engine_loop {
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
     lastAction' = "done_stutter",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   // record-skeleton-stance: conductor が分類した walking-skeleton stance の記録 (#73)。
@@ -656,11 +782,13 @@ module engine_loop {
     reviewed' = reviewed, advisory' = advisory,
     practicesStage' = practicesStage, affirmed' = affirmed,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     lastDirective' = DNone,
     lastAction' = "record_skeleton_stance",
+    synced' = synced,
+    foreign' = foreign,
   }
 
   // single-stage run: 隔離実行 (`report --single`) の疑似ワークフロー ID 付き対の記録 (#73)。
@@ -674,7 +802,7 @@ module engine_loop {
     nondet s = STAGES.oneOf()
     all {
       gated(s),
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       stanceRecorded' = stanceRecorded,
@@ -683,6 +811,8 @@ module engine_loop {
       reqCount' = reqCount, pending' = pending, terminal' = terminal,
       lastDirective' = DNone,
       lastAction' = "single_run",
+      synced' = synced,
+      foreign' = foreign,
     }
   }
 
@@ -699,17 +829,21 @@ module engine_loop {
     all {
       reviewed.get(s),
       reqCount.get(s) + 1 <= budget(s),
+      // 判定待ちの依頼が残る間は次の依頼を受けない (集約の PendingIterations — v2.8)。
+      pending.get(s) == Set(),
       reqCount' = reqCount.set(s, reqCount.get(s) + 1),
       pending' = pending.set(s, pending.get(s).union(Set(reqCount.get(s) + 1))),
       terminal' = terminal,
       reviewed' = reviewed, advisory' = advisory,
       practicesStage' = practicesStage, affirmed' = affirmed,
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       stanceRecorded' = stanceRecorded,
       lastDirective' = DNone,
       lastAction' = "request_review",
+      synced' = synced,
+      foreign' = foreign,
     }
   }
 
@@ -724,12 +858,14 @@ module engine_loop {
       reqCount' = reqCount, pending' = pending, terminal' = terminal,
       reviewed' = reviewed, advisory' = advisory,
       practicesStage' = practicesStage, affirmed' = affirmed,
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       stanceRecorded' = stanceRecorded,
       lastDirective' = DNone,
       lastAction' = "retry_review",
+      synced' = synced,
+      foreign' = foreign,
     }
   }
 
@@ -747,12 +883,14 @@ module engine_loop {
       reqCount' = reqCount,
       reviewed' = reviewed, advisory' = advisory,
       practicesStage' = practicesStage, affirmed' = affirmed,
-      plan' = plan, overlay' = overlay, conditional' = conditional,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
       checkbox' = checkbox, cursor' = cursor, status' = status,
       parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
       stanceRecorded' = stanceRecorded,
       lastDirective' = DNone,
       lastAction' = "record_verdict",
+      synced' = synced,
+      foreign' = foreign,
     }
   }
 
@@ -769,12 +907,42 @@ module engine_loop {
     practicesStage' = practicesStage,
     reviewed' = reviewed, advisory' = advisory,
     reqCount' = reqCount, pending' = pending, terminal' = terminal,
-    plan' = plan, overlay' = overlay, conditional' = conditional,
+    plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
     checkbox' = checkbox, cursor' = cursor, status' = status,
     parkedAt' = parkedAt, autonomous' = autonomous, approved' = approved,
     stanceRecorded' = stanceRecorded,
     lastDirective' = DNone,
     lastAction' = "promote_practices",
+    synced' = synced,
+    foreign' = foreign,
+  }
+
+  // TaskUpdate 同期 (v2.8): 本家 `aidlc-utility set-status --stage <slug>` の射影。
+  // Running 中に任意の stage を現在位置にし、その checkbox だけを InProgress にする。旧 stage の
+  // checkbox は戻さない (両方 `[-]` になり得る)。実効 SKIP の stage も受理し、その場合は
+  // synced を立てて cursor_in_scope の適用を外す — `next` はその位置で DError (skip の不整合) を
+  // 返し、report_skipped の回復で再び実効 EXECUTE へ進む。
+  action actTaskSync = {
+    nondet t = STAGES.oneOf()
+    all {
+      status == Running,
+      t != 0,
+      checkbox' = checkbox.set(t, InProgress),
+      cursor' = t,
+      synced' = not(inScope(t)),
+      // カーソルは同期が置き直す — 跳躍由来の印はここで落ちる (Rust 側 mutate の
+      // TaskSynchronized 腕と同じ規則)。
+      foreign' = false,
+      plan' = plan, foreignPlan' = foreignPlan, overlay' = overlay, conditional' = conditional,
+      status' = status, parkedAt' = parkedAt, autonomous' = autonomous,
+      approved' = approved,
+      lastDirective' = DNone,
+      stanceRecorded' = stanceRecorded,
+      reviewed' = reviewed, advisory' = advisory,
+      practicesStage' = practicesStage, affirmed' = affirmed,
+      reqCount' = reqCount, pending' = pending, terminal' = terminal,
+      lastAction' = "task_sync",
+    }
   }
 
   action step = any {
@@ -787,6 +955,7 @@ module engine_loop {
     all { snapshot, actReportSkipped },
     all { snapshot, actStaleReport },
     all { snapshot, actJumpForward },
+    all { snapshot, actForeignJumpForward },
     all { snapshot, actJumpBackward },
     all { snapshot, actJumpRedo },
     all { snapshot, actPark },
@@ -800,6 +969,7 @@ module engine_loop {
     all { snapshot, actRetryReview },
     all { snapshot, actRecordVerdict },
     all { snapshot, actPromotePractices },
+    all { snapshot, actTaskSync },
   }
 
   // === 不変条件 (DoD — ADR 0003 決定 7) ===
@@ -810,9 +980,21 @@ module engine_loop {
     | _ => true
   }
 
-  // 状態レベルの守り: Running 中のカーソルは常に実効 EXECUTE 上にある
-  // (単一ガード破壊を直接検出する — mutation テストで確認済み)
-  val cursor_in_scope = (status == Running) implies (effectivePlan(cursor) == Execute)
+  // 状態レベルの守り: Running 中、エンジン遷移が置いたカーソルは常に実効 EXECUTE 上にある
+  // (単一ガード破壊を直接検出する — mutation テストで確認済み)。TaskUpdate 同期が実効 SKIP へ
+  // 置いた位置 (synced) と、別 scope を名指した直接 execute が自実効計画の外へ置いた位置
+  // (foreign — v2.9、裁定 jump-contract Q1 = A) は本家の観測どおり受理し、この守りの対象外と
+  // する。
+  val cursor_in_scope =
+    (status == Running and not(synced) and not(foreign)) implies (effectivePlan(cursor) == Execute)
+
+  // redo (別 scope を名指さない直接 execute) は、跳躍に使う計画 = 自実効計画で EXECUTE の
+  // 位置にしか届かない — 集約の jump_execute_guard が jump_plan(None) = in_scope で判定し、
+  // 外れた位置は InvalidTarget を返す (裁定 jump-redo-guard Q1 = A、モデルを実装へ揃える)。
+  // TaskUpdate 同期 (synced) や別 scope の跳躍 (foreign) が計画外へ置いたカーソルも例外では
+  // ない。
+  val jump_redo_on_plan =
+    (lastAction == "jump_redo") implies (effectivePlan(cursor) == Execute)
 
   // ゲート迂回トレースが存在しない: gated ステージが completed なら必ず承認履歴を持つ
   val no_gate_bypass = STAGES.forall(s =>
@@ -856,13 +1038,22 @@ module engine_loop {
     autonomous == prevAutonomous,
   }
 
-  // アクティブ (in-progress / awaiting / revising) なステージは高々 1 つ
-  // 【暫定規範】upstream 未明文化の派生不変条件。A7 追従で反例が出たら降格
-  val at_most_one_active = STAGES.filter(s => or {
+  // (v2.8) at_most_one_active は降格した — 本家 2.7.1 の実観測に反例がある (ヘッダ参照)。
+  // 到達性 witness として残し、複数 active の経路が実在することを固定する。
+  val w_two_active = STAGES.filter(s => or {
     checkbox.get(s) == InProgress,
     checkbox.get(s) == AwaitingApproval,
     checkbox.get(s) == Revising,
-  }).size() <= 1
+  }).size() >= 2
+  val w_task_sync = lastAction == "task_sync"
+
+  // 別 scope 由来の跳躍がカーソルを自実効計画の外へ置く経路が実在する (v2.9 —
+  // cursor_in_scope の foreign 除外が空虚に成立していないことの証拠)
+  val w_foreign_jump = foreign
+
+  // redo 経路が実在する (v2.10 — actJumpRedo に足した inScope(cursor) ガードが
+  // アクションを死なせていないことの証拠)
+  val w_jump_redo = lastAction == "jump_redo"
 
   // 隔離実行 (--single) は本流の状態を 1 つも動かさない (フレーム条件 — 仕様 I10 の
   // 強制手段)。観測用の lastDirective / lastAction は更新される — 検査対象は本流の
@@ -900,11 +1091,12 @@ module engine_loop {
     (lastAction == "report_forward" and gated(prevCursor) and reviewed.get(prevCursor))
       implies prevTerminal.get(prevCursor)
 
-  // 試行のフロア — 差し戻しはカーソルを、ジャンプ 3 種は全ステージを、前進と読み飛ばしは
+  // 試行のフロア — 差し戻しはカーソルを、ジャンプ 4 種は全ステージを、前進と読み飛ばしは
   // 動いた先の新カーソルを空へ戻す。
   val review_attempt_floor = and {
     (lastAction == "report_rejected") implies attemptEmpty(cursor),
-    (lastAction == "jump_forward" or lastAction == "jump_backward" or lastAction == "jump_redo")
+    (lastAction == "jump_forward" or lastAction == "jump_backward" or lastAction == "jump_redo"
+      or lastAction == "foreign_jump")
       implies STAGES.forall(s => attemptEmpty(s)),
     ((lastAction == "report_forward" or lastAction == "report_skipped") and cursor != prevCursor)
       implies attemptEmpty(cursor),
@@ -945,11 +1137,12 @@ module engine_loop {
   val approve_requires_practices_receipt =
     (lastAction == "report_forward" and prevCursor == practicesStage) implies prevAffirmed
 
-  // 試行のフロア — 差し戻しは practices ステージの受領証を、ジャンプ 3 種は無条件に、
+  // 試行のフロア — 差し戻しは practices ステージの受領証を、ジャンプ 4 種は無条件に、
   // 前進と読み飛ばしはカーソルが practices ステージへ動いたときに落とす。
   val practices_receipt_floor = and {
     (lastAction == "report_rejected" and cursor == practicesStage) implies not(affirmed),
-    (lastAction == "jump_forward" or lastAction == "jump_backward" or lastAction == "jump_redo")
+    (lastAction == "jump_forward" or lastAction == "jump_backward" or lastAction == "jump_redo"
+      or lastAction == "foreign_jump")
       implies not(affirmed),
     ((lastAction == "report_forward" or lastAction == "report_skipped")
       and cursor != prevCursor and cursor == practicesStage) implies not(affirmed),

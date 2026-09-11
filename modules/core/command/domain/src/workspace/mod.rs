@@ -1,6 +1,6 @@
 //! workspace コンテキスト — 永続化機構の Domain Primitive と純関数サービス。
-//! upstream 契約の逐語根拠はピン `3c3146cf` の配布資産と `tests/golden/upstream-3c3146cf/`
-//! (旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
+//! 現行受入の基準は固定本家2.7.1（`tests/golden/upstream-a277af21/`）。
+//! 旧ピン3c3146cfを引用する個別コメントは、当時の実装根拠として区別する。
 //!
 //! **描画はここに無い** (11-workspace §2.3)。状態ファイル・監査ブロックを**描く**純関数
 //! (`state_writers` / `render_audit_block`) は ES 化により投影の責務へ移った — 描くのは
@@ -74,7 +74,9 @@ pub use checkbox_entry::CheckboxEntry;
 pub use checkbox_state::CheckboxState;
 pub use checkbox_update_error::CheckboxUpdateError;
 pub use checkboxes::Checkboxes;
-pub use markdown_sections::{append_under_heading, extract_section, replace_section};
+pub use markdown_sections::{
+    append_under_heading, ensure_heading, extract_section, replace_section,
+};
 
 // エラー
 pub use audit_field_key_error::AuditFieldKeyError;
@@ -90,3 +92,71 @@ pub use unsafe_line_char::UnsafeLineChar;
 // 逐語定数
 pub use bolt_refs::EMPTY_LIST_LITERAL;
 pub use state_version_classification::CURRENT_STATE_VERSION;
+
+mod hook_health_target;
+pub use hook_health_target::HookHealthTarget;
+
+mod hook_name;
+pub use hook_name::HookName;
+mod hook_health_error;
+pub use hook_health_error::HookHealthError;
+
+mod hook_health_id;
+pub use hook_health_id::HookHealthId;
+
+mod hook_health;
+pub use hook_health::HookHealth;
+mod hook_health_event;
+pub use hook_health_event::{
+    HookAuditDropped, HookHealthEvent, HookHealthStarted, HookHeartbeatObserved,
+};
+mod hook_health_event_id;
+pub use hook_health_event_id::HookHealthEventId;
+
+mod hook_drop_reason;
+pub use hook_drop_reason::HookDropReason;
+
+mod hook_drop_summary;
+pub use hook_drop_summary::HookDropSummary;
+
+mod artifact_write_observation;
+pub use artifact_write_observation::ArtifactWriteObservation;
+mod artifact_audit_id;
+pub use artifact_audit_id::ArtifactAuditId;
+mod artifact_audit_event_id;
+pub use artifact_audit_event_id::ArtifactAuditEventId;
+mod artifact_audit_event;
+pub use artifact_audit_event::ArtifactSaved;
+mod artifact_audit_event_family;
+pub use artifact_audit_event_family::ArtifactAuditEvent;
+mod artifact_audit;
+pub use artifact_audit::ArtifactAudit;
+
+mod artifact_audit_record;
+pub use artifact_audit_record::ArtifactAuditRecord;
+
+mod session_audit;
+pub use session_audit::SessionAudit;
+
+mod session_audit_error;
+pub use session_audit_error::SessionAuditError;
+
+mod session_audit_id;
+pub use session_audit_id::SessionAuditId;
+
+mod session_audit_event_id;
+pub use session_audit_event_id::SessionAuditEventId;
+
+mod session_audit_event;
+pub use session_audit_event::SessionAuditEvent;
+
+mod session_audit_record;
+pub use session_audit_record::SessionAuditRecord;
+
+mod session_audit_observation;
+pub use session_audit_observation::SessionAuditObservation;
+
+mod session_audit_observation_id;
+pub use session_audit_observation_id::SessionAuditObservationId;
+
+pub use hook_health_event::HookFirstDropObserved;

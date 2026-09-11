@@ -1,6 +1,6 @@
 //! orchestration コンテキスト — 「次に何が起こるか」の Domain Primitive
-//! と `IntentExecution` 集約。upstream 契約の逐語根拠はピン `3c3146cf` の配布資産と
-//! `tests/golden/upstream-3c3146cf/` (旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
+//! と `IntentExecution` 集約。現行受入の基準は固定本家2.7.1
+//! （`tests/golden/upstream-a277af21/`）。旧ピン3c3146cfの個別引用は当時の実装根拠である。
 //!
 //! # イベントソーシング形の集約 (ADR-001 / ADR-002)
 //!
@@ -68,8 +68,61 @@
 
 mod apply_error;
 mod artifact_paths;
+mod artifact_target;
 mod autonomy_mode;
 mod command_error;
+mod exempt_paths;
+mod health_check_result;
+mod inspected_command;
+mod inspected_command_step;
+mod inspected_tool;
+pub use health_check_result::HealthCheckResult;
+mod memory_entry_heading;
+pub use memory_entry_heading::MemoryEntryHeading;
+mod memory_entry;
+pub use memory_entry::MemoryEntry;
+mod memory_entries;
+pub use memory_entries::MemoryEntries;
+mod learning_scope;
+pub use learning_scope::LearningScope;
+mod learning_source;
+pub use learning_source::LearningSource;
+mod practice_heading;
+pub use practice_heading::PracticeHeading;
+mod learning_content_hash;
+pub use learning_content_hash::LearningContentHash;
+mod learning_content_hash_error;
+pub use learning_content_hash_error::LearningContentHashError;
+mod learning_candidate_id;
+pub use learning_candidate_id::LearningCandidateId;
+mod learning_candidate_id_error;
+pub use learning_candidate_id_error::LearningCandidateIdError;
+mod learning_provenance;
+pub use learning_provenance::LearningProvenance;
+mod learning;
+pub use learning::Learning;
+mod learning_disposition;
+pub use learning_disposition::LearningDisposition;
+mod learning_observation;
+pub use learning_observation::LearningObservation;
+mod learning_observations;
+pub use learning_observations::LearningObservations;
+mod captured_learning;
+pub use captured_learning::CapturedLearning;
+mod captured_learnings;
+pub use captured_learnings::CapturedLearnings;
+mod memory_journal;
+pub use memory_journal::MemoryJournal;
+mod stage_memory_journal;
+pub use stage_memory_journal::StageMemoryJournal;
+mod memory_journal_survey;
+pub use memory_journal_survey::MemoryJournalSurvey;
+mod empty_memory_stages;
+pub use empty_memory_stages::EmptyMemoryStages;
+pub use intent_execution_event::HealthChecked;
+pub use intent_execution_event::LearningsCaptured;
+pub use intent_execution_event::MemoryJournalsObserved;
+pub use intent_execution_event::TaskSynchronized;
 mod engine_signal;
 mod gate_decision;
 mod intent;
@@ -102,7 +155,21 @@ mod report_request;
 mod review_attempt;
 mod review_closure;
 mod review_closures;
+mod review_freeze_block;
+mod review_freeze_verdict;
 mod review_verdict;
+mod reviewed_stage;
+mod reviewed_unit;
+mod reviewed_unit_error;
+mod reviewer_dispatch;
+mod reviewer_scope;
+mod reviewer_scope_block;
+mod reviewer_scope_candidate;
+mod reviewer_scope_candidates;
+mod reviewer_scope_paths;
+mod reviewer_scope_verdict;
+mod scope_token;
+mod scope_token_error;
 mod single_stage_run_refusal;
 mod skeleton_stance;
 mod skeleton_stance_refusal;
@@ -122,15 +189,25 @@ mod status;
 mod transition_step;
 mod transition_steps;
 mod transition_steps_error;
+mod unit_name;
+mod unit_name_error;
 mod unknown_review_verdict;
 mod unknown_stance;
 mod unknown_verdict;
 mod verdict;
 mod workspace_scan;
+mod write_target;
+mod write_target_error;
+mod write_targets;
 
 // Domain Primitive
 pub use artifact_paths::ArtifactPaths;
+pub use artifact_target::ArtifactTarget;
 pub use autonomy_mode::AutonomyMode;
+pub use exempt_paths::ExemptPaths;
+pub use inspected_command::InspectedCommand;
+pub use inspected_command_step::InspectedCommandStep;
+pub use inspected_tool::InspectedTool;
 pub use intent_event_id::IntentEventId;
 pub use intent_event_id_error::IntentEventIdError;
 pub use intent_execution_event_id::IntentExecutionEventId;
@@ -143,7 +220,20 @@ pub use report_request::ReportRequest;
 pub use review_attempt::ReviewAttempt;
 pub use review_closure::ReviewClosure;
 pub use review_closures::ReviewClosures;
+pub use review_freeze_block::ReviewFreezeBlock;
+pub use review_freeze_verdict::ReviewFreezeVerdict;
 pub use review_verdict::ReviewVerdict;
+pub use reviewed_stage::ReviewedStage;
+pub use reviewed_unit::ReviewedUnit;
+pub use reviewed_unit_error::ReviewedUnitError;
+pub use reviewer_dispatch::ReviewerDispatch;
+pub use reviewer_scope::ReviewerScope;
+pub use reviewer_scope_block::ReviewerScopeBlock;
+pub use reviewer_scope_candidate::ReviewerScopeCandidate;
+pub use reviewer_scope_candidates::ReviewerScopeCandidates;
+pub use reviewer_scope_verdict::ReviewerScopeVerdict;
+pub use scope_token::ScopeToken;
+pub use scope_token_error::ScopeTokenError;
 pub use skeleton_stance::SkeletonStance;
 pub use stage_display::StageDisplay;
 pub use stage_entries::StageEntries;
@@ -157,8 +247,13 @@ pub use stage_slug_set::StageSlugSet;
 pub use start_request::StartRequest;
 pub use transition_step::TransitionStep;
 pub use transition_steps::TransitionSteps;
+pub use unit_name::UnitName;
+pub use unit_name_error::UnitNameError;
 pub use verdict::Verdict;
 pub use workspace_scan::WorkspaceScan;
+pub use write_target::WriteTarget;
+pub use write_target_error::WriteTargetError;
+pub use write_targets::WriteTargets;
 
 // 集約
 // `Intent` は静的な集約 (変異は現状なし — オーナー裁定 2026-08-30)、`IntentExecution` は
@@ -211,3 +306,310 @@ pub use unknown_verdict::UnknownVerdict;
 
 // 逐語定数
 pub use verdict::{ACCEPTED_RESULTS, FORWARD_RESULTS};
+
+mod report_id;
+mod report_id_error;
+mod report_result;
+pub use intent_execution_event::Reported;
+pub use report_id::ReportId;
+pub use report_id_error::ReportIdError;
+pub use report_result::ReportResult;
+
+mod report_transition;
+pub use report_transition::ReportTransition;
+
+mod report_result_error;
+pub use report_result_error::ReportResultError;
+
+mod intent_record_name;
+pub use intent_record_name::IntentRecordName;
+
+mod decision_prompt;
+pub use decision_prompt::DecisionPrompt;
+
+pub use intent_execution_event::DecisionRecorded;
+
+pub use intent_execution_event::PromptObserved;
+
+mod pending_decisions;
+pub use pending_decisions::PendingDecisions;
+mod interaction_state;
+pub use interaction_state::InteractionState;
+
+mod answer_id;
+pub use answer_id::AnswerId;
+mod answer_id_error;
+pub use answer_id_error::AnswerIdError;
+mod answer_request;
+pub use answer_request::AnswerRequest;
+mod answer_disposition;
+pub use answer_disposition::AnswerDisposition;
+pub use intent_execution_event::{AnswerRecorded, PlanAnswerLogged};
+
+mod answer_error;
+pub use answer_error::AnswerError;
+
+mod summary_questions;
+pub use summary_questions::SummaryQuestions;
+mod summary_questions_error;
+pub use summary_questions_error::SummaryQuestionsError;
+mod summary_evidence;
+pub use summary_evidence::SummaryEvidence;
+
+mod pending_summary_decisions;
+pub use pending_summary_decisions::PendingSummaryDecisions;
+
+mod summary_choice;
+pub use summary_choice::SummaryChoice;
+
+mod published_directive;
+pub use published_directive::PublishedDirective;
+mod directive_publication;
+pub use directive_publication::DirectivePublication;
+mod active_directive;
+pub use active_directive::ActiveDirective;
+pub use intent_execution_event::{DirectiveContextInvalidated, DirectiveIssued};
+mod plan_questions;
+pub use plan_questions::PlanQuestions;
+mod testing_context;
+pub use testing_context::TestingContext;
+mod testing_sections;
+pub use testing_sections::TestingSections;
+mod testing_posture;
+pub use testing_posture::TestingPosture;
+mod testing_posture_error;
+pub use testing_posture_error::TestingPostureError;
+mod run_boundary_kind;
+pub use run_boundary_kind::RunBoundaryKind;
+mod code_generation_run_floor;
+pub use code_generation_run_floor::CodeGenerationRunFloor;
+
+mod run_floor_error;
+pub use run_floor_error::RunFloorError;
+mod plan_approval_error;
+pub use plan_approval_error::PlanApprovalError;
+mod code_generation_authority;
+pub use code_generation_authority::CodeGenerationAuthority;
+mod embedded_testing_contract;
+pub use embedded_testing_contract::EmbeddedTestingContract;
+mod plan_approval_documents;
+pub use plan_approval_documents::PlanApprovalDocuments;
+mod plan_approval_evidence;
+pub use plan_approval_evidence::PlanApprovalEvidence;
+mod plan_target;
+pub use plan_target::PlanTarget;
+mod plan_approval_input;
+pub use plan_approval_input::PlanApprovalInput;
+mod plan_session;
+pub use plan_session::PlanSession;
+mod plan_choice;
+pub use plan_choice::PlanChoice;
+mod plan_challenge;
+pub use plan_challenge::PlanChallenge;
+
+mod plan_approval_event_id;
+pub use plan_approval_event_id::PlanApprovalEventId;
+
+mod plan_approval_operation_id;
+pub use plan_approval_operation_id::PlanApprovalOperationId;
+
+mod plan_approval_runtime_id;
+pub use plan_approval_runtime_id::PlanApprovalRuntimeId;
+
+mod plan_challenge_occurrence;
+pub use plan_challenge_occurrence::PlanChallengeOccurrence;
+
+mod plan_challenges;
+pub use plan_challenges::PlanChallenges;
+
+mod plan_approval_event;
+pub use plan_approval_event::{PlanApprovalEvent, PlanChallengeIssued, PlanRuntimeCreated};
+
+mod plan_approval_runtime;
+pub use plan_approval_runtime::PlanApprovalRuntime;
+
+mod plan_human_response;
+pub use plan_human_response::PlanHumanResponse;
+
+pub use plan_approval_event::PlanResponseObserved;
+
+mod plan_invalidation;
+pub use plan_invalidation::PlanInvalidation;
+
+mod plan_invalidations;
+pub use plan_invalidations::PlanInvalidations;
+
+mod plan_applied_operations;
+pub use plan_applied_operations::PlanAppliedOperations;
+
+mod plan_runtime_error;
+pub use plan_runtime_error::PlanRuntimeError;
+
+pub use plan_approval_event::PlanInvalidationPrepared;
+
+pub use plan_approval_event::PlanInvalidationResolved;
+
+mod plan_decision_evidence;
+pub use plan_decision_evidence::PlanDecisionEvidence;
+
+mod plan_offered_options;
+pub use plan_offered_options::PlanOfferedOptions;
+
+mod plan_approval_origin;
+pub use plan_approval_origin::PlanApprovalOrigin;
+
+mod plan_response_preparation;
+pub use plan_response_preparation::PlanResponsePreparation;
+
+mod plan_pending_responses;
+pub use plan_pending_responses::PlanPendingResponses;
+
+pub use plan_approval_event::PlanResponsePrepared;
+
+mod plan_response_delivery;
+pub use plan_response_delivery::PlanResponseDelivery;
+
+mod plan_generation_status;
+pub use plan_generation_status::PlanGenerationStatus;
+
+mod plan_approval_receipt;
+pub use plan_approval_receipt::PlanApprovalReceipt;
+
+mod plan_receipts;
+pub use plan_receipts::PlanReceipts;
+
+mod plan_answer_input;
+pub use plan_answer_input::PlanAnswerInput;
+
+mod plan_answer_state;
+pub use plan_answer_state::PlanAnswerState;
+
+mod plan_answer;
+pub use plan_answer::PlanAnswer;
+
+mod plan_answers;
+pub use plan_answers::PlanAnswers;
+
+pub use plan_approval_event::{PlanAnswerAborted, PlanAnswerCompleted, PlanAnswerRecorded};
+
+mod plan_answer_delivery;
+pub use plan_answer_delivery::PlanAnswerDelivery;
+
+mod code_generation_approval;
+pub use code_generation_approval::CodeGenerationApproval;
+
+mod plan_generation_state;
+pub use plan_generation_state::PlanGenerationState;
+
+mod plan_generation;
+pub use plan_generation::PlanGeneration;
+
+mod plan_generations;
+pub use plan_generations::PlanGenerations;
+
+pub use plan_approval_event::PlanGenerationRequested;
+
+pub use plan_approval_event::{PlanGenerationCertified, PlanGenerationRevoked};
+mod continuation_attempt_id;
+mod continuation_error;
+mod continuation_request;
+mod continuation_signature;
+mod workflow_continuation;
+mod workflow_continuation_event;
+mod workflow_continuation_event_id;
+mod workflow_continuation_id;
+pub use continuation_attempt_id::ContinuationAttemptId;
+pub use continuation_error::ContinuationError;
+pub use continuation_request::ContinuationRequest;
+pub use continuation_signature::ContinuationSignature;
+pub use workflow_continuation::WorkflowContinuation;
+pub use workflow_continuation_event::WorkflowContinuationEvent;
+pub use workflow_continuation_event_id::WorkflowContinuationEventId;
+pub use workflow_continuation_id::WorkflowContinuationId;
+mod continuation_wait;
+pub use continuation_wait::ContinuationWait;
+mod continuation_question;
+mod continuation_questions;
+pub use continuation_question::ContinuationQuestion;
+pub use continuation_questions::ContinuationQuestions;
+mod continuation_counter;
+mod continuation_guard;
+mod continuation_publication_observation;
+pub use continuation_counter::ContinuationCounter;
+pub use continuation_guard::ContinuationGuard;
+pub use continuation_publication_observation::ContinuationPublicationObservation;
+mod continuation_observations;
+pub use continuation_observations::ContinuationObservations;
+
+mod source_baseline;
+mod source_baseline_error;
+pub use source_baseline::SourceBaseline;
+pub use source_baseline_error::SourceBaselineError;
+
+mod command_failure;
+pub use command_failure::CommandFailure;
+
+pub use intent_execution_event::CommandFailed;
+
+mod pipeline_link_error;
+pub use pipeline_link_error::PipelineLinkError;
+
+mod pipeline_handoff;
+pub use pipeline_handoff::PipelineHandoff;
+
+mod pipeline_handoff_input;
+pub use pipeline_handoff_input::PipelineHandoffInput;
+
+mod pipeline_link_request;
+pub use pipeline_link_request::PipelineLinkRequest;
+
+mod pipeline_receipt;
+pub use pipeline_receipt::PipelineReceipt;
+
+mod pipeline_record;
+pub use pipeline_record::PipelineRecord;
+
+pub use intent_execution_event::PipelineLinkCompleted;
+
+mod pipeline_history;
+pub use pipeline_history::PipelineHistory;
+
+pub use intent_execution_event::SingleStageRunStarted;
+
+mod stage_validation;
+pub use stage_validation::StageValidation;
+
+mod directive_context_invalidation;
+pub use directive_context_invalidation::DirectiveContextInvalidation;
+
+mod jump_artifact;
+mod jump_observation;
+pub use jump_artifact::JumpArtifact;
+pub use jump_observation::JumpObservation;
+mod jump_scope;
+pub use jump_scope::JumpScope;
+
+mod review_artifact;
+pub use review_artifact::ReviewArtifact;
+
+mod review_binding;
+pub use review_binding::ReviewBinding;
+
+mod review_completion;
+pub use review_completion::ReviewCompletion;
+
+mod review_documents;
+pub use review_documents::ReviewDocuments;
+
+mod review_evidence_error;
+pub use review_evidence_error::ReviewEvidenceError;
+
+mod review_appendix;
+
+mod review_record;
+pub use review_record::ReviewRecord;
+mod review_history;
+pub use review_history::ReviewHistory;
+
+#[cfg(test)]
+pub(crate) mod review_test_fixture;

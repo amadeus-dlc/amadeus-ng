@@ -1,7 +1,7 @@
-//! 監査イベントスキーマ — `EventType` 86 語 22 カテゴリの閉集合・
+//! 監査イベントスキーマ — `EventType` 91 語 22 カテゴリの閉集合・
 //! MANDATORY 8・authority deny-list (B5: workspace は行を opaque に扱い、宣言はスキーマ側)。
 //!
-//! 出典: upstream `aidlc-audit.ts:39-189` (03 §6.5 の完全転記、検算 86/22 済み)。
+//! 出典: 固定本家2.7.1 `a277af21` の `aidlc-audit.ts`。保存済みaudit-registry.jsonで全語と見出しを照合する。
 //! 2026-08-29 オーナー裁定「audit-events の中身は domain に移せ」により独立クレート
 //! `modules/shared/audit-events` から本モジュールへ移設 — 監査イベント語彙はドメイン知識で
 //! あり、ドメインモデルの中に置く（外部消費者は監査行の文字列として読む）。
@@ -25,7 +25,7 @@ macro_rules! event_types {
             pub const ALL: &'static [EventCategory] = &[ $( EventCategory::$cat, )+ ];
         }
 
-        /// 86 イベントの閉集合。新イベントの発明は禁止 (E1)。
+        /// 91 イベントの閉集合。新イベントの発明は禁止 (E1)。
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum EventType { $( $(
             /// 監査行の event 名 1 語。ワイヤ綴りは `as_str`、所属カテゴリは `category`。
@@ -33,7 +33,7 @@ macro_rules! event_types {
         )+ )+ }
 
         impl EventType {
-            /// 86 イベントの全値。並びは upstream レジストリの掲載順 (カテゴリ順 ×
+            /// 91 イベントの全値。並びは upstream レジストリの掲載順 (カテゴリ順 ×
             /// カテゴリ内掲載順)。
             pub const ALL: &'static [EventType] = &[ $( $( EventType::$name, )+ )+ ];
 
@@ -57,10 +57,10 @@ macro_rules! event_types {
             /// **語形はワイヤ綴りから機械変換できない** — `STAGE_COMPLETED` は
             /// `Stage Completion` (名詞化) なのに `UNIT_COMPLETED` は `Unit Completed`
             /// (過去分詞) であり、`RECOMPOSED` にいたっては語幹に無い語が付いて
-            /// `Plan Recomposed` になる。したがって 86 件は 1 件ずつ逐語で持つ。
+            /// `Plan Recomposed` になる。したがって 91 件は 1 件ずつ逐語で持つ。
             ///
             /// upstream の `EVENT_HEADINGS[x] || x` というフォールバックはここには無い —
-            /// 閉集合の 86 語すべてに見出しがあり (実測)、`EventType` は閉集合なので、
+            /// 閉集合の 91 語すべてに見出しがあり (実測)、`EventType` は閉集合なので、
             /// フォールバックが要る「非 taxonomy 名」はそもそも構成できない。
             pub const fn heading(self) -> &'static str {
                 match self { $( $( EventType::$name => $h, )+ )+ }
@@ -102,6 +102,7 @@ event_types! {
         DecisionRecorded = "DECISION_RECORDED" => "Decision Recorded", GateApproved = "GATE_APPROVED" => "Gate Approved",
         GateRejected = "GATE_REJECTED" => "Gate Rejected", QuestionAnswered = "QUESTION_ANSWERED" => "Question Answered",
         SummaryConfirmationRecorded = "SUMMARY_CONFIRMATION_RECORDED" => "Summary Confirmation Recorded",
+        PlanApprovalRecorded = "PLAN_APPROVAL_RECORDED" => "Plan Approval Recorded",
         ReviewRequested = "REVIEW_REQUESTED" => "Review Requested", ReviewCompleted = "REVIEW_COMPLETED" => "Review Completed",
         PipelineLinkCompleted = "PIPELINE_LINK_COMPLETED" => "Pipeline Link Completed",
     }
@@ -128,6 +129,8 @@ event_types! {
     ConstructionBolt {
         BoltStarted = "BOLT_STARTED" => "Bolt Started", BoltCompleted = "BOLT_COMPLETED" => "Bolt Completed",
         BoltFailed = "BOLT_FAILED" => "Bolt Failed", AutonomyModeSet = "AUTONOMY_MODE_SET" => "Autonomy Mode Set",
+        UnitOwnershipSet = "UNIT_OWNERSHIP_SET" => "Unit Ownership Set", UnitGateRhythmSet = "UNIT_GATE_RHYTHM_SET" => "Unit Gate Rhythm Set",
+        UnitMerged = "UNIT_MERGED" => "Unit Merged",
     }
     Worktree {
         WorktreeCreated = "WORKTREE_CREATED" => "Worktree Created", WorktreeMerged = "WORKTREE_MERGED" => "Worktree Merged",
@@ -154,6 +157,7 @@ event_types! {
     }
     Swarm {
         SwarmStarted = "SWARM_STARTED" => "Swarm Started", SwarmUnitConverged = "SWARM_UNIT_CONVERGED" => "Swarm Unit Converged",
+        SwarmSourceMerged = "SWARM_SOURCE_MERGED" => "Swarm Source Merged",
         SwarmUnitFailed = "SWARM_UNIT_FAILED" => "Swarm Unit Failed", SwarmBatonReturned = "SWARM_BATON_RETURNED" => "Swarm Baton Returned",
         SwarmCompleted = "SWARM_COMPLETED" => "Swarm Completed", SwarmDegraded = "SWARM_DEGRADED" => "Swarm Degraded",
     }
@@ -216,8 +220,48 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn closed_set_has_exactly_86_events_in_22_categories() {
-        assert_eq!(EventType::ALL.len(), 86);
+    fn every_registered_event_and_heading_matches_fixed_upstream_271() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../../tests/golden/selfhost-stage1/audit-registry.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            corpus
+                .get("source")
+                .and_then(|source| source.get("commit"))
+                .and_then(serde_json::Value::as_str),
+            Some("a277af218f0df7f325d3b8be7b6d90fce2c5bd40")
+        );
+        let entries = corpus
+            .get("entries")
+            .and_then(serde_json::Value::as_array)
+            .unwrap();
+        assert_eq!(entries.len(), 91);
+        assert_eq!(EventType::ALL.len(), entries.len());
+        let names: BTreeSet<_> = entries
+            .iter()
+            .map(|entry| {
+                entry
+                    .get("event")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(names.len(), entries.len());
+        for entry in entries {
+            let name = entry
+                .get("event")
+                .and_then(serde_json::Value::as_str)
+                .unwrap();
+            let event = EventType::parse(name).unwrap();
+            assert_eq!(
+                event.heading(),
+                entry
+                    .get("heading")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap()
+            );
+        }
         assert_eq!(EventCategory::ALL.len(), 22);
     }
 
@@ -234,7 +278,7 @@ mod tests {
             ("Session", 5),
             ("Initialization", 3),
             ("Navigation", 7),
-            ("Interaction", 8),
+            ("Interaction", 9),
             ("UnitLifecycle", 4),
             ("Artifact", 3),
             ("Subagent", 1),
@@ -243,13 +287,13 @@ mod tests {
             ("Documents", 3),
             ("Utility", 1),
             ("ErrorRecovery", 2),
-            ("ConstructionBolt", 4),
+            ("ConstructionBolt", 7),
             ("Worktree", 7),
             ("Practices", 4),
             ("MergeDispatch", 3),
             ("Sensor", 5),
             ("LearningLoop", 3),
-            ("Swarm", 6),
+            ("Swarm", 7),
         ];
         for (name, n) in expected {
             assert_eq!(by_cat.get(name), Some(&n), "category {name}");
@@ -297,7 +341,11 @@ mod tests {
         // 逐語表の 3 性質 (upstream 実測)。ここが崩れると `## <heading>` 行から
         // イベント名への逆写像が壊れ、監査ブロックの読み手が別の行を拾う。
         let headings: BTreeSet<&str> = EventType::ALL.iter().map(|e| e.heading()).collect();
-        assert_eq!(headings.len(), 86, "見出しは 86 個すべて相異");
+        assert_eq!(
+            headings.len(),
+            EventType::ALL.len(),
+            "全イベントの見出しは相異"
+        );
         for event in EventType::ALL {
             assert!(!event.heading().is_empty(), "{}", event.as_str());
             assert_ne!(
@@ -310,8 +358,8 @@ mod tests {
 
     #[test]
     fn the_irregular_headings_are_the_ones_a_mechanical_conversion_would_miss() {
-        // ワイヤ綴りからの機械変換で必ず外す箇所 (research golden-3c3146cf-audit §1 の
-        // 「語形の非一様性」)。ここを固定しておかないと、後から「規則的に直した」つもりの
+        // ワイヤ綴りからの機械変換で必ず外す箇所 (本家の監査見出しの語形が非一様である
+        // ことは 2.7.1 コーパス `tests/golden/upstream-a277af21/` の `audit.md` で観測できる)。ここを固定しておかないと、後から「規則的に直した」つもりの
         // 変更が upstream 互換を静かに壊す。
         //
         // `_COMPLETED` は名詞化する組と過去分詞のままの組に割れる。

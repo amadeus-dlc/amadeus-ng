@@ -23,19 +23,29 @@ pub struct StorePath {
 }
 
 impl StorePath {
+    const fn of_path(value: PathBuf) -> Self {
+        Self { value }
+    }
+
+    /// 全space・intentの承認を所有する共有ストア（承認済み配置差分）。
+    #[must_use]
+    pub fn for_runtime(aidlc_root: &Path) -> StorePath {
+        Self::of_path(aidlc_root.join(".aidlc-runtime.sqlite"))
+    }
+
     /// space のストアファイルの場所を導く (BR2.1 — Q1 = A)。
     ///
     /// `space` は検証済みのパスセグメント (`SpaceName`) なので、`join` に渡してよい唯一の形
     /// である。`aidlc_root` は合成ルートが決める `aidlc/` ディレクトリ。
     #[must_use]
     pub fn for_space(aidlc_root: &Path, space: &SpaceName) -> StorePath {
-        StorePath {
-            value: aidlc_root
+        Self::of_path(
+            aidlc_root
                 .join(SPACES_SEGMENT)
                 .join(space.as_str())
                 .join(INTENTS_SEGMENT)
                 .join(STORE_FILE),
-        }
+        )
     }
 
     /// ファイルシステムへ渡すパス。

@@ -41,7 +41,7 @@ fn optional_integer(value: Option<usize>) -> Result<Option<i64>, rusqlite::Error
     value.map(integer).transpose()
 }
 
-/// 17 表の DDL (この順に作る — ジャーナル由来 15 + 参照入力由来 2)。
+/// 21 表の DDL (ジャーナル由来 17 + 参照入力由来 4)。
 ///
 /// **主キーはどの表も 1 列 `id`** である (オーナー裁定 2026-09-03 — 基本的な関係
 /// モデリング)。集約そのものを表す 3 表 (`read_definition` / `read_intent` /
@@ -53,6 +53,48 @@ fn optional_integer(value: Option<usize>) -> Result<Option<i64>, rusqlite::Error
 /// 投影の順序と衝突して書けなくなる断面が生まれる。対が揃っていることは投影核の契約
 /// テストが固定する。
 const CREATE_TABLES: &str = "
+CREATE TABLE IF NOT EXISTS read_session_audit (id TEXT PRIMARY KEY,aggregate_id TEXT NOT NULL,target TEXT NOT NULL,kind TEXT NOT NULL,as_of INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS read_artifact_audit (id TEXT PRIMARY KEY,target TEXT NOT NULL,file TEXT NOT NULL,tool TEXT NOT NULL,context TEXT NOT NULL,created INTEGER NOT NULL,occurred_at TEXT NOT NULL,as_of INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS read_plan_fingerprint (
+    id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    fingerprint TEXT,
+    error TEXT,
+    source_digest TEXT NOT NULL,
+    as_of INTEGER NOT NULL,
+    UNIQUE(execution_id,target_id)
+);
+CREATE TABLE IF NOT EXISTS read_testing_contract (
+    id TEXT PRIMARY KEY,
+    contract TEXT,
+    rendered TEXT,
+    error TEXT,
+    source_digest TEXT NOT NULL,
+    as_of INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS read_answer_result (
+    id TEXT PRIMARY KEY,
+    answer_id TEXT NOT NULL UNIQUE,
+    execution_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    disposition TEXT NOT NULL,
+    as_of INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS read_jump_result (id TEXT PRIMARY KEY, payload TEXT NOT NULL, as_of INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS read_report_result (
+  id TEXT PRIMARY KEY,
+  report_id TEXT NOT NULL UNIQUE,
+  execution_id TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  result_kind TEXT NOT NULL,
+  steps TEXT NOT NULL,
+  no_op_reason TEXT,
+  current_stage TEXT,
+  as_of INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS read_definition (
   id          TEXT PRIMARY KEY,
   revision    TEXT    NOT NULL,
@@ -109,6 +151,10 @@ CREATE TABLE IF NOT EXISTS read_definition_scope (
   cost_execute         INTEGER,
   cost_gates           INTEGER,
   cost_per_unit_stages INTEGER,
+  greenfield_cost_total           INTEGER,
+  greenfield_cost_execute         INTEGER,
+  greenfield_cost_gates           INTEGER,
+  greenfield_cost_per_unit_stages INTEGER,
   as_of                INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_definition_scope_keyword (
@@ -136,6 +182,9 @@ CREATE TABLE IF NOT EXISTS read_definition_scope_phase_entry (
   as_of            INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_intent (
+  execute_count INTEGER NOT NULL,
+  first_stage TEXT,
+  first_phase TEXT,
   id                  TEXT PRIMARY KEY,
   definition_id       TEXT    NOT NULL,
   definition_revision TEXT    NOT NULL,
@@ -182,6 +231,8 @@ CREATE TABLE IF NOT EXISTS read_execution (
   seq_nr           INTEGER NOT NULL,
   last_updated_at  TEXT    NOT NULL,
   state_binding    TEXT    NOT NULL,
+  first_substantive_run INTEGER NOT NULL,
+  continuation_wait TEXT,
   as_of            INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_execution_stage (
@@ -216,6 +267,7 @@ CREATE TABLE IF NOT EXISTS read_next_jump (
   target_slug  TEXT    NOT NULL,
   outcome      TEXT    NOT NULL,
   refusal      TEXT,
+  resolution   TEXT,
   as_of        INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS read_next_jump_phase (
@@ -225,6 +277,11 @@ CREATE TABLE IF NOT EXISTS read_next_jump_phase (
   target_index INTEGER NOT NULL,
   target_slug  TEXT,
   as_of        INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS read_pipeline_progress (
+ id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, stage TEXT NOT NULL, single INTEGER NOT NULL,
+ completed TEXT NOT NULL, source_digest TEXT NOT NULL, event_position INTEGER NOT NULL,
+ UNIQUE(execution_id, stage, single)
 );
 CREATE TABLE IF NOT EXISTS read_run_stage (
   id                       TEXT    PRIMARY KEY,
@@ -242,6 +299,8 @@ CREATE TABLE IF NOT EXISTS read_run_stage (
   stage_file_rel           TEXT    NOT NULL,
   memory_path_rel          TEXT    NOT NULL,
   consumes_rel             TEXT    NOT NULL,
+  consumes_brownfield_rel  TEXT    NOT NULL,
+  consumes_greenfield_rel  TEXT    NOT NULL,
   produces_rel             TEXT    NOT NULL,
   sensors_applicable       TEXT    NOT NULL,
   reviewer                 TEXT,
@@ -335,6 +394,11 @@ CREATE INDEX IF NOT EXISTS read_steering_part_plan
 ///
 /// steering の 2 表はここに**含めない** — 別の投影単位であり、別 Tx で差し替わる。
 const JOURNAL_TABLES: &[&str] = &[
+    "read_session_audit",
+    "read_artifact_audit",
+    "read_answer_result",
+    "read_report_result",
+    "read_jump_result",
     "read_definition",
     "read_definition_stage",
     "read_definition_scope",
@@ -368,7 +432,7 @@ DELETE FROM read_steering_part;
 /// 行の正本はジャーナルであって読み面ではないので、**作り直しは情報を失わない**。
 /// 「後方互換を残さない」(`coding-rules/no-backward-compatibility.md`) はコードの規則で
 /// あり、機械が読む媒体を捨てて描き直すのはその帰結である。
-pub(crate) const READ_SCHEMA_VERSION: i64 = 1;
+pub(crate) const READ_SCHEMA_VERSION: i64 = 6;
 
 /// 17 表の `DROP` (版が動いたときだけ打つ — 索引は表と一緒に落ちる)。
 ///
@@ -376,6 +440,8 @@ pub(crate) const READ_SCHEMA_VERSION: i64 = 1;
 /// (`snapshot`) は本家の表であり、チェックポイント表 (`amadeus_projection_checkpoint`) は
 /// Markdown 面と共有の位置なので、どちらもここには現れない。
 const DROP_TABLES: &str = "
+DROP TABLE IF EXISTS read_session_audit;
+DROP TABLE IF EXISTS read_artifact_audit;
 DROP TABLE IF EXISTS read_definition;
 DROP TABLE IF EXISTS read_definition_stage;
 DROP TABLE IF EXISTS read_definition_scope;
@@ -389,10 +455,16 @@ DROP TABLE IF EXISTS read_execution_stage;
 DROP TABLE IF EXISTS read_next_answer;
 DROP TABLE IF EXISTS read_next_jump;
 DROP TABLE IF EXISTS read_next_jump_phase;
+DROP TABLE IF EXISTS read_pipeline_progress;
 DROP TABLE IF EXISTS read_run_stage;
 DROP TABLE IF EXISTS read_scope_change;
+DROP TABLE IF EXISTS read_answer_result;
+DROP TABLE IF EXISTS read_jump_result;
+DROP TABLE IF EXISTS read_report_result;
 DROP TABLE IF EXISTS read_steering_plan;
 DROP TABLE IF EXISTS read_steering_part;
+DROP TABLE IF EXISTS read_testing_contract;
+DROP TABLE IF EXISTS read_plan_fingerprint;
 ";
 
 /// 保存されている読み面スキーマの版 (未設定の DB は `0`)。
@@ -463,8 +535,10 @@ pub(crate) fn replace_all(
     transaction: &Transaction<'_>,
     tables: &ReadTables,
 ) -> Result<(), rusqlite::Error> {
-    for table in JOURNAL_TABLES {
-        transaction.execute(&format!("DELETE FROM {table}"), [])?;
+    if !tables.preserves_existing() {
+        for table in JOURNAL_TABLES {
+            transaction.execute(&format!("DELETE FROM {table}"), [])?;
+        }
     }
     // 「いつ時点の行か」はスナップショット全体の性質なので、全表に同じ値を書く。
     let as_of = integer(
@@ -477,6 +551,24 @@ pub(crate) fn replace_all(
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?,
     )?;
 
+    for row in tables.session_audits() {
+        transaction.execute("INSERT INTO read_session_audit (id,aggregate_id,target,kind,as_of) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET aggregate_id=excluded.aggregate_id,target=excluded.target,kind=excluded.kind,as_of=excluded.as_of", params![row.id(), row.aggregate_id(), row.target(), row.kind(), as_of])?;
+    }
+    for row in tables.artifact_audits() {
+        transaction.execute("INSERT INTO read_artifact_audit (id,target,file,tool,context,created,occurred_at,as_of) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET target=excluded.target,file=excluded.file,tool=excluded.tool,context=excluded.context,created=excluded.created,occurred_at=excluded.occurred_at,as_of=excluded.as_of WHERE excluded.as_of >= read_artifact_audit.as_of", params![row.id(),row.target(),row.file(),row.tool(),row.context(),i64::from(row.created()),row.occurred_at().to_rfc3339(),as_of])?;
+    }
+    for row in tables.answer_results() {
+        transaction.execute("INSERT INTO read_answer_result (id,answer_id,execution_id,stage,disposition,as_of) VALUES (?1,?1,?2,?3,?4,?5)", params![row.answer_id(), row.execution_id(), row.stage(), row.disposition(), as_of])?;
+    }
+    for row in tables.jump_results() {
+        transaction.execute(
+            "INSERT INTO read_jump_result(id,payload,as_of) VALUES(?1,?2,?3)",
+            params![row.id(), row.payload(), as_of],
+        )?;
+    }
+    for row in tables.report_results() {
+        transaction.execute("INSERT INTO read_report_result (id,report_id,execution_id,stage,scope,result_kind,steps,no_op_reason,current_stage,as_of) VALUES (?1,?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![row.report_id(), row.execution_id(), row.stage(), row.scope(), row.result_kind(), row.steps(), row.no_op_reason(), row.current_stage(), as_of])?;
+    }
     for row in tables.definitions() {
         transaction.execute(
             "INSERT INTO read_definition
@@ -547,8 +639,10 @@ pub(crate) fn replace_all(
             "INSERT INTO read_definition_scope
              (id, definition_id, scope, depth, keywords, skeleton, review_cap,
               freeform_default, has_grid_column, cost_total, cost_execute, cost_gates,
-              cost_per_unit_stages, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+              cost_per_unit_stages, greenfield_cost_total, greenfield_cost_execute,
+              greenfield_cost_gates, greenfield_cost_per_unit_stages, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                     ?17, ?18)",
             params![
                 row.id(),
                 row.definition_id(),
@@ -563,6 +657,10 @@ pub(crate) fn replace_all(
                 optional_integer(row.cost_execute())?,
                 optional_integer(row.cost_gates())?,
                 optional_integer(row.cost_per_unit_stages())?,
+                optional_integer(row.greenfield_cost_total())?,
+                optional_integer(row.greenfield_cost_execute())?,
+                optional_integer(row.greenfield_cost_gates())?,
+                optional_integer(row.greenfield_cost_per_unit_stages())?,
                 as_of
             ],
         )?;
@@ -621,8 +719,8 @@ pub(crate) fn replace_all(
             "INSERT INTO read_intent
              (id, definition_id, definition_revision, scope, request, depth,
               test_strategy, review, created_at, project_type, project_kind, languages,
-              frameworks, build_system, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+              frameworks, build_system, as_of, execute_count, first_stage, first_phase)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
                 row.id(),
                 row.definition_id(),
@@ -638,7 +736,7 @@ pub(crate) fn replace_all(
                 row.languages(),
                 row.frameworks(),
                 row.build_system(),
-                as_of
+                as_of, integer(row.execute_count())?, row.first_stage(), row.first_phase()
             ],
         )?;
     }
@@ -671,8 +769,8 @@ pub(crate) fn replace_all(
             "INSERT INTO read_execution
              (id, intent_id, scope, status, cursor_index, cursor_slug,
               parked_at_index, parked_at_slug, parked_active, accepts_commands, autonomy,
-              skeleton_stance, seq_nr, last_updated_at, state_binding, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+              skeleton_stance, seq_nr, last_updated_at, state_binding, as_of, first_substantive_run, continuation_wait)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
                 row.id(),
                 row.intent_id(),
@@ -689,7 +787,9 @@ pub(crate) fn replace_all(
                 integer(row.seq_nr())?,
                 row.last_updated_at(),
                 row.state_binding(),
-                as_of
+                as_of,
+                row.first_substantive_run(),
+                row.continuation_wait()
             ],
         )?;
     }
@@ -740,8 +840,8 @@ pub(crate) fn replace_all(
     for row in tables.next_jumps() {
         transaction.execute(
             "INSERT INTO read_next_jump
-             (id, execution_id, target_index, target_slug, outcome, refusal, as_of)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             (id, execution_id, target_index, target_slug, outcome, refusal, resolution, as_of)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 row.id(),
                 row.execution_id(),
@@ -749,6 +849,7 @@ pub(crate) fn replace_all(
                 row.target_slug(),
                 row.outcome(),
                 row.refusal(),
+                row.resolution(),
                 as_of
             ],
         )?;
@@ -759,11 +860,12 @@ pub(crate) fn replace_all(
             "INSERT INTO read_run_stage
              (id, definition_id, scope, stage_slug, phase, steering_plan_id, lead_agent,
               support_agents, mode, gate_default, in_scope, inline_context_paths_rel,
-              stage_file_rel, memory_path_rel, consumes_rel, produces_rel, sensors_applicable,
+              stage_file_rel, memory_path_rel, consumes_rel, consumes_brownfield_rel,
+              consumes_greenfield_rel, produces_rel, sensors_applicable,
               reviewer, reviewer_max_iterations, review_class, protocol_modules, next_stage_name,
               route_digest, directive_digest, as_of)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
+                     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
             params![
                 row.id(),
                 row.definition_id(),
@@ -780,6 +882,8 @@ pub(crate) fn replace_all(
                 row.stage_file_rel(),
                 row.memory_path_rel(),
                 row.consumes_rel(),
+                row.consumes_brownfield_rel(),
+                row.consumes_greenfield_rel(),
                 row.produces_rel(),
                 row.sensors_applicable(),
                 row.reviewer(),
@@ -939,6 +1043,52 @@ fn read_row_values(connection: &rusqlite::Connection) -> Result<Vec<TableValues>
     Ok(tables)
 }
 
+pub(crate) fn replace_testing(
+    transaction: &Transaction<'_>,
+    tables: &super::TestingTables,
+) -> Result<(), rusqlite::Error> {
+    use rusqlite::OptionalExtension as _;
+    let prior: Option<i64> = transaction
+        .query_row(
+            "SELECT as_of FROM read_testing_contract WHERE id='bare-space'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let as_of = i64::try_from(tables.as_of().to_u64())
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    if prior.is_some_and(|prior| prior > as_of) {
+        return Ok(());
+    }
+    transaction.execute("DELETE FROM read_testing_contract", [])?;
+    for row in tables.rows() {
+        transaction.execute("INSERT INTO read_testing_contract (id,contract,rendered,error,source_digest,as_of) VALUES (?1,?2,?3,?4,?5,?6)", params![row.id(), row.contract(), row.rendered(), row.error(), tables.source_digest(), as_of])?;
+    }
+    Ok(())
+}
+
+pub(crate) fn replace_plan_fingerprint(
+    transaction: &Transaction<'_>,
+    row: &super::PlanFingerprintRow,
+) -> Result<(), rusqlite::Error> {
+    use rusqlite::OptionalExtension as _;
+    let previous: Option<(i64, String)> = transaction
+        .query_row(
+            "SELECT as_of,source_digest FROM read_plan_fingerprint WHERE id=?1",
+            [row.id()],
+            |record| Ok((record.get(0)?, record.get(1)?)),
+        )
+        .optional()?;
+    let as_of = i64::try_from(row.as_of().to_u64())
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    if previous.is_some_and(|(prior, digest)| prior > as_of || digest == row.source_digest()) {
+        return Ok(());
+    }
+    transaction.execute("DELETE FROM read_plan_fingerprint WHERE id=?1", [row.id()])?;
+    transaction.execute("INSERT INTO read_plan_fingerprint (id,execution_id,target_id,fingerprint,error,source_digest,as_of) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![row.id(), row.execution_id(), row.target_id(), row.fingerprint(), row.error(), row.source_digest(), as_of])?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     // 想定外ケースの即時失敗はテストの検証手段である (house style)。
@@ -952,8 +1102,94 @@ mod tests {
     use crate::read_tables::{MemoryRules, RuleContent};
     use std::collections::BTreeMap;
 
+    #[test]
+    fn artifact_only_publication_is_repeatable_and_does_not_roll_back_newer_rows() {
+        use crate::orchestration::{ArtifactJournalEntry, GlobalSeqNr};
+        use core_command_domain::workspace::{
+            ArtifactAudit, ArtifactWriteObservation, HookHealthTarget, IntentDirName, SpaceName,
+        };
+        let target = HookHealthTarget::new(
+            SpaceName::default(),
+            Some(IntentDirName::parse("260909-artifact").unwrap()),
+        );
+        let at = chrono::DateTime::parse_from_rfc3339("2026-09-09T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let (mut aggregate, first) = ArtifactAudit::start(
+            ArtifactWriteObservation::new(
+                target.clone(),
+                "Write".into(),
+                "first.md".into(),
+                "first".into(),
+                true,
+            ),
+            at,
+        )
+        .unwrap();
+        let second = aggregate
+            .record(
+                ArtifactWriteObservation::new(
+                    target,
+                    "Edit".into(),
+                    "second.md".into(),
+                    "second".into(),
+                    false,
+                ),
+                at,
+            )
+            .unwrap();
+        let first_entry = ArtifactJournalEntry::new(GlobalSeqNr::new(1), 1, at, first);
+        let old = ReadTables::project_audit_only(
+            &JournalBatch::new(vec![], vec![], vec![], Some(GlobalSeqNr::new(1)))
+                .with_artifacts(vec![first_entry.clone()]),
+        )
+        .unwrap();
+        let current = ReadTables::project_audit_only(
+            &JournalBatch::new(vec![], vec![], vec![], Some(GlobalSeqNr::new(2))).with_artifacts(
+                vec![
+                    first_entry,
+                    ArtifactJournalEntry::new(GlobalSeqNr::new(2), 2, at, second),
+                ],
+            ),
+        )
+        .unwrap();
+        let mut connection = Connection::open_in_memory().unwrap();
+        ensure_tables(&connection).unwrap();
+        connection.execute("INSERT INTO read_answer_result (id,answer_id,execution_id,stage,disposition,as_of) VALUES ('answer','answer','execution','stage','recorded',1)", []).unwrap();
+        for tables in [&old, &current, &current, &old] {
+            let transaction = connection.transaction().unwrap();
+            replace_all(&transaction, tables).unwrap();
+            transaction.commit().unwrap();
+        }
+        let observed: (String, String, i64, i64) = connection
+            .query_row(
+                "SELECT file,tool,created,as_of FROM read_artifact_audit",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(observed, ("second.md".into(), "Edit".into(), 0, 2));
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM read_artifact_audit", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM read_answer_result", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
     /// ジャーナル由来の表の名前 (DDL と `DELETE` が同じ集合を指していることを固定する)。
-    const TABLES: [&str; 15] = [
+    const TABLES: [&str; 20] = [
+        "read_answer_result",
+        "read_report_result",
+        "read_jump_result",
         "read_definition",
         "read_definition_stage",
         "read_definition_scope",
@@ -969,6 +1205,8 @@ mod tests {
         "read_next_jump_phase",
         "read_run_stage",
         "read_scope_change",
+        "read_session_audit",
+        "read_artifact_audit",
     ];
 
     /// 参照入力由来の表の名前 (別 Tx で差し替わる — `as_of` を持たない)。
@@ -1367,5 +1605,21 @@ mod tests {
             TABLES.len(),
             "DELETE の本数と表の数が一致する"
         );
+    }
+    #[test]
+    fn rebuilding_the_schema_discards_testing_and_plan_reference_rows() {
+        let connection = Connection::open_in_memory().unwrap();
+        ensure_tables(&connection).unwrap();
+        connection.execute("INSERT INTO read_testing_contract (id,contract,rendered,error,source_digest,as_of) VALUES ('bare-space','old','old',NULL,'old',1)", []).unwrap();
+        connection.execute("INSERT INTO read_plan_fingerprint (id,execution_id,target_id,fingerprint,error,source_digest,as_of) VALUES ('old','execution','stage:code-generation','old',NULL,'old',1)", []).unwrap();
+        recreate_tables(&connection).unwrap();
+        for table in ["read_testing_contract", "read_plan_fingerprint"] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "{table}も再構築対象に含める");
+        }
     }
 }

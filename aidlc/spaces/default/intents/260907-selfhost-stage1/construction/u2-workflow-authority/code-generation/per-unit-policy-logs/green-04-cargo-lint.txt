@@ -1,0 +1,5 @@
+error[one-public-type]: ファイル 2 つ目以降の公開型 `ReviewerScopeError` — 1 ファイル 1 公開型 (最初の公開型は `ReviewerScopeCause`)
+  --> modules/core/command/use-case/src/orchestration/reviewer_scope_error.rs:30
+  help: 公開型ごとに型名の snake_case のファイルへ分け、ファサード (mod.rs) の pub use で公開する — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md (1 ファイル 1 公開型)
+
+amadeus-lint: 1 件の所見 (1118 ファイル走査)

@@ -37,14 +37,12 @@ pub(super) struct Method {
     pub(super) context: Context,
 }
 
-#[derive(Default)]
 pub(super) struct Definition {
     pub(super) domain: bool,
     pub(super) fields: BTreeMap<String, Ty>,
     pub(super) methods: BTreeMap<String, Method>,
 }
 
-#[derive(Default)]
 pub(super) struct Index {
     pub(super) definitions: BTreeMap<String, Definition>,
     pub(super) aliases: BTreeMap<String, String>,
@@ -66,17 +64,43 @@ fn module_path(path: &str) -> Option<String> {
     Some(format!("{package}{suffix}"))
 }
 
+impl Definition {
+    fn new(domain: bool) -> Self {
+        Self {
+            domain,
+            fields: BTreeMap::new(),
+            methods: BTreeMap::new(),
+        }
+    }
+}
+impl Default for Definition {
+    fn default() -> Self {
+        Self::new(false)
+    }
+}
+impl Default for Index {
+    fn default() -> Self {
+        Self::new(BTreeSet::new())
+    }
+}
 impl Index {
+    fn new(packages: BTreeSet<String>) -> Self {
+        Self {
+            definitions: BTreeMap::new(),
+            aliases: BTreeMap::new(),
+            packages,
+            contexts: BTreeMap::new(),
+            test_files: BTreeSet::new(),
+        }
+    }
+
     pub(super) fn build(sources: &[(String, String)]) -> Self {
         let packages = sources
             .iter()
             .filter_map(|(p, _)| module_path(p))
             .filter_map(|p| p.split("::").next().map(str::to_owned))
             .collect();
-        let mut index = Self {
-            packages,
-            ..Self::default()
-        };
+        let mut index = Self::new(packages);
         let parsed: Vec<_> = sources
             .iter()
             .filter_map(|(path, source)| Some((path, syn::parse_file(source).ok()?)))
@@ -159,13 +183,8 @@ impl Index {
                 _ => None,
             };
             if let Some(name) = name {
-                self.definitions.insert(
-                    format!("{}::{name}", ctx.module),
-                    Definition {
-                        domain,
-                        ..Definition::default()
-                    },
-                );
+                self.definitions
+                    .insert(format!("{}::{name}", ctx.module), Definition::new(domain));
             }
             if let Item::Use(u) = item
                 && matches!(u.vis, syn::Visibility::Public(_))

@@ -17,12 +17,17 @@ use super::rule_content::RuleContent;
 ///
 /// [`SteeringSource`]: crate::orchestration::SteeringSource
 /// [`CatchUpError::SteeringRead`]: crate::orchestration::CatchUpError::SteeringRead
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryRules {
     base: Vec<RuleContent>,
     phases: BTreeMap<PhaseId, RuleContent>,
 }
 
+impl Default for MemoryRules {
+    fn default() -> Self {
+        Self::new(Vec::new(), BTreeMap::new())
+    }
+}
 impl MemoryRules {
     /// 読み終えた規則束を組む (**この型の唯一の構築経路**)。
     ///

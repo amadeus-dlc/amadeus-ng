@@ -38,12 +38,44 @@ pub struct RunStageDirective {
     reviewer_max_iterations: Option<u32>,
     protocol_modules: Vec<String>,
     narration: Option<String>,
+    conductor_persona: Option<String>,
+    pipeline: Option<super::PipelineDirective>,
     single: bool,
     unit: Option<UnitRef>,
     rules_in_context: Vec<String>,
 }
 
 impl RunStageDirective {
+    /// 配布元の進行役テキストを伴う。
+    #[must_use]
+    pub fn with_conductor_persona(mut self, text: String) -> Self {
+        self.conductor_persona = Some(text);
+        self
+    }
+    /// 配布元から読み込んだ進行役テキスト。
+    #[must_use]
+    pub fn conductor_persona(&self) -> Option<&str> {
+        self.conductor_persona.as_deref()
+    }
+    /// 表示する説明文を伴う。
+    #[must_use]
+    pub fn with_narration(mut self, text: String) -> Self {
+        self.narration = Some(text);
+        self
+    }
+
+    /// pipelineの公開材料を伴う。
+    #[must_use]
+    pub fn with_pipeline(mut self, pipeline: super::PipelineDirective) -> Self {
+        self.pipeline = Some(pipeline);
+        self
+    }
+    /// pipelineの公開材料。
+    #[must_use]
+    pub const fn pipeline(&self) -> Option<&super::PipelineDirective> {
+        self.pipeline.as_ref()
+    }
+
     /// 走らせるステージ。
     #[must_use]
     pub const fn stage(&self) -> &StageSlugView {

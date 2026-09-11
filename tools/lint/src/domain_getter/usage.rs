@@ -102,14 +102,12 @@ impl Usage<'_> {
             .get(owner)
             .is_some_and(|d| d.domain && d.methods.get(method).is_some_and(|m| m.getter))
         {
-            self.findings.push(Finding {
-                rule: RULE,
+            self.findings.push(Finding::new(
+                RULE,
                 line,
-                message: format!(
-                    "use-case 層からドメイン getter `{owner}::{method}` を呼び出している"
-                ),
-                help: HELP,
-            });
+                format!("use-case 層からドメイン getter `{owner}::{method}` を呼び出している"),
+                HELP,
+            ));
         }
     }
 }

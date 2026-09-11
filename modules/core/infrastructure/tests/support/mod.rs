@@ -1,6 +1,6 @@
 //! ゴールデン比較器 (テスト支援、BR2.2 / W5)。
 //!
-//! `tests/golden/upstream-3c3146cf/` のコーパスを読み、`normalization.json` の規則で
+//! `tests/golden/upstream-a277af21/` の表示用コーパスを読み、`normalization.json` の規則で
 //! 非決定値をプレースホルダへ潰し、行ごとの差分を出す。**期待値と実測値の双方に同じ
 //! 規則を適用してから**比較するのが BR2.2 の要件であり、この 3 つ (読取・正規化・差分)
 //! が比較器の全機能である。
@@ -8,8 +8,8 @@
 //! 置き場はテスト支援であってプロダクトコードではない (`nfr-design/logical-components.md`
 //! §4)。canon-json のライブラリ本体には 1 バイトも入らない。
 //!
-//! cli / hooks 族について本 Unit (U1) が固定するのは「読めて正規化できる」ところまでで、
-//! 実装出力との突合せは U6 (next / continue) と U7 (CLI・フック) が同じ比較器で行う。
+//! CLI/フックの派生表示データの読取りと正規化を担当する。
+//! 生観測の受入比較に必要な識別子対応やバイト列の検査を代替しない。
 
 // テストは固定長フィクスチャの添字参照を許容 (clippy.toml に相当設定が無いため file 単位で
 // allow)。panic! は想定外ケースの即時失敗という検証用途で使っており、テスト失敗の
@@ -228,7 +228,7 @@ fn replace_longest_first(text: &str, needles: &[String], replacement: &str) -> S
 pub(crate) fn corpus_root() -> PathBuf {
     PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../../tests/golden/upstream-3c3146cf"
+        "/../../../tests/golden/upstream-a277af21"
     ))
 }
 

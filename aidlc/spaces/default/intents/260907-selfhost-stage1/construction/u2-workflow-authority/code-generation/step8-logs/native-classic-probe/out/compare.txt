@@ -1,0 +1,89 @@
+=== next-no-active-intent  (corpus cli/next/no-active-intent/stdout.json)  exit corpus=0 native=0
+  corpus keys: kind,message,narration
+  native keys: kind,message
+  ! kind differs: byte 1
+      corpus: "\"print\""
+      native: "\"error\""
+  ! message differs: byte 1
+      corpus: "\"Run `bun .claude/tools/aidlc-utility.ts intent-create --scope classic` to start the workflow (25 of 33 stages, 22 approv"
+      native: "\"aidlc-orchestrate: cannot open the workflow definition repository: io: NotFound at <ROOT>/aidlc/spaces/default/intents/."
+  - narration (corpus only): "Setting up a classic workflow for this: 25 of 33 stages, 22 approval gates, 5 stages repeat per unit of work in Construction."
+=== next-start  (corpus cli/next/start/stdout.json)  exit corpus=0 native=0
+  corpus keys: kind,stage,bundle,part,parts,rules_content,continue_token
+  native keys: kind,stage,bundle,part,parts,rules_content,continue_token
+  = kind
+  ! stage differs: byte 1
+      corpus: "\"practices-discovery\""
+      native: "\"reverse-engineering\""
+  ! bundle differs: byte 1
+      corpus: "\"sha256:cc9801ee4b4c48b6785b45446bc3881a5c5e936a5325d49e11dd2ac212c9e7ab\""
+      native: "\"29657b55272efa377d8c93f764f76070e37f67dc8ecbe2b8fd25cba5eb77fcae\""
+  = part
+  = parts
+  = rules_content
+  ~ continue_token differs (token is per-run; lengths corpus=700 native=798)
+=== continue-load-steering  (corpus cli/continue/load-steering/stdout.json)  exit corpus=0 native=0
+  corpus keys: kind,stage,phase,lead_agent,support_agents,mode,inline_context_paths,gate,memory_path,consumes,produces,rules_in_context,sensors_applicable,stage_file,next_stage,protocol_modules,conductor_persona,narration
+  native keys: kind,stage,phase,lead_agent,support_agents,mode,inline_context_paths,gate,memory_path,consumes,produces,rules_in_context,sensors_applicable,stage_file,pipeline,next_stage,protocol_modules,conductor_persona,narration
+  = kind
+  ! stage differs: byte 1
+      corpus: "\"practices-discovery\""
+      native: "\"reverse-engineering\""
+  = phase
+  ! lead_agent differs: byte 7
+      corpus: "\"aidlc-pipeline-deploy-agent\""
+      native: "\"aidlc-developer-agent\""
+  ! support_agents differs: byte 8
+      corpus: "[\"aidlc-quality-agent\",\"aidlc-developer-agent\",\"aidlc-devsecops-agent\"]"
+      native: "[\"aidlc-architect-agent\"]"
+  ! mode differs: byte 1
+      corpus: "\"subagent\""
+      native: "\"pipeline\""
+  = inline_context_paths
+  = gate
+  ! memory_path differs: byte 52
+      corpus: "\"aidlc/spaces/default/intents/<TS>-golden/inception/practices-discovery/memory.md\""
+      native: "\"aidlc/spaces/default/intents/<TS>-golden/inception/reverse-engineering/memory.md\""
+  = consumes
+  ! produces differs: byte 23
+      corpus: "[\"aidlc/spaces/default/intents/<TS>-golden/inception/practices-discovery/team-practices.md\",\"aidlc/spaces/default/intents/<TS>-golden/inception"
+      native: "[\"aidlc/spaces/default/codekb/native-ws/business-overview.md\",\"aidlc/spaces/default/codekb/native-ws/architecture.md\",\"aidlc/spaces/default/cod"
+  = rules_in_context
+  = sensors_applicable
+  ! stage_file differs: byte 39
+      corpus: "\".claude/aidlc-common/stages/inception/practices-discovery.md\""
+      native: "\".claude/aidlc-common/stages/inception/reverse-engineering.md\""
+  ! next_stage differs: byte 1
+      corpus: "\"Requirements Analysis\""
+      native: "\"Practices Discovery\""
+  = protocol_modules
+  = conductor_persona
+  ! narration differs: byte 17
+      corpus: "\"Bringing in the release engineer to work on Practices Discovery.\""
+      native: "\"Bringing in the developer to work on Reverse Engineering.\""
+  + pipeline (native only): {"links":["aidlc-developer-agent","aidlc-architect-agent"],"completed":[]}
+=== next-stage-jump-print  (corpus cli/next/stage-jump-print/stdout.json)  exit corpus=0 native=0
+  corpus keys: kind,message
+  native keys: kind,message
+  = kind
+  ! message differs: byte 6
+      corpus: "\"Run `bun .claude/tools/aidlc-jump.ts execute --target contract-design --direction forward --scope classic` to perform the jum"
+      native: "\"Run `aidlc-jump resolve --stage contract-design`.\""
+=== jump-resolve  (corpus cli/jump/resolve-forward/stdout.json)  exit corpus=0 native=0
+  corpus keys: target_slug,target_phase,target_number,target_name,current_slug,current_number,direction,affected_stages,valid
+  native keys: target_slug,target_phase,target_number,target_name,current_slug,current_number,direction,affected_stages,valid
+  = target_slug
+  = target_phase
+  = target_number
+  = target_name
+  ! current_slug differs: byte 3
+      corpus: "\"refined-mockups\""
+      native: "\"reverse-engineering\""
+  ! current_number differs: byte 3
+      corpus: "\"2.5\""
+      native: "\"2.1\""
+  = direction
+  ! affected_stages differs: byte 1
+      corpus: "[]"
+      native: "[\"practices-discovery\",\"requirements-analysis\",\"user-stories\",\"refined-mockups\"]"
+  = valid

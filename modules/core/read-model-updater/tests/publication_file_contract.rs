@@ -308,3 +308,68 @@ fn a_parent_that_cannot_be_synced_does_not_report_durable_publication() {
     assert_eq!(fs::read_to_string(&target).unwrap(), "already applied");
     plan.apply().unwrap();
 }
+
+/// 出力先の親ディレクトリを同期できない（読めない）ときも、対象パス付きの I/O 失敗として
+/// 報告し、書込済みの内容を成功に丸めない。
+#[test]
+fn a_parent_directory_that_cannot_be_synced_is_reported_with_the_parent_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("output");
+    fs::create_dir(&folder).unwrap();
+    let path = folder.join("audit.md");
+    fs::write(&path, "same").unwrap();
+    let plan = PublicationFile::audit(&path, "").unwrap();
+    // 辿れるが列挙できない親 (w+x のみ): ファイルは読めるがディレクトリは開けない。
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o333)).unwrap();
+    let error = plan.apply().unwrap_err();
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(
+        error,
+        CatchUpError::PublicationIo {
+            path: folder,
+            kind: ErrorKind::PermissionDenied
+        }
+    );
+}
+
+/// 状態ファイルの親が作れない（親の位置にファイルがある）ときは I/O の失敗として上がる。
+#[test]
+fn a_state_file_whose_parent_cannot_be_created_reports_the_io_reason() {
+    use core_read_model_updater::workspace::write_state_file;
+    let dir = tempfile::tempdir().unwrap();
+    let blocker = dir.path().join("record");
+    fs::write(&blocker, "not a directory").unwrap();
+    let error = write_state_file(&blocker.join("aidlc-state.md"), "state").unwrap_err();
+    assert!(
+        matches!(&error, StateFileWriteError::Io { message } if !message.is_empty()),
+        "Io を期待した: {error:?}"
+    );
+    assert_eq!(fs::read_to_string(&blocker).unwrap(), "not a directory");
+}
+
+/// 監査シャードの追記は、既存の有無を確かめられない・開けないときに I/O の失敗として上がる。
+#[test]
+fn an_audit_shard_that_cannot_be_inspected_or_opened_reports_the_io_reason() {
+    use core_read_model_updater::workspace::append_audit_shard;
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("audit");
+    fs::create_dir(&folder).unwrap();
+    let shard = folder.join("host-abcd1234.md");
+    // 1. 親を辿れない → 既存の有無 (metadata) を確かめられない。
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o000)).unwrap();
+    let unreadable = append_audit_shard(&shard, "block\n");
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(unreadable.is_err(), "親を辿れない追記は失敗する");
+    assert!(!shard.exists());
+    // 2. 親は読めるが書けない → 新しいシャードを開けない。
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o555)).unwrap();
+    let unwritable = append_audit_shard(&shard, "block\n");
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(unwritable.is_err(), "開けない追記は失敗する");
+    assert!(!shard.exists());
+    // 3. 空でないブロックは、正常なら見出し付きで追記される。
+    append_audit_shard(&shard, "block\n").unwrap();
+    let written = fs::read_to_string(&shard).unwrap();
+    assert!(written.starts_with(core_read_model_updater::workspace::SHARD_HEADER));
+    assert!(written.ends_with("block\n"));
+}

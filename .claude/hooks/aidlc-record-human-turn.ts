@@ -64,7 +64,10 @@ function extractResponseText(value: unknown): string {
     const trimmed = value.trim();
     if (!trimmed) return "";
     try {
-      return extractResponseText(JSON.parse(trimmed));
+      const parsed = JSON.parse(trimmed);
+      // 番号回答は後段の提示済み選択肢との照合へ文字列のまま渡す。
+      if (typeof parsed === "number") return trimmed;
+      return extractResponseText(parsed);
     } catch {
       return trimmed;
     }

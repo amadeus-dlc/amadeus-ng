@@ -114,6 +114,12 @@ impl std::error::Error for CorruptDetail {
     }
 }
 
+impl<S> IntentRepositoryImpl<S> {
+    const fn new(store: S, location: Option<StorePath>) -> Self {
+        Self { store, location }
+    }
+}
+
 impl IntentRepositoryImpl<IntentSqliteStore> {
     /// SQLite ファイルのストアを開く (無ければ作る)。
     ///
@@ -134,10 +140,7 @@ impl IntentRepositoryImpl<IntentSqliteStore> {
                 },
                 path: Some(path.as_path().to_path_buf()),
             })?;
-        Ok(IntentRepositoryImpl {
-            store,
-            location: Some(path.clone()),
-        })
+        Ok(Self::new(store, Some(path.clone())))
     }
 
     /// 内包しているストアの場所 (開き直しの材料)。
@@ -154,10 +157,7 @@ impl IntentRepositoryImpl<IntentMemoryStore> {
     /// 違わない。だからこそ契約テストが両方に同じ約束を課せる (BR2.7)。
     #[must_use]
     pub fn in_memory() -> IntentRepositoryImpl<IntentMemoryStore> {
-        IntentRepositoryImpl {
-            store: IntentMemoryStore::new(),
-            location: None,
-        }
+        Self::new(IntentMemoryStore::new(), None)
     }
 }
 
@@ -168,10 +168,7 @@ impl<S: Clone> IntentRepositoryImpl<S> {
     /// 表) を共有する設計なので、写しではなく同じストアを指す別の口が得られる。
     #[must_use]
     pub fn reopened(&self) -> IntentRepositoryImpl<S> {
-        IntentRepositoryImpl {
-            store: self.store.clone(),
-            location: self.location.clone(),
-        }
+        Self::new(self.store.clone(), self.location.clone())
     }
 }
 

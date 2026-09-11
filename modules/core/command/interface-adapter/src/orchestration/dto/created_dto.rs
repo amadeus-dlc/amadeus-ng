@@ -83,7 +83,7 @@ impl CreatedDto {
             DefinitionRevision::parse(&self.definition_revision).map_err(|_| {
                 DtoDecodeError::malformed("definition_revision", self.definition_revision.clone())
             })?,
-            self.start_request.to_domain(),
+            self.start_request.to_domain()?,
             stages,
             self.scan.to_domain()?,
         ))

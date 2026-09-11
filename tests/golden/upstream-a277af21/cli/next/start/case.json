@@ -1,0 +1,13 @@
+{
+  "id": "cli/next/start",
+  "family": "cli",
+  "verb": "next",
+  "case": "start",
+  "description": "intent 作成後の最初の next。最初の実行ステージの規則束を load-steering で配る",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

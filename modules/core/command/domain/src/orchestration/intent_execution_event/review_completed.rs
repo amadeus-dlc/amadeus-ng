@@ -9,12 +9,12 @@ use crate::workflow_definition::StageSlug;
 /// 判定は集約が拒む（upstream `freshReviewReceipts` が `pendingRequests` に無い
 /// `REVIEW_COMPLETED` を捨てるのと同じ会計）。
 ///
-/// 成果物 fingerprint の 2 欄（`Artifact Fingerprint` / `Source Fingerprint`）は本 build では
-/// 繰延である（設計 §1 の繰延 — 凍結検査に属する）。
+/// 要求本文とReview節を含む完成文書の指紋、および要求時ソースを結合として保存する。
 ///
 /// [`ReviewRequested`]: super::review_requested::ReviewRequested
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewCompleted {
+    evidence: crate::orchestration::ReviewCompletion,
     id: IntentExecutionEventId,
     aggregate_id: IntentExecutionId,
     stage: StageSlug,
@@ -33,8 +33,10 @@ impl ReviewCompleted {
         reviewer: impl Into<String>,
         iteration: u32,
         verdict: ReviewVerdict,
+        evidence: crate::orchestration::ReviewCompletion,
     ) -> ReviewCompleted {
         ReviewCompleted {
+            evidence,
             id,
             aggregate_id,
             stage,
@@ -44,6 +46,11 @@ impl ReviewCompleted {
         }
     }
 
+    /// この操作が確定した内容結合。
+    #[must_use]
+    pub const fn evidence(&self) -> &crate::orchestration::ReviewCompletion {
+        &self.evidence
+    }
     /// 判定が返ったステージ。
     #[must_use]
     pub const fn stage(&self) -> &StageSlug {

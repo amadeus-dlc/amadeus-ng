@@ -1,0 +1,14 @@
+{
+  "id": "hooks/state-transition-guard/ignore-non-bash-tool",
+  "family": "hooks",
+  "hook": "state-transition-guard",
+  "case": "ignore-non-bash-tool",
+  "upstream_hook_file": ".claude/hooks/aidlc-state-transition-guard.ts",
+  "description": "Bash 以外のツール呼び出しは判定対象外として無視する",
+  "workspace": "active-workflow",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

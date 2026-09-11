@@ -1,0 +1,48 @@
+   Compiling core-command-domain v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/domain)
+   Compiling core-read-model-updater v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/read-model-updater)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.68s
+     Running tests/read_tables_test.rs (target/debug/deps/read_tables_test-a116e2fdd8bfcfff)
+
+running 39 tests
+test an_empty_history_projects_to_an_empty_snapshot ... ok
+test a_definition_stream_without_its_genesis_is_refused ... ok
+test an_execution_whose_intent_is_absent_is_refused ... ok
+test a_foreign_intent_yields_no_answer_row_but_a_missing_material_error ... ok
+test a_stream_that_does_not_start_at_its_genesis_is_refused ... ok
+test a_stage_that_names_a_reviewer_without_a_class_carries_neither ... ok
+test a_stage_without_a_declared_review_iteration_count_defaults_to_one ... ok
+test next_answer_rows_carry_the_observed_checkbox_of_both_skip_inconsistencies ... ok
+test every_child_row_points_at_a_parent_row_that_exists_in_the_same_snapshot ... ok
+test intent_stage_rows_mirror_every_stage_entry ... ok
+test every_definition_stage_row_mirrors_every_stage_node_accessor ... ok
+test a_keyword_declared_twice_takes_the_lexicographically_first_scope ... ok
+test execution_stage_rows_mirror_the_per_stage_queries ... ok
+test definition_scope_rows_mirror_the_catalog_and_the_cost ... ok
+test execution_rows_mirror_the_replayed_executions ... ok
+test scope_change_rows_answer_every_valid_scope_for_every_execution ... ok
+test next_jump_rows_answer_every_target_index ... ok
+test an_isolated_run_leaves_every_read_row_where_it_was ... ok
+test next_jump_phase_rows_mirror_first_in_scope_of_phase ... ok
+test next_answer_rows_cover_the_four_request_kinds ... ok
+test run_stage_rows_cover_every_valid_scope_crossed_with_every_stage ... ok
+test scope_phase_entry_rows_exist_only_where_the_definition_answers_some ... ok
+test every_id_is_derived_from_the_natural_key_and_does_not_move_between_projections ... ok
+test the_aggregate_tables_key_themselves_by_the_aggregate_id ... ok
+test the_directive_digest_moves_with_the_environment_and_not_with_the_scope_alone ... ok
+test the_default_gate_is_the_domain_predicate_not_a_rewritten_rule ... ok
+test scope_stage_rows_number_only_the_execute_cells_in_document_order ... ok
+test the_inline_context_paths_follow_the_stage_mode ... ok
+test the_definition_row_mirrors_the_replayed_aggregate ... ok
+test the_intent_row_mirrors_the_intent_aggregate ... ok
+test the_execution_row_carries_the_scope_denormalised_from_the_intent ... ok
+test the_relative_paths_follow_the_phase_directory_rule ... ok
+test the_execution_row_carries_the_recorded_skeleton_stance ... ok
+test the_route_digest_is_the_hash_of_the_whole_scope_membership ... ok
+test the_next_stage_name_is_the_display_name_of_the_next_execute_in_document_order ... ok
+test the_run_stage_and_the_steering_part_point_at_the_plan_of_their_phase ... ok
+test the_run_stage_row_mirrors_the_definition_node ... ok
+test the_scanned_position_is_the_as_of_of_the_whole_snapshot ... ok
+test the_gate_column_carries_the_three_spellings_of_the_domain_decision ... ok
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

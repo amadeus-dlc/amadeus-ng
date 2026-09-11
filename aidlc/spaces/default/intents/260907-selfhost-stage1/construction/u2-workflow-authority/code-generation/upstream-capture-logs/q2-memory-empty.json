@@ -1,0 +1,619 @@
+{
+  "question": "Q2: MEMORY_EMPTY の重複抑止の鍵をどう扱うか",
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459",
+    "verified_manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "rust_binary": {
+    "path": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/target/debug/aidlc",
+    "sha256": "9a733055fc3671ad2c4116bf611e3d6364f3f24800f320acfe7bc40ab51e0070"
+  },
+  "tool_versions": {
+    "bun": "1.3.13"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/upstream-capture-logs/capture-q2-memory-empty.ts",
+    "/private/tmp/claude-501/-Users-j5ik2o-orca-workspaces-amadeus-ng-stage1/9066110a-1655-41d7-b3db-924e89f60ca9/scratchpad/upstream/dist/claude",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/target/debug/aidlc",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/upstream-capture-logs/q2-memory-empty.json"
+  ],
+  "normalization": "一時 workspace の絶対パス・ISO 時刻・sha256・intent 名のみ",
+  "comparison": [
+    {
+      "step": "01-advance",
+      "note": "初期化を畳んで state-init を承認済みにする",
+      "upstream_total": 0,
+      "rust_total": 0,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "02-journals",
+      "note": "state-init を空日誌に、進行中の reverse-engineering も空日誌に置く",
+      "upstream_total": 0,
+      "rust_total": 0,
+      "same": true,
+      "upstream_exit": null,
+      "rust_exit": null
+    },
+    {
+      "step": "03-compile-1",
+      "note": "1 回目の compile — ここで初めて記録されるはず",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "04-compile-2",
+      "note": "2 回目の compile — 同じ承認なので増えないはず",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "05-taskupdate-sync",
+      "note": "TaskUpdate 同期（承認ではない進捗）",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "06-compile-after-sync",
+      "note": "同期のあとの compile — 抑止が解けていないか",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "07-jump-redo-same-second",
+      "note": "state-init へ再跳躍（間を置かない）",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "08-reapprove-same-second",
+      "note": "同じ秒のうちに承認し直す",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "09-compile-after-same-second-reapproval",
+      "note": "間を置かない再承認のあとの compile",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "10-jump-redo-after-gap",
+      "note": "2 秒あけて state-init へ再跳躍",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "11-reapprove-after-gap",
+      "note": "時刻が確実に進んだ状態で承認し直す",
+      "upstream_total": 1,
+      "rust_total": 1,
+      "same": true,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "12-compile-after-gapped-reapproval",
+      "note": "本家はここで改めて記録するはず",
+      "upstream_total": 2,
+      "rust_total": 1,
+      "same": false,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    },
+    {
+      "step": "13-compile-filled-journal",
+      "note": "日誌が埋まった位置は対象外",
+      "upstream_total": 2,
+      "rust_total": 1,
+      "same": false,
+      "upstream_exit": 0,
+      "rust_exit": 0
+    }
+  ],
+  "observations": {
+    "upstream": {
+      "impl": "upstream",
+      "steps": [
+        {
+          "step": "01-advance",
+          "note": "初期化を畳んで state-init を承認済みにする",
+          "exit": 0,
+          "stdout": "{\"kind\":\"load-steering\",\"stage\":\"reverse-engineering\",\"bundle\":\"sha256:<HASH>\",\"part\":1,\"parts\":1,\"rules_content\":[{\"path\":\"aidlc/spaces/default/memory/org.md\",\"text\":\"# Org-Level Rules\\n\\n> Framework defaults. Read with `team.md` and `project.md` from the active\\n> space. The resolver loads every applicable layer; narrower layers add\\n> specialisation and must not contradict broader policy.\\n\\n\"},{\"path\":\"aidlc/spaces/default/memory/org.md\",\"text\":\"## Way of Working\\n\\nWe use **trunk-based development**. All work merges to `main` via\\nshort-lived feature branches (typically resolved within 1-2 days).\\nLong-lived branches accumulate merge debt; we avoid them.\\n\\nFor Construction worktrees, the worktree base branch is `main` and the\\nmerge target is `main`.\\n\\nIf our project requires multip",
+          "stderr": "",
+          "memory_empty_total": 0,
+          "memory_empty_rows": [],
+          "state_init_row": null
+        },
+        {
+          "step": "02-journals",
+          "note": "state-init を空日誌に、進行中の reverse-engineering も空日誌に置く",
+          "exit": null,
+          "stdout": null,
+          "stderr": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": [],
+          "state_init_row": null
+        },
+        {
+          "step": "03-compile-1",
+          "note": "1 回目の compile — ここで初めて記録されるはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "04-compile-2",
+          "note": "2 回目の compile — 同じ承認なので増えないはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "05-taskupdate-sync",
+          "note": "TaskUpdate 同期（承認ではない進捗）",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "06-compile-after-sync",
+          "note": "同期のあとの compile — 抑止が解けていないか",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "07-jump-redo-same-second",
+          "note": "state-init へ再跳躍（間を置かない）",
+          "exit": 0,
+          "stdout": "{\"direction\":\"redo\",\"target\":\"state-init\",\"target_phase\":\"INITIALIZATION\",\"stages_skipped\":[],\"stages_reset\":[\"state-init\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":2,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}\n",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "08-reapprove-same-second",
+          "note": "同じ秒のうちに承認し直す",
+          "exit": 0,
+          "stdout": "{\"kind\":\"done\",\"reason\":\"Committed advance for \\\"state-init\\\" (scope: bugfix). State advanced; run next to continue.\"}\n",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "09-compile-after-same-second-reapproval",
+          "note": "間を置かない再承認のあとの compile",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "10-jump-redo-after-gap",
+          "note": "2 秒あけて state-init へ再跳躍",
+          "exit": 0,
+          "stdout": "{\"direction\":\"redo\",\"target\":\"state-init\",\"target_phase\":\"INITIALIZATION\",\"stages_skipped\":[],\"stages_reset\":[\"state-init\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":2,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}\n",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "11-reapprove-after-gap",
+          "note": "時刻が確実に進んだ状態で承認し直す",
+          "exit": 0,
+          "stdout": "{\"kind\":\"done\",\"reason\":\"Committed advance for \\\"state-init\\\" (scope: bugfix). State advanced; run next to continue.\"}\n",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:07Z"
+          }
+        },
+        {
+          "step": "12-compile-after-gapped-reapproval",
+          "note": "本家はここで改めて記録するはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:10Z"
+          }
+        },
+        {
+          "step": "13-compile-filled-journal",
+          "note": "日誌が埋まった位置は対象外",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 2,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init",
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 1,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:10Z"
+          }
+        }
+      ],
+      "runtime_graph_present": true,
+      "final_state_init_row": {
+        "outcome": "approved",
+        "memory_entries": 1,
+        "started_at": "<TS>",
+        "completed_at": "<TS>",
+        "completed_at_raw": "2026-09-10T03:24:10Z"
+      },
+      "final_memory_empty_rows": [
+        "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init",
+        "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+      ]
+    },
+    "rust": {
+      "impl": "rust",
+      "steps": [
+        {
+          "step": "01-advance",
+          "note": "初期化を畳んで state-init を承認済みにする",
+          "exit": 0,
+          "stdout": "{\"kind\":\"ask\",\"question\":\"Does this continue the active work, start separate new work, or re-shape the plan?\",\"ask_type\":\"new-work-routing\",\"response_route\":\"next\",\"new_work_description\":\"bugfix\",\"proposed_scope\":\"bugfix\"}\n",
+          "stderr": "",
+          "memory_empty_total": 0,
+          "memory_empty_rows": [],
+          "state_init_row": null
+        },
+        {
+          "step": "02-journals",
+          "note": "state-init を空日誌に、進行中の reverse-engineering も空日誌に置く",
+          "exit": null,
+          "stdout": null,
+          "stderr": null,
+          "memory_empty_total": 0,
+          "memory_empty_rows": [],
+          "state_init_row": null
+        },
+        {
+          "step": "03-compile-1",
+          "note": "1 回目の compile — ここで初めて記録されるはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:11Z"
+          }
+        },
+        {
+          "step": "04-compile-2",
+          "note": "2 回目の compile — 同じ承認なので増えないはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:11Z"
+          }
+        },
+        {
+          "step": "05-taskupdate-sync",
+          "note": "TaskUpdate 同期（承認ではない進捗）",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:11Z"
+          }
+        },
+        {
+          "step": "06-compile-after-sync",
+          "note": "同期のあとの compile — 抑止が解けていないか",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:11Z"
+          }
+        },
+        {
+          "step": "07-jump-redo-same-second",
+          "note": "state-init へ再跳躍（間を置かない）",
+          "exit": 0,
+          "stdout": "{\"direction\":\"redo\",\"target\":\"state-init\",\"target_phase\":\"INITIALIZATION\",\"stages_skipped\":[],\"stages_reset\":[\"state-init\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":2,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}\n",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:11Z"
+          }
+        },
+        {
+          "step": "08-reapprove-same-second",
+          "note": "同じ秒のうちに承認し直す",
+          "exit": 0,
+          "stdout": "{\"kind\":\"error\",\"message\":\"Cannot commit advance for \\\"state-init\\\": the advance transition is not wired in this build.\"}\n",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "approved",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": "<TS>",
+            "completed_at_raw": "2026-09-10T03:24:11Z"
+          }
+        },
+        {
+          "step": "09-compile-after-same-second-reapproval",
+          "note": "間を置かない再承認のあとの compile",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "pending",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": null,
+            "completed_at_raw": null
+          }
+        },
+        {
+          "step": "10-jump-redo-after-gap",
+          "note": "2 秒あけて state-init へ再跳躍",
+          "exit": 0,
+          "stdout": "{\"direction\":\"redo\",\"target\":\"state-init\",\"target_phase\":\"INITIALIZATION\",\"stages_skipped\":[],\"stages_reset\":[\"state-init\"],\"state_updated\":true,\"audit_appended\":true,\"completed_count\":2,\"workflow_stopped\":false,\"timestamp\":\"<TS>\"}\n",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "pending",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": null,
+            "completed_at_raw": null
+          }
+        },
+        {
+          "step": "11-reapprove-after-gap",
+          "note": "時刻が確実に進んだ状態で承認し直す",
+          "exit": 0,
+          "stdout": "{\"kind\":\"error\",\"message\":\"Cannot commit advance for \\\"state-init\\\": the advance transition is not wired in this build.\"}\n",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "pending",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": null,
+            "completed_at_raw": null
+          }
+        },
+        {
+          "step": "12-compile-after-gapped-reapproval",
+          "note": "本家はここで改めて記録するはず",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "pending",
+            "memory_entries": 0,
+            "started_at": "<TS>",
+            "completed_at": null,
+            "completed_at_raw": null
+          }
+        },
+        {
+          "step": "13-compile-filled-journal",
+          "note": "日誌が埋まった位置は対象外",
+          "exit": 0,
+          "stdout": "",
+          "stderr": "",
+          "memory_empty_total": 1,
+          "memory_empty_rows": [
+            "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+          ],
+          "state_init_row": {
+            "outcome": "pending",
+            "memory_entries": 1,
+            "started_at": "<TS>",
+            "completed_at": null,
+            "completed_at_raw": null
+          }
+        }
+      ],
+      "runtime_graph_present": true,
+      "final_state_init_row": {
+        "outcome": "pending",
+        "memory_entries": 1,
+        "started_at": "<TS>",
+        "completed_at": null,
+        "completed_at_raw": null
+      },
+      "final_memory_empty_rows": [
+        "## Memory Empty\n**Timestamp**: <TS>\n**Event**: MEMORY_EMPTY\n**Stage**: state-init"
+      ]
+    }
+  }
+}

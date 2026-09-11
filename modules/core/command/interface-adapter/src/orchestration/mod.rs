@@ -55,8 +55,8 @@ pub use dto::{
     IntentExecutionAggregateKeyDto, IntentExecutionDto, IntentExecutionEventDto, JumpedDto,
     ParkedDto, PracticesAffirmedDto, RecomposedDto, ReviewCompletedDto, ReviewRequestedDto,
     SingleStageRunCommittedDto, SkeletonStanceRecordedDto, StageRevisedDto, StageSkippedDto,
-    StartedDto, UnparkedDto, WorkflowDefinitionAggregateKeyDto, WorkflowDefinitionDto,
-    WorkflowDefinitionEventDto,
+    StartedDto, TaskSynchronizedDto, UnparkedDto, WorkflowDefinitionAggregateKeyDto,
+    WorkflowDefinitionDto, WorkflowDefinitionEventDto,
 };
 // ストアの具体化 (バックエンドごとの別名 — 手順は同一)。
 pub use intent_execution_repository_impl::{
@@ -66,3 +66,34 @@ pub use intent_repository_impl::{IntentMemoryStore, IntentSqliteStore};
 pub use workflow_definition_repository_impl::{
     WorkflowDefinitionMemoryStore, WorkflowDefinitionSqliteStore,
 };
+
+mod plan_approval_runtime_repository_impl;
+pub use plan_approval_runtime_repository_impl::PlanApprovalRuntimeRepositoryImpl;
+
+pub use dto::{PlanApprovalEventDto, PlanApprovalRuntimeDto, PlanApprovalRuntimeKeyDto};
+
+mod hook_health_repository_impl;
+pub use dto::{HookHealthAggregateKeyDto, HookHealthDto, HookHealthEventDto};
+pub use hook_health_repository_impl::{
+    HookHealthMemoryStore, HookHealthRepositoryImpl, HookHealthSqliteStore,
+};
+
+mod artifact_audit_repository_impl;
+pub use artifact_audit_repository_impl::{
+    ArtifactAuditMemoryStore, ArtifactAuditRepositoryImpl, ArtifactAuditSqliteStore,
+};
+pub use dto::{ArtifactAuditAggregateKeyDto, ArtifactAuditDto, ArtifactAuditEventDto};
+mod workflow_continuation_repository_impl;
+pub use workflow_continuation_repository_impl::{
+    WorkflowContinuationMemoryStore, WorkflowContinuationRepositoryImpl,
+    WorkflowContinuationSqliteStore,
+};
+
+pub use dto::PipelineLinkCompletedDto;
+
+mod session_audit_repository_impl;
+pub use session_audit_repository_impl::{
+    SessionAuditMemoryStore, SessionAuditRepositoryImpl, SessionAuditSqliteStore,
+};
+
+pub use dto::SingleStageRunStartedDto;

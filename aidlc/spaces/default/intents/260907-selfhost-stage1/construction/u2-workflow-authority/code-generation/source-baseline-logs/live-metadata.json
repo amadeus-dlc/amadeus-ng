@@ -1,0 +1,14 @@
+{
+  "collector_production_sha256": "681154bf9942c84d9112a6f68f1d81d86c875af0b07a0298cfa8e495cc7df7f4",
+  "live_diagnostic_removed": true,
+  "upstream": {
+    "rows": 8954,
+    "bytes": 1514855,
+    "sha256": "cab437b9c417ae5d68f7d748bfd4863f0f41a225e6c7bd42dc3a909f9284f477"
+  },
+  "native": {
+    "rows": 8954,
+    "bytes": 1514855,
+    "sha256": "cab437b9c417ae5d68f7d748bfd4863f0f41a225e6c7bd42dc3a909f9284f477"
+  }
+}

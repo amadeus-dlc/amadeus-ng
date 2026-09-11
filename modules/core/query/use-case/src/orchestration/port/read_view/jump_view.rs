@@ -10,6 +10,7 @@ pub struct JumpView {
     target_slug: String,
     outcome: String,
     refusal: Option<String>,
+    resolution: Option<String>,
 }
 
 impl JumpView {
@@ -20,13 +21,21 @@ impl JumpView {
         target_slug: String,
         outcome: String,
         refusal: Option<String>,
+        resolution: Option<String>,
     ) -> JumpView {
         JumpView {
             target_index,
             target_slug,
             outcome,
             refusal,
+            resolution,
         }
+    }
+
+    /// RMUが投影したresolveの公開結果。
+    #[must_use]
+    pub fn resolution(&self) -> Option<&str> {
+        self.resolution.as_deref()
     }
 
     /// ジャンプ先の位置。

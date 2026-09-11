@@ -147,3 +147,104 @@ fn the_orchestration_and_workspace_collections_share_the_traversal_contract() {
     );
     check(&RuleLines::empty(), 0);
 }
+
+/// レビュー範囲・凍結・学び・日誌の各コレクションも同じ走査契約を共有する。
+///
+/// 空の既定値 (`Default`) は `empty()` / 空の `new` と同値であり、走査契約は要素の種類に
+/// よらず同じ形で成り立つ。
+#[test]
+fn the_reviewer_scope_learning_and_journal_collections_share_the_traversal_contract() {
+    use core_command_domain::orchestration::{
+        CapturedLearning, CapturedLearnings, EmptyMemoryStages, ExemptPaths, InspectedCommand,
+        InspectedCommandStep, Learning, LearningCandidateId, LearningDisposition,
+        LearningObservation, LearningObservations, LearningScope, LearningSource, MemoryEntries,
+        MemoryEntry, MemoryEntryHeading, MemoryJournal, MemoryJournalSurvey, PracticeHeading,
+        ReviewerScopeCandidate, ReviewerScopeCandidates, ScopeToken, StageMemoryJournal,
+        WriteTarget, WriteTargets,
+    };
+
+    let token = |raw: &str| ScopeToken::parse(raw).unwrap();
+    let learning = |candidate: &str| {
+        Learning::new(
+            LearningCandidateId::parse(candidate).unwrap(),
+            LearningScope::Project,
+            PracticeHeading::corrections(),
+            "学び",
+            LearningSource::Orchestrator,
+        )
+    };
+
+    check(
+        &WriteTargets::new(vec![
+            WriteTarget::parse("a.md").unwrap(),
+            WriteTarget::parse("a.md").unwrap(),
+        ]),
+        2,
+    );
+    check(&WriteTargets::empty(), 0);
+    assert_eq!(WriteTargets::default(), WriteTargets::empty());
+
+    check(&ExemptPaths::new(vec![token("construction/u1/")]), 1);
+    check(&ExemptPaths::default(), 0);
+
+    let step = InspectedCommandStep::new(vec![token("cat"), token("plan.md")]);
+    check(&step, 2);
+    check(&InspectedCommandStep::default(), 0);
+    let command = InspectedCommand::new(vec![step, InspectedCommandStep::new(vec![])]);
+    check(&command, 2);
+    check(&InspectedCommand::default(), 0);
+
+    check(
+        &ReviewerScopeCandidates::new(vec![
+            ReviewerScopeCandidate::Target(token("plan.md")),
+            ReviewerScopeCandidate::SearchRoot(token("construction")),
+            ReviewerScopeCandidate::Glob(token("**/*.md")),
+            ReviewerScopeCandidate::Command(command),
+        ]),
+        4,
+    );
+    check(&ReviewerScopeCandidates::default(), 0);
+
+    check(
+        &LearningObservations::new(vec![LearningObservation::new(learning("c1"), false, false)]),
+        1,
+    );
+    check(&LearningObservations::empty(), 0);
+    assert_eq!(
+        LearningObservations::default(),
+        LearningObservations::empty()
+    );
+
+    check(
+        &CapturedLearnings::new(vec![CapturedLearning::new(
+            learning("c2"),
+            LearningDisposition::Fresh,
+        )]),
+        1,
+    );
+    check(&CapturedLearnings::default(), 0);
+
+    check(
+        &MemoryEntries::new(vec![MemoryEntry::parse(
+            MemoryEntryHeading::Interpretations,
+            "- 2026-09-11T00:00:00Z — 解釈; 文脈",
+        )]),
+        1,
+    );
+    check(&MemoryEntries::default(), 0);
+
+    check(
+        &MemoryJournalSurvey::new(vec![StageMemoryJournal::new(
+            StageSlug::parse("state-init").unwrap(),
+            MemoryJournal::new(1, 0, 0, 0),
+        )]),
+        1,
+    );
+    check(&MemoryJournalSurvey::default(), 0);
+
+    check(
+        &EmptyMemoryStages::new(vec![StageSlug::parse("state-init").unwrap()]),
+        1,
+    );
+    check(&EmptyMemoryStages::default(), 0);
+}

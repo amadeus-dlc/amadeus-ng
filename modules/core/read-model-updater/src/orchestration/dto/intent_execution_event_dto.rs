@@ -10,6 +10,16 @@
 //! `of` / `to_domain` もそれぞれの型が持つ。ここでの `of` / `to_domain` は各変種への
 //! 委譲だけを行う (`coding-rules/abstract-data-type.md` — 1 ファイル 1 公開型)。
 
+use super::answer_recorded_dto::AnswerRecordedDto;
+use super::command_failed_dto::CommandFailedDto;
+use super::decision_recorded_dto::DecisionRecordedDto;
+use super::directive_context_invalidated_dto::DirectiveContextInvalidatedDto;
+use super::directive_issued_dto::DirectiveIssuedDto;
+use super::health_checked_dto::HealthCheckedDto;
+use super::learnings_captured_dto::LearningsCapturedDto;
+use super::memory_journals_observed_dto::MemoryJournalsObservedDto;
+use super::prompt_observed_dto::PromptObservedDto;
+use super::reported_dto::ReportedDto;
 use core_command_domain::orchestration::{
     IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId, StageSlugSet,
 };
@@ -32,11 +42,40 @@ use super::skeleton_stance_recorded_dto::SkeletonStanceRecordedDto;
 use super::stage_revised_dto::StageRevisedDto;
 use super::stage_skipped_dto::StageSkippedDto;
 use super::started_dto::StartedDto;
+use super::task_synchronized_dto::TaskSynchronizedDto;
 use super::unparked_dto::UnparkedDto;
 
 /// ジャーナル行 `payload` の形。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IntentExecutionEventDto {
+    /// 単独pipeline開始。
+    SingleStageRunStarted(super::single_stage_run_started_dto::SingleStageRunStartedDto),
+    /// Pipeline link完了の受領。
+    PipelineLinkCompleted(super::pipeline_link_completed_dto::PipelineLinkCompletedDto),
+    /// 指示発行の事実。
+    DirectiveIssued(DirectiveIssuedDto),
+    /// 保存済み指示の文脈失効。
+    DirectiveContextInvalidated(DirectiveContextInvalidatedDto),
+    /// 回答の受理結果。
+    AnswerRecorded(AnswerRecordedDto),
+    /// 保護された計画回答の監査記録。
+    PlanAnswerLogged(Box<super::plan_answer_logged_dto::PlanAnswerLoggedDto>),
+    /// フックの応答観測。
+    PromptObserved(PromptObservedDto),
+    /// 質問提示の事実。
+    DecisionRecorded(DecisionRecordedDto),
+    /// コマンド失敗の記録。
+    CommandFailed(CommandFailedDto),
+    /// 作業の診断実施。
+    HealthChecked(HealthCheckedDto),
+    /// runtime-graph の compile が読んだ日誌観測。
+    MemoryJournalsObserved(Box<MemoryJournalsObservedDto>),
+    /// §13 の儀式が確定した学びの書込み。
+    LearningsCaptured(Box<LearningsCapturedDto>),
+    /// TaskUpdate が指した stage への現在位置の同期。
+    TaskSynchronized(TaskSynchronizedDto),
+    /// 報告を受理した事実。
+    Reported(ReportedDto),
     /// 実行の開始 (解決済み計画を自己完結で持つ)。
     Started(StartedDto),
     /// 承認ゲートの開放。
@@ -120,6 +159,46 @@ impl IntentExecutionEventDto {
     #[must_use]
     pub fn of(event: &IntentExecutionEvent) -> IntentExecutionEventDto {
         match event {
+            IntentExecutionEvent::SingleStageRunStarted(e) => Self::SingleStageRunStarted(
+                super::single_stage_run_started_dto::SingleStageRunStartedDto::of(e),
+            ),
+            IntentExecutionEvent::PipelineLinkCompleted(event) => Self::PipelineLinkCompleted(
+                super::pipeline_link_completed_dto::PipelineLinkCompletedDto::of(event),
+            ),
+            IntentExecutionEvent::TaskSynchronized(payload) => {
+                Self::TaskSynchronized(TaskSynchronizedDto::of(payload))
+            }
+            IntentExecutionEvent::HealthChecked(payload) => {
+                Self::HealthChecked(HealthCheckedDto::of(payload))
+            }
+            IntentExecutionEvent::LearningsCaptured(payload) => {
+                Self::LearningsCaptured(Box::new(LearningsCapturedDto::of(payload)))
+            }
+            IntentExecutionEvent::MemoryJournalsObserved(payload) => {
+                Self::MemoryJournalsObserved(Box::new(MemoryJournalsObservedDto::of(payload)))
+            }
+            IntentExecutionEvent::CommandFailed(payload) => {
+                Self::CommandFailed(CommandFailedDto::of(payload))
+            }
+            IntentExecutionEvent::DecisionRecorded(payload) => {
+                Self::DecisionRecorded(DecisionRecordedDto::of(payload))
+            }
+            IntentExecutionEvent::PromptObserved(payload) => {
+                Self::PromptObserved(PromptObservedDto::of(payload))
+            }
+            IntentExecutionEvent::PlanAnswerLogged(payload) => Self::PlanAnswerLogged(Box::new(
+                super::plan_answer_logged_dto::PlanAnswerLoggedDto::of(payload),
+            )),
+            IntentExecutionEvent::AnswerRecorded(payload) => {
+                Self::AnswerRecorded(AnswerRecordedDto::of(payload))
+            }
+            IntentExecutionEvent::DirectiveContextInvalidated(payload) => {
+                Self::DirectiveContextInvalidated(DirectiveContextInvalidatedDto::of(payload))
+            }
+            IntentExecutionEvent::DirectiveIssued(payload) => {
+                Self::DirectiveIssued(DirectiveIssuedDto::of(payload))
+            }
+            IntentExecutionEvent::Reported(payload) => Self::Reported(ReportedDto::of(payload)),
             IntentExecutionEvent::Started(payload) => {
                 IntentExecutionEventDto::Started(StartedDto::of(payload))
             }
@@ -182,6 +261,46 @@ impl IntentExecutionEventDto {
     /// 閉集合外の綴り・文法外のステージ参照・文法外の intent 識別子は `Malformed` を返す。
     pub fn to_domain(&self) -> Result<IntentExecutionEvent, DtoDecodeError> {
         Ok(match self {
+            Self::SingleStageRunStarted(e) => {
+                IntentExecutionEvent::SingleStageRunStarted(e.to_domain()?)
+            }
+            Self::PipelineLinkCompleted(event) => {
+                IntentExecutionEvent::PipelineLinkCompleted(event.to_domain()?)
+            }
+            Self::TaskSynchronized(payload) => {
+                IntentExecutionEvent::TaskSynchronized(payload.to_domain()?)
+            }
+            Self::HealthChecked(payload) => {
+                IntentExecutionEvent::HealthChecked(payload.to_domain()?)
+            }
+            Self::LearningsCaptured(payload) => {
+                IntentExecutionEvent::LearningsCaptured(payload.to_domain()?)
+            }
+            Self::MemoryJournalsObserved(payload) => {
+                IntentExecutionEvent::MemoryJournalsObserved(payload.to_domain()?)
+            }
+            Self::CommandFailed(payload) => {
+                IntentExecutionEvent::CommandFailed(payload.to_domain()?)
+            }
+            Self::DecisionRecorded(payload) => {
+                IntentExecutionEvent::DecisionRecorded(payload.to_domain()?)
+            }
+            Self::PromptObserved(payload) => {
+                IntentExecutionEvent::PromptObserved(payload.to_domain()?)
+            }
+            Self::PlanAnswerLogged(payload) => {
+                IntentExecutionEvent::PlanAnswerLogged(Box::new(payload.to_domain()?))
+            }
+            Self::AnswerRecorded(payload) => {
+                IntentExecutionEvent::AnswerRecorded(payload.to_domain()?)
+            }
+            Self::DirectiveContextInvalidated(payload) => {
+                IntentExecutionEvent::DirectiveContextInvalidated(payload.to_domain()?)
+            }
+            Self::DirectiveIssued(payload) => {
+                IntentExecutionEvent::DirectiveIssued(payload.to_domain()?)
+            }
+            Self::Reported(payload) => IntentExecutionEvent::Reported(payload.to_domain()?),
             IntentExecutionEventDto::Started(payload) => {
                 IntentExecutionEvent::Started(payload.to_domain()?)
             }

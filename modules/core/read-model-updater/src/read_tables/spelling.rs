@@ -72,6 +72,7 @@ pub(crate) const fn jump_direction(direction: JumpDirection) -> &'static str {
 /// のは行に嘘を書くことであり、変種が増えたときはこの `match` がビルドで教える。
 pub(crate) const fn jump_refusal(error: &CommandError) -> &'static str {
     match error {
+        CommandError::ReviewEvidence(_) => "review-evidence",
         CommandError::IntentMismatch => "intent-mismatch",
         CommandError::NotRunning => "not-running",
         CommandError::CheckboxPrecondition { .. } => "checkbox-precondition",
@@ -89,6 +90,12 @@ pub(crate) const fn jump_refusal(error: &CommandError) -> &'static str {
         CommandError::ReviewReceiptMissing { .. } => "review-receipt-missing",
         CommandError::PracticesReceiptMissing(_) => "practices-receipt-missing",
         CommandError::HumanPresenceRequired => "human-presence-required",
+        CommandError::PlanResponseUnavailable => "plan-response-unavailable",
+        CommandError::PlanResponseTargetMismatch => "plan-response-target-mismatch",
+        CommandError::PlanResponseAlreadyRecorded => "plan-response-already-recorded",
+        CommandError::PipelineLinksMissing { .. } => "pipeline-links-missing",
+        CommandError::SingleStageAttemptAlreadyOpen => "pipeline-attempt-already-open",
+        CommandError::SingleStageAttemptNotOpen => "pipeline-attempt-not-open",
     }
 }
 
@@ -317,5 +324,38 @@ mod tests {
         ];
         let distinct: std::collections::BTreeSet<&str> = all.iter().copied().collect();
         assert_eq!(distinct.len(), all.len(), "拒否理由の綴りは 1 対 1");
+    }
+
+    #[test]
+    fn the_review_pipeline_and_plan_refusals_are_spelled_without_rounding() {
+        let missing = CommandError::PipelineLinksMissing {
+            stage: "reverse-engineering".to_string(),
+            missing: "aidlc-architect-agent".to_string(),
+            single: false,
+        };
+        assert_eq!(
+            [
+                jump_refusal(&CommandError::ReviewEvidence(
+                    core_command_domain::orchestration::ReviewEvidenceError::SourceChanged
+                )),
+                jump_refusal(&missing),
+                jump_refusal(&CommandError::SingleStageAttemptAlreadyOpen),
+                jump_refusal(&CommandError::SingleStageAttemptNotOpen),
+                jump_refusal(&CommandError::PlanResponseUnavailable),
+                jump_refusal(&CommandError::PlanResponseTargetMismatch),
+                jump_refusal(&CommandError::PlanResponseAlreadyRecorded),
+                jump_refusal(&CommandError::HumanPresenceRequired),
+            ],
+            [
+                "review-evidence",
+                "pipeline-links-missing",
+                "pipeline-attempt-already-open",
+                "pipeline-attempt-not-open",
+                "plan-response-unavailable",
+                "plan-response-target-mismatch",
+                "plan-response-already-recorded",
+                "human-presence-required",
+            ]
+        );
     }
 }

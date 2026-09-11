@@ -34,6 +34,8 @@ mod publication_batch;
 mod publication_file;
 mod publication_store;
 mod read_model_updater;
+mod runtime_graph_read_model_updater;
+mod runtime_graph_targets;
 mod shared_projection;
 mod steering_source;
 mod store_failure;
@@ -47,6 +49,8 @@ pub use projection_targets::ProjectionTargets;
 pub use publication_batch::PublicationBatch;
 pub use publication_file::PublicationFile;
 pub use read_model_updater::ReadModelUpdater;
+pub use runtime_graph_read_model_updater::RuntimeGraphReadModelUpdater;
+pub use runtime_graph_targets::RuntimeGraphTargets;
 pub use steering_source::SteeringSource;
 
 // Domain Primitive (永続化の通番と投影の名前)
@@ -64,10 +68,44 @@ pub use dto::{
     AutonomyModeSetDto, DtoDecodeError, GateApprovedDto, GateOpenedDto, GateRejectedDto,
     IntentEventDto, IntentExecutionEventDto, JumpedDto, ParkedDto, PracticesAffirmedDto,
     RecomposedDto, SingleStageRunCommittedDto, SkeletonStanceRecordedDto, StageRevisedDto,
-    StageSkippedDto, StartedDto, WorkflowDefinitionEventDto,
+    StageSkippedDto, StartedDto, TaskSynchronizedDto, WorkflowDefinitionEventDto,
 };
 
 pub use catch_up_error::CatchUpError;
 pub use corrupt_cause::CorruptCause;
 pub use journal_read_error::JournalReadError;
 pub use projection_name_error::ProjectionNameError;
+
+mod intent_registry;
+mod plan_source;
+pub use plan_source::PlanSource;
+
+mod plan_approval_journal_reader;
+pub use plan_approval_journal_reader::PlanApprovalJournalReader;
+
+mod plan_approval_journal_reader_impl;
+pub use plan_approval_journal_reader_impl::PlanApprovalJournalReaderImpl;
+
+mod plan_approval_journal_entry;
+pub use plan_approval_journal_entry::PlanApprovalJournalEntry;
+
+mod plan_approval_read_model_updater;
+pub use plan_approval_read_model_updater::PlanApprovalReadModelUpdater;
+
+mod plan_approval_files;
+
+mod hook_health_reader;
+pub use hook_health_reader::HookHealthReadModelUpdater;
+
+mod artifact_journal_entry;
+pub use artifact_journal_entry::ArtifactJournalEntry;
+mod workflow_continuation_read_model_updater;
+pub use workflow_continuation_read_model_updater::WorkflowContinuationReadModelUpdater;
+
+pub use dto::PipelineLinkCompletedDto;
+
+mod session_journal_entry;
+pub use session_journal_entry::SessionJournalEntry;
+mod session_event_dto;
+
+pub use dto::SingleStageRunStartedDto;

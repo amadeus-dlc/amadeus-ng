@@ -76,18 +76,18 @@ pub(crate) fn directive(
     hash_compact(&material).rendered()
 }
 
-/// `bundle_digest` — チャンクの**入れ子配列** `[[{path,text}]]`。
+/// `bundle_digest` — 規則ファイル 1 つずつの `[{path, text}]` (読み順、分割前) を素材に、
+/// `sha256:` を前置した値。
 ///
-/// 平坦化してはならない — `[[A], [B]]` と `[[A, B]]` が同じ値になり、内容が同じまま分割
-/// だけが変わった計画を continue の照合が見逃して、部の欠落・重複配信を許す (I12 の網羅)。
-pub(crate) fn bundle(chunks: &[Vec<RuleContent>]) -> String {
-    let material = JsonValue::Array(
-        chunks
-            .iter()
-            .map(|chunk| JsonValue::Array(chunk.iter().map(piece).collect()))
-            .collect(),
-    );
-    hash_compact(&material).rendered()
+/// upstream `transportRunStage` の `` `sha256:${sha256(JSON.stringify(loaded.content))}` ``
+/// (`aidlc-orchestrate.ts:3686` @a277af21) の写しである。`loaded.content` は分割前のファイル列
+/// なので、素材はチャンクの入れ子ではなく平坦なファイル列である — この値は `load-steering` の
+/// `bundle` としてそのまま外に出る Published Language であり (`cli/next/start/stdout.json`)、
+/// continue の照合 (`b`) もこの値で行う。分割境界は素材に含まれない (upstream と同じ):
+/// 分割は内容とパック規則から決定的に導かれるので、内容が同じなら分割も同じである。
+pub(crate) fn bundle(files: &[RuleContent]) -> String {
+    let material = JsonValue::Array(files.iter().map(piece).collect());
+    format!("sha256:{}", hash_compact(&material).rendered())
 }
 
 /// `source_digest` — 参照入力の規則ファイル群 (path + text、読み順)。
@@ -113,11 +113,11 @@ mod tests {
 
     #[test]
     fn every_digest_is_a_bare_sixty_four_digit_hex() {
-        // CompactRaw 族なので `sha256:` 接頭辞は付かない (canon_json の族の約束)。
+        // CompactRaw 族なので `sha256:` 接頭辞は付かない (canon_json の族の約束)。外に出る
+        // `bundle` だけは upstream の綴りに合わせて接頭辞を持つ (下のテスト)。
         for value in [
             route(&slug("state-init"), &[slug("state-init")]),
             directive(&slug("state-init"), "a.md", "b.md", None),
-            bundle(&[]),
             source([]),
         ] {
             assert_eq!(value.len(), 64, "実際: {value}");
@@ -174,13 +174,41 @@ mod tests {
         );
     }
 
+    /// `bundle` は upstream `` `sha256:${sha256(JSON.stringify(loaded.content))}` `` の写し —
+    /// 固定本家 2.7.1 の memory 層 (org.md + phases/inception.md) から採取した実バイト
+    /// `cli/next/start/stdout.json` の `bundle` と同じ計算である (全文一致は
+    /// `classic_corpus_contract.rs` が固定する)。
     #[test]
-    fn the_bundle_material_keeps_the_chunk_boundaries() {
+    fn the_bundle_digest_is_prefixed_and_covers_the_files_in_reading_order() {
         let a = content("a.md", "# A\n");
         let b = content("b.md", "# B\n");
-        let split = bundle(&[vec![a.clone()], vec![b.clone()]]);
-        let joined = bundle(&[vec![a, b]]);
-        assert_ne!(split, joined, "分割境界はダイジェストの一部");
+        let value = bundle(&[a.clone(), b.clone()]);
+        let hex = value.strip_prefix("sha256:").expect("upstream の綴り");
+        assert_eq!(hex.len(), 64);
+        assert!(
+            hex.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+        );
+        assert_eq!(value, bundle(&[a.clone(), b.clone()]), "決定的である");
+        assert_ne!(value, bundle(&[b, a]), "読み順は素材の一部");
+        assert_ne!(
+            value,
+            bundle(&[content("a.md", "# A!\n"), content("b.md", "# B\n")]),
+            "本文の 1 バイトも素材の一部"
+        );
+        // 素材は `JSON.stringify([{path, text}, …])` そのもの。
+        let expected = format!(
+            "sha256:{}",
+            hash_compact(&JsonValue::Array(vec![
+                piece(&content("a.md", "# A\n")),
+                piece(&content("b.md", "# B\n")),
+            ]))
+            .rendered()
+        );
+        assert_eq!(
+            bundle(&[content("a.md", "# A\n"), content("b.md", "# B\n")]),
+            expected
+        );
     }
 
     #[test]

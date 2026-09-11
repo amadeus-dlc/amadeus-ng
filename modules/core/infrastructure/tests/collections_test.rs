@@ -117,3 +117,11 @@ fn non_empty_concatenation_preserves_the_first_element() {
     assert_eq!(a.divide(&Collection::empty()), Collection::new(vec![1]));
     assert_eq!(Collection::<i32>::default(), Collection::empty());
 }
+
+#[test]
+fn a_default_object_members_is_empty_and_equal_to_new() {
+    let defaulted = ObjectMembers::default();
+    assert_eq!(defaulted.len(), 0);
+    assert!(defaulted.is_empty());
+    assert_eq!(defaulted, ObjectMembers::new());
+}

@@ -6,7 +6,9 @@
 /// 無い (投影が有効な scope にしか行を作らない)。
 ///
 /// `cost_*` はグリッド列を持たない scope では `None` になる。upstream はその場合コストの
-/// 括弧ごと落とすが、その描き分けはプレゼンタの仕事である。
+/// 括弧ごと落とすが、その描き分けはプレゼンタの仕事である。`greenfield_cost_*` は同じ費用を
+/// greenfield のワークスペース向けに答えた列 (`reverse-engineering` を畳んだ実効値) で、
+/// どちらを読むかは観測した種別で読み手が選ぶ (行に無い事実はここでは作らない)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeView {
     scope: String,
@@ -20,10 +22,14 @@ pub struct ScopeView {
     cost_execute: Option<u32>,
     cost_gates: Option<u32>,
     cost_per_unit_stages: Option<u32>,
+    greenfield_cost_total: Option<u32>,
+    greenfield_cost_execute: Option<u32>,
+    greenfield_cost_gates: Option<u32>,
+    greenfield_cost_per_unit_stages: Option<u32>,
 }
 
 impl ScopeView {
-    /// 11 列をそのまま束ねる (**この型の唯一の構築経路**)。
+    /// 15 列をそのまま束ねる (**この型の唯一の構築経路**)。
     #[expect(
         clippy::too_many_arguments,
         reason = "行の写しの完全コンストラクタ — 全列が必須なので引数がそのまま列になる"
@@ -41,6 +47,10 @@ impl ScopeView {
         cost_execute: Option<u32>,
         cost_gates: Option<u32>,
         cost_per_unit_stages: Option<u32>,
+        greenfield_cost_total: Option<u32>,
+        greenfield_cost_execute: Option<u32>,
+        greenfield_cost_gates: Option<u32>,
+        greenfield_cost_per_unit_stages: Option<u32>,
     ) -> ScopeView {
         ScopeView {
             scope,
@@ -54,6 +64,10 @@ impl ScopeView {
             cost_execute,
             cost_gates,
             cost_per_unit_stages,
+            greenfield_cost_total,
+            greenfield_cost_execute,
+            greenfield_cost_gates,
+            greenfield_cost_per_unit_stages,
         }
     }
 
@@ -121,5 +135,29 @@ impl ScopeView {
     #[must_use]
     pub const fn cost_per_unit_stages(&self) -> Option<u32> {
         self.cost_per_unit_stages
+    }
+
+    /// greenfield 向けの実効費用 — グリッド列に載るステージ数。
+    #[must_use]
+    pub const fn greenfield_cost_total(&self) -> Option<u32> {
+        self.greenfield_cost_total
+    }
+
+    /// greenfield 向けの実効費用 — EXECUTE 数。
+    #[must_use]
+    pub const fn greenfield_cost_execute(&self) -> Option<u32> {
+        self.greenfield_cost_execute
+    }
+
+    /// greenfield 向けの実効費用 — ゲート付きステージ数。
+    #[must_use]
+    pub const fn greenfield_cost_gates(&self) -> Option<u32> {
+        self.greenfield_cost_gates
+    }
+
+    /// greenfield 向けの実効費用 — ユニットごとに回るステージ数。
+    #[must_use]
+    pub const fn greenfield_cost_per_unit_stages(&self) -> Option<u32> {
+        self.greenfield_cost_per_unit_stages
     }
 }

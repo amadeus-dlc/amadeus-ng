@@ -45,6 +45,71 @@ const INTENT: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 const EXECUTION_A: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 const EXECUTION_B: &str = "0190bbbb-cccc-7ddd-8eee-ffff00001111";
 
+fn artifact_history() -> Vec<core_read_model_updater::orchestration::ArtifactJournalEntry> {
+    use core_command_domain::workspace::{
+        ArtifactAudit, ArtifactWriteObservation, HookHealthTarget, IntentDirName, SpaceName,
+    };
+    use core_read_model_updater::orchestration::ArtifactJournalEntry;
+    let target = HookHealthTarget::new(
+        SpaceName::default(),
+        Some(IntentDirName::parse("260909-artifact-history").unwrap()),
+    );
+    let (mut aggregate, created) = ArtifactAudit::start(
+        ArtifactWriteObservation::new(
+            target.clone(),
+            "Write".into(),
+            "first.md".into(),
+            "first".into(),
+            true,
+        ),
+        at(),
+    )
+    .unwrap();
+    let changed_at = at() + chrono::Duration::seconds(1);
+    let updated = aggregate
+        .record(
+            ArtifactWriteObservation::new(
+                target,
+                "Edit".into(),
+                "second.md".into(),
+                "second".into(),
+                false,
+            ),
+            changed_at,
+        )
+        .unwrap();
+    vec![
+        ArtifactJournalEntry::new(GlobalSeqNr::new(1), 1, at(), created),
+        ArtifactJournalEntry::new(GlobalSeqNr::new(2), 2, changed_at, updated),
+    ]
+}
+
+#[test]
+fn artifact_projection_rejects_history_without_its_first_observation() {
+    let mut entries = artifact_history();
+    entries.remove(0);
+    let history = JournalBatch::new(vec![], vec![], vec![], Some(GlobalSeqNr::new(2)))
+        .with_artifacts(entries);
+    assert!(matches!(
+        ReadTables::project(&history),
+        Err(ReadTablesError::MissingGenesis { .. })
+    ));
+}
+
+#[test]
+fn artifact_projection_contains_the_latest_observation_per_target() {
+    let history = JournalBatch::new(vec![], vec![], vec![], Some(GlobalSeqNr::new(2)))
+        .with_artifacts(artifact_history());
+    let tables = ReadTables::project(&history).unwrap();
+    let rows = tables.artifact_audits();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].file(), "second.md");
+    assert_eq!(rows[0].tool(), "Edit");
+    assert_eq!(rows[0].context(), "second");
+    assert!(!rows[0].created());
+    assert_eq!(rows[0].occurred_at(), at() + chrono::Duration::seconds(1));
+}
+
 fn at() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-09-02T00:00:00Z")
         .expect("固定の ISO 8601 UTC")
@@ -152,6 +217,9 @@ fn saturated_node() -> StageNode {
         "aidlc-claim-sources",
         "sensors/aidlc-claim-sources.md",
         Some("*.md".to_string()),
+        None,
+        None,
+        None,
     )])
     .build()
 }
@@ -568,13 +636,32 @@ fn definition_scope_rows_mirror_the_catalog_and_the_cost() {
             row.has_grid_column(),
             definition.grid().contains_scope(name)
         );
-        let cost = definition.scope_cost(name);
+        let cost = definition.scope_cost(name, BrownfieldGreenfield::Brownfield);
         assert_eq!(row.cost_total(), cost.as_ref().map(|c| c.total()));
         assert_eq!(row.cost_execute(), cost.as_ref().map(|c| c.execute()));
         assert_eq!(row.cost_gates(), cost.as_ref().map(|c| c.gates()));
         assert_eq!(
             row.cost_per_unit_stages(),
             cost.as_ref().map(|c| c.per_unit_stages())
+        );
+        // greenfield 向けの実効費用は同じ問いを種別だけ変えて答えたもの (合成定義に
+        // reverse-engineering は無いので名目値と同じ値になる)。
+        let greenfield = definition.scope_cost(name, BrownfieldGreenfield::Greenfield);
+        assert_eq!(
+            row.greenfield_cost_total(),
+            greenfield.as_ref().map(|c| c.total())
+        );
+        assert_eq!(
+            row.greenfield_cost_execute(),
+            greenfield.as_ref().map(|c| c.execute())
+        );
+        assert_eq!(
+            row.greenfield_cost_gates(),
+            greenfield.as_ref().map(|c| c.gates())
+        );
+        assert_eq!(
+            row.greenfield_cost_per_unit_stages(),
+            greenfield.as_ref().map(|c| c.per_unit_stages())
         );
     }
     assert_eq!(rows[0].keywords(), r#"["api","shared"]"#);
@@ -824,7 +911,9 @@ fn next_answer_rows_cover_the_four_request_kinds() {
     assert!(kinds.contains("run-stage"));
     assert!(kinds.contains("parked"));
     assert!(kinds.contains("unpark-then-resume"));
-    assert!(kinds.contains("resume-menu"));
+    // 本家 2.7.1 の明示 `--resume` は選択肢を出さず通常の経路へ落ちる (park 中だけ
+    // `unpark-then-resume`)。`resume-menu` は集約がもう答えない。
+    assert!(!kinds.contains("resume-menu"));
     assert!(kinds.contains("new-work-routing"));
 }
 
@@ -1285,6 +1374,11 @@ fn an_isolated_run_leaves_every_read_row_where_it_was() {
     // 適用がフレーム空なので、`read_*` 表は 1 列も動かない (仕様 I10)。
     let (mut aggregate, mut events) = running_events();
     let before = ReadTables::project(&history_of(events.clone())).expect("投影できる");
+    // 隔離実行は開始境界 → 完了の対で記録する。どちらも本流の状態を動かさない。
+    let started = aggregate
+        .begin_single_stage_run(&intent(), &slug("requirements-analysis"), at())
+        .expect("非 init は隔離実行を開始できる");
+    events.push((aggregate.seq_nr(), started));
     let committed = aggregate
         .record_single_stage_run(&intent(), &slug("requirements-analysis"), at())
         .expect("非 init は隔離実行できる");
@@ -1308,7 +1402,7 @@ fn an_isolated_run_leaves_every_read_row_where_it_was() {
             .find(|row| row.id() == execution_a().as_str())
             .map(ExecutionRow::seq_nr)
     };
-    assert_eq!(seq(&after), seq(&before).map(|n| n + 1));
+    assert_eq!(seq(&after), seq(&before).map(|n| n + 2));
 }
 
 // ---- run-stage の材料 (定義 × scope × ステージ) ----
@@ -1357,10 +1451,7 @@ fn the_run_stage_row_mirrors_the_definition_node() {
     assert_eq!(row.lead_agent(), node.lead_agent());
     assert_eq!(row.mode(), node.mode().as_str());
     assert_eq!(row.support_agents(), r#"["aidlc-design-agent"]"#);
-    assert_eq!(
-        row.sensors_applicable(),
-        r#"[{"id":"aidlc-claim-sources","path":"sensors/aidlc-claim-sources.md","matches":"*.md"}]"#
-    );
+    assert_eq!(row.sensors_applicable(), r#"["aidlc-claim-sources"]"#);
     // reviewer 3 列は**対で載る** (どちらか欠ければ 3 つとも NULL — クエリ側の組み立て規則)。
     assert_eq!(row.reviewer(), node.reviewer());
     assert_eq!(row.review_class(), Some("adversarial"));
@@ -1903,4 +1994,128 @@ fn the_run_stage_and_the_steering_part_point_at_the_plan_of_their_phase() {
     for part in steering.parts() {
         assert_eq!(part.steering_plan_id(), plan_of(part.phase()));
     }
+}
+
+/// 計画承認の参照入力（文書は空、memory 層も空、対象はステージ）。
+fn empty_plan_input() -> core_command_domain::orchestration::PlanApprovalInput {
+    use core_command_domain::orchestration::{
+        PlanApprovalDocuments, PlanApprovalInput, PlanTarget, TestingSections,
+    };
+    PlanApprovalInput::new(
+        PlanApprovalDocuments::new(
+            String::new(),
+            String::new(),
+            String::new(),
+            "questions.md".to_string(),
+        ),
+        TestingSections::from_documents("", "", ""),
+        PlanTarget::stage_level(),
+        None,
+        None,
+    )
+}
+
+#[test]
+fn a_plan_fingerprint_row_names_the_missing_execution_or_intent() {
+    use core_read_model_updater::read_tables::PlanFingerprintRow;
+    let unknown = IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0777").expect("UUIDv7");
+    assert_eq!(
+        PlanFingerprintRow::project(&history(), &unknown, &empty_plan_input()),
+        Err(ReadTablesError::IntentUnavailable {
+            execution_id: unknown.as_str().to_string(),
+            intent_id: String::new(),
+        })
+    );
+    let (_, events) = running_events();
+    let entries: Vec<JournalEntry> = events
+        .into_iter()
+        .enumerate()
+        .map(|(offset, (seq_nr, event))| {
+            JournalEntry::new(
+                GlobalSeqNr::new(offset as u64 + 1),
+                execution_a(),
+                seq_nr,
+                at(),
+                event,
+            )
+        })
+        .collect();
+    let without_intent =
+        JournalBatch::new(entries, Vec::new(), Vec::new(), Some(GlobalSeqNr::new(3)));
+    assert_eq!(
+        PlanFingerprintRow::project(&without_intent, &execution_a(), &empty_plan_input()),
+        Err(ReadTablesError::IntentUnavailable {
+            execution_id: EXECUTION_A.to_string(),
+            intent_id: INTENT.to_string(),
+        })
+    );
+}
+
+#[test]
+fn a_plan_fingerprint_row_carries_the_refusal_instead_of_a_fingerprint() {
+    use core_read_model_updater::read_tables::PlanFingerprintRow;
+    let row = PlanFingerprintRow::project(&history(), &execution_a(), &empty_plan_input())
+        .expect("実行と intent がある");
+    assert_eq!(row.execution_id(), EXECUTION_A);
+    assert_eq!(row.target_id(), "stage:code-generation");
+    assert_eq!(row.fingerprint(), None, "空の計画から指紋は出ない");
+    assert!(row.error().is_some(), "拒否理由が行に載る");
+}
+
+/// セッション監査の事実（record 相対の観測領域 `spaces/default/intents/260907-x`）。
+fn session_event(
+    kind: core_command_domain::workspace::EventType,
+    field: (&str, &str),
+) -> core_command_domain::workspace::SessionAuditEvent {
+    use core_command_domain::workspace::{
+        AuditFieldKey, AuditFields, HookHealthTarget, IntentDirName, SessionAuditEvent,
+        SessionAuditEventId, SessionAuditId, SessionAuditObservationId, SessionAuditRecord,
+        SpaceName,
+    };
+    let target = HookHealthTarget::new(
+        SpaceName::parse("default").expect("空間名"),
+        Some(IntentDirName::parse("260907-x").expect("記録名")),
+    );
+    SessionAuditEvent::new(
+        SessionAuditEventId::generate(),
+        SessionAuditObservationId::generate(),
+        SessionAuditId::for_target(&target),
+        target,
+        SessionAuditRecord::new(
+            kind,
+            AuditFields::new().with(AuditFieldKey::parse(field.0).expect("欄名"), field.1),
+        )
+        .expect("記録"),
+    )
+    .expect("対象と識別子が一致する")
+}
+
+#[test]
+fn a_session_audit_stream_that_does_not_start_at_its_genesis_is_refused() {
+    use core_command_domain::workspace::EventType;
+    use core_read_model_updater::orchestration::SessionJournalEntry;
+    let event = session_event(EventType::SessionStarted, ("Source", "startup"));
+    let batch = JournalBatch::empty().with_sessions(vec![SessionJournalEntry::new(
+        GlobalSeqNr::new(1),
+        2,
+        at(),
+        event.clone(),
+    )]);
+    assert_eq!(
+        ReadTables::project_audit_only(&batch),
+        Err(ReadTablesError::MissingGenesis {
+            aggregate_id: event.aggregate_id().to_string()
+        })
+    );
+    let healthy = JournalBatch::empty().with_sessions(vec![
+        SessionJournalEntry::new(GlobalSeqNr::new(1), 1, at(), event),
+        SessionJournalEntry::new(
+            GlobalSeqNr::new(2),
+            2,
+            at(),
+            session_event(EventType::SessionEnded, ("Reason", "exit")),
+        ),
+    ]);
+    let tables = ReadTables::project_audit_only(&healthy).expect("誕生から始まる履歴");
+    assert_eq!(tables.session_audits().len(), 2, "観測ごとに 1 行");
 }

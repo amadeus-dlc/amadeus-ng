@@ -1,0 +1,16 @@
+   Compiling serde_json v1.0.151
+   Compiling core-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/infrastructure)
+   Compiling event-store-adapter-rs v3.0.0
+   Compiling core-command-domain v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/domain)
+   Compiling harness-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/infrastructure)
+   Compiling core-command-use-case v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/use-case)
+   Compiling core-command-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/interface-adapter)
+   Compiling harness-claude v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/claude)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.66s
+     Running tests/stop_transcript_contract.rs (target/debug/deps/stop_transcript_contract-7d306180010b4c03)
+
+running 1 test
+test claude_conversation_classification_matches_fixed_upstream ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

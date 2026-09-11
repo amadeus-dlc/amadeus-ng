@@ -1,0 +1,494 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "capture_command": [
+    "/nix/store/914ib8av127cgbz80gvsrhzyg9v40b5p-bun-1.3.13/bin/bun",
+    "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/scripts/goldens/capture-pipeline-link.ts",
+    "/tmp/amadeus-u1-upstream/dist/claude",
+    "tests/golden/selfhost-stage1/pipeline-link.json"
+  ],
+  "normalization": "selected record and workspace paths; audit ISO timestamps only; handoff mtime is fixed input",
+  "observations": [
+    {
+      "id": "syntax",
+      "cold": true,
+      "steps": [
+        {
+          "id": "missing-stage",
+          "args": [
+            "link"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Missing --stage <slug>\"}\n",
+          "audit": "",
+          "state_changed": false
+        },
+        {
+          "id": "missing-link",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Missing --link <agent>\"}\n",
+          "audit": "",
+          "state_changed": false
+        },
+        {
+          "id": "flag-end",
+          "args": [
+            "link",
+            "--stage"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"--stage expects a value, got end of arguments.\"}\n",
+          "audit": "",
+          "state_changed": false
+        },
+        {
+          "id": "flag-next",
+          "args": [
+            "link",
+            "--stage",
+            "--link",
+            "aidlc-developer-agent"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"--stage expects a value, got another flag: \\\"--link\\\". Did you forget the value?\"}\n",
+          "audit": "",
+          "state_changed": false
+        },
+        {
+          "id": "selector",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--intent",
+            "other"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"The link command does not accept --intent/--space selectors. Switch to the target workspace first.\"}\n",
+          "audit": "",
+          "state_changed": false
+        },
+        {
+          "id": "cold",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"No active workflow is selected, so this interaction cannot be recorded. Start one by describing what to build (/aidlc \\\"build the auth service\\\"), or switch to an existing one with /aidlc intent <name>.\"}\n",
+          "audit": "",
+          "state_changed": false
+        }
+      ]
+    },
+    {
+      "id": "guards",
+      "cold": false,
+      "steps": [
+        {
+          "id": "not-pipeline",
+          "args": [
+            "link",
+            "--stage",
+            "code-generation",
+            "--link",
+            "aidlc-developer-agent"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record pipeline link: stage \\\"code-generation\\\" is not mode: pipeline.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage code-generation --link aidlc-developer-agent\n**Error**: Cannot record pipeline link: stage \"code-generation\" is not mode: pipeline.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "unknown-stage",
+          "args": [
+            "link",
+            "--stage",
+            "BOGUS",
+            "--link",
+            "aidlc-developer-agent"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record pipeline link: stage \\\"BOGUS\\\" is not mode: pipeline.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage BOGUS --link aidlc-developer-agent\n**Error**: Cannot record pipeline link: stage \"BOGUS\" is not mode: pipeline.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "unknown-link",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "not-declared"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record pipeline link for \\\"reverse-engineering\\\": \\\"not-declared\\\" is not in its declared lead/support chain (aidlc-developer-agent, aidlc-architect-agent).\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link not-declared\n**Error**: Cannot record pipeline link for \"reverse-engineering\": \"not-declared\" is not in its declared lead/support chain (aidlc-developer-agent, aidlc-architect-agent).\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "repo",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--repo",
+            "example"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record pipeline link for \\\"reverse-engineering\\\": this intent has no registered repo identity; omit --repo.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --repo example\n**Error**: Cannot record pipeline link for \"reverse-engineering\": this intent has no registered repo identity; omit --repo.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "order",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-architect-agent"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record pipeline link for \\\"reverse-engineering\\\": \\\"aidlc-architect-agent\\\" is out of order; position 2/2 requires current-attempt receipt for \\\"aidlc-developer-agent\\\".\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-architect-agent\n**Error**: Cannot record pipeline link for \"reverse-engineering\": \"aidlc-architect-agent\" is out of order; position 2/2 requires current-attempt receipt for \"aidlc-developer-agent\".\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "artifact-required",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record reverse-engineering developer link: pass --artifact \\\"<record>/inception/reverse-engineering/developer-scan[-<repo>].md\\\".\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent\n**Error**: Cannot record reverse-engineering developer link: pass --artifact \"<record>/inception/reverse-engineering/developer-scan[-<repo>].md\".\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "artifact-path",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "wrong.md"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record reverse-engineering developer link: --artifact must resolve to <RECORD>/inception/reverse-engineering/developer-scan.md.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --artifact wrong.md\n**Error**: Cannot record reverse-engineering developer link: --artifact must resolve to <RECORD>/inception/reverse-engineering/developer-scan.md.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "artifact-missing",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record reverse-engineering developer link: handoff file does not exist: <RECORD>/inception/reverse-engineering/developer-scan.md.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --artifact <RECORD>/inception/reverse-engineering/developer-scan.md\n**Error**: Cannot record reverse-engineering developer link: handoff file does not exist: <RECORD>/inception/reverse-engineering/developer-scan.md.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "artifact-old",
+          "file": "old",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record reverse-engineering developer link: <RECORD>/inception/reverse-engineering/developer-scan.md was not written in the current stage attempt.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --artifact <RECORD>/inception/reverse-engineering/developer-scan.md\n**Error**: Cannot record reverse-engineering developer link: <RECORD>/inception/reverse-engineering/developer-scan.md was not written in the current stage attempt.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "single-no-attempt",
+          "file": "fresh",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>",
+            "--single"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record reverse-engineering developer link: <RECORD>/inception/reverse-engineering/developer-scan.md was not written in the current stage attempt.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --artifact <RECORD>/inception/reverse-engineering/developer-scan.md --single\n**Error**: Cannot record reverse-engineering developer link: <RECORD>/inception/reverse-engineering/developer-scan.md was not written in the current stage attempt.\n\n---\n",
+          "state_changed": false
+        }
+      ]
+    },
+    {
+      "id": "chain",
+      "cold": false,
+      "steps": [
+        {
+          "id": "developer",
+          "file": "fresh",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"PIPELINE_LINK_COMPLETED\",\"stage\":\"reverse-engineering\",\"link\":\"aidlc-developer-agent\"}\n",
+          "stderr": "",
+          "audit": "\n## Pipeline Link Completed\n**Timestamp**: <TS>\n**Event**: PIPELINE_LINK_COMPLETED\n**Stage**: reverse-engineering\n**Link**: aidlc-developer-agent\n**Position**: 1/2\n**Artifact Path**: <RECORD>/inception/reverse-engineering/developer-scan.md\n**Artifact SHA256**: sha256:c1d73659b427ed35aa922d857055638e99574128d50e91ad2f0b28b8691865c8\n**Artifact Mtime Ms**: 4102444800000\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "duplicate-developer",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record pipeline link for \\\"reverse-engineering\\\": link \\\"aidlc-developer-agent\\\" already completed this attempt.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --artifact <RECORD>/inception/reverse-engineering/developer-scan.md\n**Error**: Cannot record pipeline link for \"reverse-engineering\": link \"aidlc-developer-agent\" already completed this attempt.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "architect",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-architect-agent"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"PIPELINE_LINK_COMPLETED\",\"stage\":\"reverse-engineering\",\"link\":\"aidlc-architect-agent\"}\n",
+          "stderr": "",
+          "audit": "\n## Pipeline Link Completed\n**Timestamp**: <TS>\n**Event**: PIPELINE_LINK_COMPLETED\n**Stage**: reverse-engineering\n**Link**: aidlc-architect-agent\n**Position**: 2/2\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "duplicate-architect",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-architect-agent"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record pipeline link for \\\"reverse-engineering\\\": link \\\"aidlc-architect-agent\\\" already completed this attempt.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-architect-agent\n**Error**: Cannot record pipeline link for \"reverse-engineering\": link \"aidlc-architect-agent\" already completed this attempt.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "changed-architect",
+          "file": "changed",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-architect-agent"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record pipeline link for \\\"reverse-engineering\\\": \\\"aidlc-architect-agent\\\" is out of order; position 2/2 requires current-attempt receipt for \\\"aidlc-developer-agent\\\".\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-architect-agent\n**Error**: Cannot record pipeline link for \"reverse-engineering\": \"aidlc-architect-agent\" is out of order; position 2/2 requires current-attempt receipt for \"aidlc-developer-agent\".\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "not-rewritten",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record reverse-engineering developer link: <RECORD>/inception/reverse-engineering/developer-scan.md was not rewritten after its prior pipeline receipt.\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --artifact <RECORD>/inception/reverse-engineering/developer-scan.md\n**Error**: Cannot record reverse-engineering developer link: <RECORD>/inception/reverse-engineering/developer-scan.md was not rewritten after its prior pipeline receipt.\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "rewritten-developer",
+          "file": "rewritten",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"PIPELINE_LINK_COMPLETED\",\"stage\":\"reverse-engineering\",\"link\":\"aidlc-developer-agent\"}\n",
+          "stderr": "",
+          "audit": "\n## Pipeline Link Completed\n**Timestamp**: <TS>\n**Event**: PIPELINE_LINK_COMPLETED\n**Stage**: reverse-engineering\n**Link**: aidlc-developer-agent\n**Position**: 1/2\n**Artifact Path**: <RECORD>/inception/reverse-engineering/developer-scan.md\n**Artifact SHA256**: sha256:c1d73659b427ed35aa922d857055638e99574128d50e91ad2f0b28b8691865c8\n**Artifact Mtime Ms**: 4102444801000\n\n---\n",
+          "state_changed": false
+        },
+        {
+          "id": "rewritten-architect",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-architect-agent"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"PIPELINE_LINK_COMPLETED\",\"stage\":\"reverse-engineering\",\"link\":\"aidlc-architect-agent\"}\n",
+          "stderr": "",
+          "audit": "\n## Pipeline Link Completed\n**Timestamp**: <TS>\n**Event**: PIPELINE_LINK_COMPLETED\n**Stage**: reverse-engineering\n**Link**: aidlc-architect-agent\n**Position**: 2/2\n\n---\n",
+          "state_changed": false
+        }
+      ]
+    },
+    {
+      "id": "directory",
+      "cold": false,
+      "steps": [
+        {
+          "id": "directory",
+          "file": "directory",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record reverse-engineering developer link: handoff file must be a regular file with no symlink path components (reverse-engineering developer handoff is not a regular file (a directory): /private<ROOT>/<RECORD>/inception/reverse-engineering/developer-scan.md. Only regular files are read — a FIFO, socket, or device file can block forever or never reach EOF, so it is refused before any read.).\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --artifact <RECORD>/inception/reverse-engineering/developer-scan.md\n**Error**: Cannot record reverse-engineering developer link: handoff file must be a regular file with no symlink path components (reverse-engineering developer handoff is not a regular file (a directory): <project-dir>/<RECORD>/inception/reverse-engineering/developer-scan.md. Only regular files are read — a FIFO, socket, or device file can block forever or never reach EOF, so it is refused before any read.).\n\n---\n",
+          "state_changed": false
+        }
+      ]
+    },
+    {
+      "id": "symlink",
+      "cold": false,
+      "steps": [
+        {
+          "id": "symlink",
+          "file": "symlink",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>"
+          ],
+          "exit": 1,
+          "stdout": "",
+          "stderr": "{\"error\":\"Cannot record reverse-engineering developer link: handoff file must be a regular file with no symlink path components (/private<ROOT>/<RECORD>/inception/reverse-engineering/developer-scan.md is a symlink, and no path component may be a symlink here. A redirected container directory is refused exactly like a symlink found INSIDE an already-trusted one.).\"}\n",
+          "audit": "\n## Error Logged\n**Timestamp**: <TS>\n**Event**: ERROR_LOGGED\n**Tool**: aidlc-log\n**Command**: aidlc-log link --stage reverse-engineering --link aidlc-developer-agent --artifact <RECORD>/inception/reverse-engineering/developer-scan.md\n**Error**: Cannot record reverse-engineering developer link: handoff file must be a regular file with no symlink path components (<project-dir>/<RECORD>/inception/reverse-engineering/developer-scan.md is a symlink, and no path component may be a symlink here. A redirected container directory is refused exactly like a symlink found INSIDE an already-trusted one.).\n\n---\n",
+          "state_changed": false
+        }
+      ]
+    },
+    {
+      "id": "blank-flags",
+      "cold": false,
+      "steps": [
+        {
+          "id": "blank-repo-selector",
+          "file": "fresh",
+          "args": [
+            "link",
+            "--stage",
+            "reverse-engineering",
+            "--link",
+            "aidlc-developer-agent",
+            "--artifact",
+            "<HANDOFF>",
+            "--repo",
+            "",
+            "--intent",
+            "",
+            "--space",
+            "",
+            "--ignored",
+            "value",
+            "--stage-level"
+          ],
+          "exit": 0,
+          "stdout": "{\"emitted\":\"PIPELINE_LINK_COMPLETED\",\"stage\":\"reverse-engineering\",\"link\":\"aidlc-developer-agent\"}\n",
+          "stderr": "",
+          "audit": "\n## Pipeline Link Completed\n**Timestamp**: <TS>\n**Event**: PIPELINE_LINK_COMPLETED\n**Stage**: reverse-engineering\n**Link**: aidlc-developer-agent\n**Position**: 1/2\n**Artifact Path**: <RECORD>/inception/reverse-engineering/developer-scan.md\n**Artifact SHA256**: sha256:c1d73659b427ed35aa922d857055638e99574128d50e91ad2f0b28b8691865c8\n**Artifact Mtime Ms**: 4102444800000\n\n---\n",
+          "state_changed": false
+        }
+      ]
+    }
+  ]
+}

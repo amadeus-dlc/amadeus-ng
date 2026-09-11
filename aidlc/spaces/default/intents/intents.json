@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "uuid": "01a07bfe-d875-7271-8fdd-9aef477ad08d",
+    "slug": "selfhost-stage1",
+    "dirName": "260907-selfhost-stage1",
+    "scope": "selfhost-stage1",
+    "status": "in-flight"
+  }
+]

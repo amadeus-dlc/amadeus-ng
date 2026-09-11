@@ -33,10 +33,14 @@ const BLOCK_SEPARATOR: &str = "\n---\n";
 pub struct OrderedAuditEvents(Vec<AuditEventRecord>);
 
 impl OrderedAuditEvents {
+    const fn of_items(items: Vec<AuditEventRecord>) -> Self {
+        Self(items)
+    }
+
     /// 条件に一致するイベントを保持する。時刻順と同秒内の元の位置は変えない。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(&AuditEventRecord) -> bool) -> Self {
-        Self(
+        OrderedAuditEvents::of_items(
             self.0
                 .iter()
                 .filter(|record| predicate(record))
@@ -106,7 +110,7 @@ impl OrderedAuditEvents {
             .filter_map(|(position, block)| record_of(block, position))
             .collect();
         records.sort_by(|left, right| left.timestamp().cmp(right.timestamp()));
-        OrderedAuditEvents(records)
+        OrderedAuditEvents::of_items(records)
     }
 }
 

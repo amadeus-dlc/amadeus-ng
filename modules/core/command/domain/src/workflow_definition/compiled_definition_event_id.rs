@@ -22,6 +22,11 @@ use super::compiled_definition_event_id_error::CompiledDefinitionEventIdError;
 pub struct CompiledDefinitionEventId(String);
 
 impl CompiledDefinitionEventId {
+    // 呼出元はUUIDv7の検査済み入力、またはUUIDv7採番結果に限る。
+    fn of_uuid(uuid: Uuid) -> Self {
+        Self(uuid.as_hyphenated().to_string())
+    }
+
     /// 前後の空白を落としてから UUIDv7 の正準表記として検証する。
     ///
     /// # Errors
@@ -38,7 +43,7 @@ impl CompiledDefinitionEventId {
         {
             return Err(CompiledDefinitionEventIdError::NotCanonicalUuidV7);
         }
-        Ok(CompiledDefinitionEventId(trimmed.to_string()))
+        Ok(Self::of_uuid(uuid))
     }
 
     /// 新しい識別子を採番する (UUIDv7 — 時刻順に単調な乱数)。
@@ -47,7 +52,7 @@ impl CompiledDefinitionEventId {
         // `Uuid::now_v7` は小文字の正準表記を生むので、この値は必ず `parse` を通る。
         // 採番をドメインに置くのは「イベント id は識別だけで、投影・ITF の答えに影響
         // しない」というオーナー裁定の例外である (`aggregate-commands.md` 2026-09-02)。
-        CompiledDefinitionEventId(Uuid::now_v7().as_hyphenated().to_string())
+        Self::of_uuid(Uuid::now_v7())
     }
 
     /// 生の識別子文字列 (trim 済み)。

@@ -586,7 +586,7 @@
       "executable": false
     },
     ".claude/hooks/aidlc-record-human-turn.ts": {
-      "sha256": "126596639b31383be93b951cc5da2f7d2441d867d1e4154009c6a249d6fb7046",
+      "sha256": "8a9d5213ee10daf06d8cba6c7c6f4e7efb4b3bcc09b1a851e0f9102b82b55e5c",
       "executable": false
     },
     ".claude/hooks/aidlc-review-freeze.ts": {
@@ -630,7 +630,7 @@
       "executable": false
     },
     ".claude/hooks/review-freeze-command.ts": {
-      "sha256": "ef85d009280c2dde17ea61b9cd8fc1cc9d44a44eff15e08b0048c19877ba2cdf",
+      "sha256": "27db2ad629eabd62b051ce414f4cc74d4cc34a46d2b16ab0de839ffd4da45fd6",
       "executable": false
     },
     ".claude/knowledge/aidlc-architect-agent/adr-template.md": {
@@ -907,6 +907,10 @@
     },
     ".claude/scopes/aidlc-security-patch.md": {
       "sha256": "b25a8f694c32e3ce64dd73d65f0acd5017863f788551d62b73e75ae6278dd7d6",
+      "executable": false
+    },
+    ".claude/scopes/aidlc-selfhost-stage1.md": {
+      "sha256": "97b82fc83bd8facdb1798d87f2873f8f3ac16334c4990d9a3fb98f2b37f9183d",
       "executable": false
     },
     ".claude/scopes/aidlc-workshop.md": {
@@ -1234,7 +1238,7 @@
       "executable": false
     },
     ".claude/tools/aidlc-sensor-traceability.ts": {
-      "sha256": "0c46165c9d42a3eaa038ecae508408202f1ff8968ffc772461e90d8340bc71f4",
+      "sha256": "85bea6fd7f122fcb63b6de48cb642fd6546197f1a70cc89df247e97fa734feb4",
       "executable": false
     },
     ".claude/tools/aidlc-sensor-type-check.ts": {
@@ -1378,7 +1382,7 @@
       "executable": false
     },
     ".claude/tools/data/scope-grid.json": {
-      "sha256": "2b24c6b3b861f9d2c3a3f9fd2e2bb34c3d3c0e37ddc06ff96145f1d40d3d7c16",
+      "sha256": "41226c622a7968ec31b4e579ebe4c608483a26ab88c32851374ce18d26557249",
       "executable": false
     },
     ".claude/tools/data/stage-graph.json": {
@@ -1698,7 +1702,7 @@
       "executable": false
     },
     ".codex/hooks/aidlc-record-human-turn.ts": {
-      "sha256": "126596639b31383be93b951cc5da2f7d2441d867d1e4154009c6a249d6fb7046",
+      "sha256": "8a9d5213ee10daf06d8cba6c7c6f4e7efb4b3bcc09b1a851e0f9102b82b55e5c",
       "executable": false
     },
     ".codex/hooks/aidlc-review-freeze.ts": {
@@ -1742,7 +1746,7 @@
       "executable": false
     },
     ".codex/hooks/review-freeze-command.ts": {
-      "sha256": "ef85d009280c2dde17ea61b9cd8fc1cc9d44a44eff15e08b0048c19877ba2cdf",
+      "sha256": "27db2ad629eabd62b051ce414f4cc74d4cc34a46d2b16ab0de839ffd4da45fd6",
       "executable": false
     },
     ".codex/knowledge/aidlc-architect-agent/adr-template.md": {
@@ -2021,6 +2025,10 @@
       "sha256": "b25a8f694c32e3ce64dd73d65f0acd5017863f788551d62b73e75ae6278dd7d6",
       "executable": false
     },
+    ".codex/scopes/aidlc-selfhost-stage1.md": {
+      "sha256": "97b82fc83bd8facdb1798d87f2873f8f3ac16334c4990d9a3fb98f2b37f9183d",
+      "executable": false
+    },
     ".codex/scopes/aidlc-workshop.md": {
       "sha256": "1d5b17aba492bba2291983e5d2835fa2ba849d08f134e9e6559e479c3e8c3134",
       "executable": false
@@ -2170,7 +2178,7 @@
       "executable": false
     },
     ".codex/tools/aidlc-sensor-traceability.ts": {
-      "sha256": "0c46165c9d42a3eaa038ecae508408202f1ff8968ffc772461e90d8340bc71f4",
+      "sha256": "85bea6fd7f122fcb63b6de48cb642fd6546197f1a70cc89df247e97fa734feb4",
       "executable": false
     },
     ".codex/tools/aidlc-sensor-type-check.ts": {
@@ -2314,7 +2322,7 @@
       "executable": false
     },
     ".codex/tools/data/scope-grid.json": {
-      "sha256": "2b24c6b3b861f9d2c3a3f9fd2e2bb34c3d3c0e37ddc06ff96145f1d40d3d7c16",
+      "sha256": "41226c622a7968ec31b4e579ebe4c608483a26ab88c32851374ce18d26557249",
       "executable": false
     },
     ".codex/tools/data/stage-graph.json": {
@@ -2586,7 +2594,7 @@
       "executable": false
     },
     ".kimi-code/hooks/aidlc-record-human-turn.ts": {
-      "sha256": "126596639b31383be93b951cc5da2f7d2441d867d1e4154009c6a249d6fb7046",
+      "sha256": "8a9d5213ee10daf06d8cba6c7c6f4e7efb4b3bcc09b1a851e0f9102b82b55e5c",
       "executable": false
     },
     ".kimi-code/hooks/aidlc-review-freeze.ts": {
@@ -2630,7 +2638,7 @@
       "executable": false
     },
     ".kimi-code/hooks/review-freeze-command.ts": {
-      "sha256": "ef85d009280c2dde17ea61b9cd8fc1cc9d44a44eff15e08b0048c19877ba2cdf",
+      "sha256": "27db2ad629eabd62b051ce414f4cc74d4cc34a46d2b16ab0de839ffd4da45fd6",
       "executable": false
     },
     ".kimi-code/knowledge/aidlc-architect-agent/adr-template.md": {
@@ -2909,6 +2917,10 @@
       "sha256": "b25a8f694c32e3ce64dd73d65f0acd5017863f788551d62b73e75ae6278dd7d6",
       "executable": false
     },
+    ".kimi-code/scopes/aidlc-selfhost-stage1.md": {
+      "sha256": "97b82fc83bd8facdb1798d87f2873f8f3ac16334c4990d9a3fb98f2b37f9183d",
+      "executable": false
+    },
     ".kimi-code/scopes/aidlc-workshop.md": {
       "sha256": "1d5b17aba492bba2291983e5d2835fa2ba849d08f134e9e6559e479c3e8c3134",
       "executable": false
@@ -3102,7 +3114,7 @@
       "executable": false
     },
     ".kimi-code/skills/aidlc/SKILL.md": {
-      "sha256": "101eae1cdd54ef45e195d7a4638fcbf4f30c74fe4785d53e08bbd9830c5c1301",
+      "sha256": "7747605f8ce0f803e2fd6266579dd201a52bdf6703328d73793d7f6178a408a1",
       "executable": false
     },
     ".kimi-code/skills/aidlc/question-rendering.md": {
@@ -3230,7 +3242,7 @@
       "executable": false
     },
     ".kimi-code/tools/aidlc-sensor-traceability.ts": {
-      "sha256": "0c46165c9d42a3eaa038ecae508408202f1ff8968ffc772461e90d8340bc71f4",
+      "sha256": "85bea6fd7f122fcb63b6de48cb642fd6546197f1a70cc89df247e97fa734feb4",
       "executable": false
     },
     ".kimi-code/tools/aidlc-sensor-type-check.ts": {
@@ -3374,7 +3386,7 @@
       "executable": false
     },
     ".kimi-code/tools/data/scope-grid.json": {
-      "sha256": "2b24c6b3b861f9d2c3a3f9fd2e2bb34c3d3c0e37ddc06ff96145f1d40d3d7c16",
+      "sha256": "41226c622a7968ec31b4e579ebe4c608483a26ab88c32851374ce18d26557249",
       "executable": false
     },
     ".kimi-code/tools/data/stage-graph.json": {

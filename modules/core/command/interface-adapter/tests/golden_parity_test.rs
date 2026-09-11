@@ -1,10 +1,9 @@
 //! ゴールデンパリティ: **upstream の配布実バイト**が本家と同じに読まれ、イベントストアを
 //! 往復しても 1 ビットも変わらないこと。
 //!
-//! 入力は `tests/golden/upstream-3c3146cf/{stage-graph.json,scope-grid.json}` — ピン留めコミット
-//! `3c3146cf` (v2.6.40) の `dist/claude/.claude/tools/data/` からバイト無変更で持ってきたもの。
-//! 期待値はすべて採取レポート (旧 `docs/specs/research/golden-3c3146cf-graph-dist.md`、2026-09-07 に
-//! 削除した) の実測に由来する（推測値は 1 つも無い）。以後は本ファイルのアサート値が正本である。
+//! 入力は `tests/golden/upstream-a277af21/data/{stage-graph.json,scope-grid.json}` — 本家2.7.1の
+//! 固定コミット `a277af218f0df7f325d3b8be7b6d90fce2c5bd40` から採取した配布実バイト。
+//! 件数はこの固定データの実測値であり、削除済みの採取レポートを根拠にしない。
 //!
 //! # 2026-08-31: 検収する経路が伸びた（オーナー裁定の ES 転換）
 //!
@@ -58,7 +57,7 @@ const EXPECTED_SCOPE_COLUMN_COUNT: usize = 11;
 
 /// 採取レポート「VERIFIED COUNTS」: 列ごとの EXECUTE 数（as-built 01 §5.3 の Total 行と一致）。
 const EXPECTED_EXECUTE_COUNTS: [(&str, usize); EXPECTED_SCOPE_COLUMN_COUNT] = [
-    ("bugfix", 7),
+    ("bugfix", 9),
     ("classic", 26),
     ("enterprise", 33),
     ("express", 10),
@@ -66,7 +65,7 @@ const EXPECTED_EXECUTE_COUNTS: [(&str, usize); EXPECTED_SCOPE_COLUMN_COUNT] = [
     ("infra", 13),
     ("mvp", 23),
     ("poc", 8),
-    ("refactor", 8),
+    ("refactor", 10),
     ("security-patch", 10),
     ("workshop", 26),
 ];
@@ -86,9 +85,10 @@ const EXPECTED_ADVERSARIAL: usize = 5;
 /// 同上。
 const EXPECTED_ADVISORY: usize = 8;
 
-/// ゴールデンフィクスチャの置き場（`tests/golden/upstream-3c3146cf/`）。
+/// 本家2.7.1の配布実バイトの置き場。
 fn golden_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../tests/golden/upstream-3c3146cf")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../tests/golden/upstream-a277af21/data")
 }
 
 /// 取込のイベント発生時刻（封筒のメタデータにしか出ないので固定値でよい）。
@@ -398,7 +398,7 @@ async fn the_shipped_revision_is_reproducible_from_the_pinned_bytes() {
 #[tokio::test]
 async fn the_store_round_trip_preserves_every_field_of_the_shipped_definition() {
     // 取込直後に確立した集約と、ストアから読み直した集約が同値であること。33 ノード ×
-    // 28 フィールド + グリッド 363 セルが永続化 DTO の往復を無傷で通ることを 1 本で押さえる
+    // 29 フィールド + グリッド 363 セルが永続化 DTO の往復を無傷で通ることを 1 本で押さえる
     // （どれか 1 つでも DTO から落ちれば `PartialEq` が破れる）。
     let (compiled_definition_repository, _scopes) = compiled_definition_repository();
     let compiled = compiled_definition_repository
@@ -450,7 +450,7 @@ fn assert_bytes_equal(written: &[u8], golden: &[u8], label: &str) {
 }
 
 /// 取り込んだ配布束を `store` で書き戻すと、graph と grid は dist と**バイト完全一致**する
-/// (書き側バイト契約 12 §10 — `FIELD_ORDER` 28 キー順・`undefined` 落とし・
+/// (書き側バイト契約 12 §10 — `FIELD_ORDER` 29 キー順・`undefined` 落とし・
 /// `JSON.stringify(x, null, 2)` + 末尾改行 1 個。b36 `store` の検収)。
 #[tokio::test]
 async fn storing_the_ingested_bundle_reproduces_the_dist_bytes() {

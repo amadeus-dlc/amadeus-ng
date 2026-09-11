@@ -15,6 +15,8 @@ use super::stage_lookup::slug_at;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionRow {
     id: String,
+    first_substantive_run: bool,
+    continuation_wait: Option<String>,
     intent_id: String,
     scope: String,
     status: String,
@@ -32,6 +34,11 @@ pub struct ExecutionRow {
 }
 
 impl ExecutionRow {
+    /// 集約が判定した人間待ち。
+    #[must_use]
+    pub fn continuation_wait(&self) -> Option<&str> {
+        self.continuation_wait.as_deref()
+    }
     /// 実行の集約を 1 行へ写す (**この型の唯一の構築経路**)。
     ///
     /// `scope` だけは実行が持たない — 選ばれた scope は静的な intent の持ち物なので、
@@ -42,6 +49,21 @@ impl ExecutionRow {
         let cursor = execution.cursor();
         ExecutionRow {
             id: execution.id().as_str().to_string(),
+            first_substantive_run: execution.is_first_substantive_run(),
+            continuation_wait: execution.continuation_wait().map(|reason| {
+                match reason {
+                    core_command_domain::orchestration::ContinuationWait::GateOrRevision => {
+                        "gate-or-revision"
+                    }
+                    core_command_domain::orchestration::ContinuationWait::Decision => "decision",
+                    core_command_domain::orchestration::ContinuationWait::Question => "question",
+                    core_command_domain::orchestration::ContinuationWait::Conversation => {
+                        "conversation"
+                    }
+                    core_command_domain::orchestration::ContinuationWait::Resume => "resume",
+                }
+                .to_string()
+            }),
             intent_id: execution.intent_id().as_str().to_string(),
             scope: intent.scope().to_string(),
             status: spelling::status(execution.status()).to_string(),
@@ -61,6 +83,12 @@ impl ExecutionRow {
                 .to_rfc3339_opts(SecondsFormat::Secs, true),
             state_binding: execution.state_binding().as_str().to_string(),
         }
+    }
+
+    /// 最初の実作業か（集約の判断結果）。
+    #[must_use]
+    pub const fn first_substantive_run(&self) -> bool {
+        self.first_substantive_run
     }
 
     /// 主キー — 実行の識別子 (UUIDv7)。

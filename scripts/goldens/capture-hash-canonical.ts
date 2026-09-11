@@ -2,7 +2,7 @@
 /**
  * hash-canonical 受入表の採取 (FR7.1 / BR2.1 / BR2.3)。
  *
- * upstream ピン `3c3146cf` から抽出した `canonicalize` / `sha256` / `hashObject` を
+ * upstream ピン `a277af21` から抽出した `canonicalize` / `sha256` / `hashObject` を
  * **実行して** 期待値を採る。入力クラスごとに 4 つの観測を採る:
  *
  * - `canonical_output`   = `JSON.stringify(canonicalize(v))`      … hash-canonical プロファイル
@@ -17,8 +17,10 @@
  * sha256 照合はシェル側の責務)。
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import assert from "node:assert/strict";
+import { UPSTREAM, digest } from "./upstream-source";
 
 type Snippet = {
   canonicalize: (value: unknown) => unknown;
@@ -330,6 +332,11 @@ async function main(): Promise<void> {
   }
 
   const meta = JSON.parse(readFileSync(metaPath, "utf-8"));
+  assert.equal(meta.upstream_commit, UPSTREAM.commit, "採取元コミットが不一致");
+  const snippetBytes = readFileSync(snippetPath, "utf8");
+  const body = snippetBytes.replace(/^import \{ createHash \} from "node:crypto";\n\n/, "").replace(/^export function /gm, "function ");
+  assert.equal(digest(body), "c8894a433d620538e1701f178b8542528603f012b98680b6b79233f70704418f", "採取スニペットが不一致");
+  assert(!existsSync(outDir), "既存の採取結果は上書きしない");
   const snippet = (await import(snippetPath)) as Snippet;
 
   const capturedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");

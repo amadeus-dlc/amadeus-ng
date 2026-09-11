@@ -27,7 +27,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 EXPECTED_CHANNEL="1.95.0"
 EXPECTED_COMPONENTS="rustfmt clippy llvm-tools"
 EXPECTED_PROFILE="minimal"
-EXPECTED_TOLERANCE="0.01"
+# EXPECTED_TOLERANCE は相対ゲート廃止 (2026-09-11) に伴い撤去した。
 # cargo llvm-cov に渡す除外正規表現。llvm-cov は絶対パスを記録するため先頭アンカーは
 # 行頭またはパス区切り ((^|/)) にする (scripts/coverage.sh のコメント参照)。
 EXPECTED_IGNORE_REGEX='(^|/)modules/app/aidlc/src/main\.rs$'
@@ -297,14 +297,14 @@ check_ci_workflow() {
     fail "ci-proptest-seed-env" "PROPTEST_RNG_SEED: \"${EXPECTED_SEED}\" の指定が ${seed_hits} 箇所 (check / coverage の 2 箇所以上が必要)"
   fi
 
-  # NFR2.2 / NFR2.5: 相対ゲートは pull_request のときだけ (merge_group は base ref を持たない)
+  # 2026-09-11 の裁定 (U2 code-generation `coverage-gate-questions.md` Q1 = A) で相対
+  # ゲートを廃止した。coverage は全イベントで絶対床のみ (--base を渡さない)。
   local cov_ok=0
-  grep -q "if: github.event_name == 'pull_request'" "${CI_FILE}" || cov_ok=1
-  grep -q "if: github.event_name != 'pull_request'" "${CI_FILE}" || cov_ok=1
-  grep -q 'bash scripts/coverage.sh --base' "${CI_FILE}" || cov_ok=1
+  grep -q '^        run: bash scripts/coverage.sh$' "${CI_FILE}" || cov_ok=1
+  grep -q 'bash scripts/coverage.sh --base' "${CI_FILE}" && cov_ok=1
   expect "${cov_ok}" "ci-coverage-base-condition" \
-    "coverage は pull_request のときだけ --base を使い、それ以外は絶対ゲートのみ (NFR2.2)" \
-    "coverage の pull_request 分岐 (--base の有無) が揃っていない"
+    "coverage は全イベントで絶対床のみを実行し --base を渡していない (2026-09-11 裁定)" \
+    "coverage が --base (廃止済みの相対ゲート) を渡している、または絶対床の実行が無い"
 }
 
 # --- 検査: カバレッジゲート (NFR2.4 / NFR2.5) ---------------------------------
@@ -312,10 +312,11 @@ check_coverage_script() {
   require_file "${COVERAGE_FILE}" \
     coverage-tolerance coverage-ignore-regex coverage-proptest-seed || return 0
 
-  if grep -Fxq "TOLERANCE=${EXPECTED_TOLERANCE}" "${COVERAGE_FILE}"; then
-    pass "coverage-tolerance" "TOLERANCE=${EXPECTED_TOLERANCE} に引き締められている (NFR2.4)"
+  # 相対ゲート廃止後は TOLERANCE を持たず、--base を明示的に拒む (2026-09-11 裁定)。
+  if ! grep -Eq '^TOLERANCE=' "${COVERAGE_FILE}" && grep -q -e '--base)' "${COVERAGE_FILE}"; then
+    pass "coverage-tolerance" "相対ゲート (TOLERANCE / --base) が廃止され、--base は拒否される (2026-09-11 裁定)"
   else
-    fail "coverage-tolerance" "TOLERANCE=${EXPECTED_TOLERANCE} でない (NFR2.4で確定した許容差)"
+    fail "coverage-tolerance" "相対ゲートの名残 (TOLERANCE 定義) がある、または --base の拒否が無い"
   fi
 
   # 除外は「--ignore-filename-regex を cargo llvm-cov に渡している」ことと

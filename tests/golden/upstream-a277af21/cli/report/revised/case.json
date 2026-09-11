@@ -1,0 +1,13 @@
+{
+  "id": "cli/report/revised",
+  "family": "cli",
+  "verb": "report",
+  "case": "revised",
+  "description": "差し戻しを受けて直したことを報告し、ゲートを開き直す",
+  "stdout_kind": "json",
+  "provenance": {
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "captured_at": "2026-09-08T00:27:03Z",
+    "command": "bash scripts/goldens/recapture-cli.sh"
+  }
+}

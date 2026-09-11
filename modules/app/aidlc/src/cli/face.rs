@@ -3,6 +3,10 @@
 /// 起動名が指すツール面。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Face {
+    /// 本家aidlc-jumpのresolve/execute面。
+    Jump,
+    /// テスト契約と計画承認の入口。
+    TestingPosture,
     /// `aidlc-orchestrate` / 素の `aidlc`。
     Orchestrate,
     /// `aidlc-utility`。
@@ -15,6 +19,8 @@ pub enum Face {
     /// `aidlc-bolt`（Construction の Bolt 面 — b50 で `set-autonomy` 動詞だけが
     /// 配線されている）。
     Bolt,
+    /// `aidlc-learnings`（§13 の学びの儀式 — `surface` と `persist`）。
+    Learnings,
 }
 
 impl Face {
@@ -27,10 +33,13 @@ impl Face {
         // Windows の `.exe` 接尾辞を落としてから比べる。
         let name = name.strip_suffix(".exe").unwrap_or(name);
         match name {
+            "aidlc-jump" => Face::Jump,
+            "aidlc-testing-posture" => Face::TestingPosture,
             "aidlc-utility" => Face::Utility,
             "aidlc-log" => Face::Log,
             "aidlc-state" => Face::State,
             "aidlc-bolt" => Face::Bolt,
+            "aidlc-learnings" => Face::Learnings,
             _ => Face::Orchestrate,
         }
     }
@@ -54,6 +63,9 @@ mod tests {
         assert_eq!(Face::of("aidlc-bolt"), Face::Bolt);
         assert_eq!(Face::of("/usr/local/bin/aidlc-bolt"), Face::Bolt);
         assert_eq!(Face::of("aidlc-bolt.exe"), Face::Bolt);
+        assert_eq!(Face::of("aidlc-learnings"), Face::Learnings);
+        assert_eq!(Face::of("/usr/local/bin/aidlc-learnings"), Face::Learnings);
+        assert_eq!(Face::of("aidlc-learnings.exe"), Face::Learnings);
         assert_eq!(Face::of("aidlc-orchestrate"), Face::Orchestrate);
         assert_eq!(Face::of("aidlc"), Face::Orchestrate);
         // 未知の名前はエンジンに倒す（配布物の既定の顔）。
