@@ -3738,7 +3738,12 @@ async fn a_stop_allows_the_turn_when_the_runtime_lock_is_unavailable() {
     assert!(output.stdout.is_empty(), "{output:?}");
     drop(held);
     assert!(
-        drops(&workspace).contains("exclusive file lock timed out"),
+        // ロック競合の診断文言は OS で異なる（macOS: 1 秒待って timed out、Linux: 即時 busy）。
+        {
+            let d = drops(&workspace);
+            d.contains("exclusive file lock timed out")
+                || d.contains("Active-directive coordination is busy")
+        },
         "{}",
         drops(&workspace)
     );
