@@ -15,7 +15,9 @@ export function snapshot(root: string): Record<string, string | null> {
   function visit(dir: string) {
     for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name === ".git") continue;
-      if (relative(root, dir).startsWith("aidlc/.capture-home") && ["Library", ".cache"].includes(entry.name)) continue;
+      // 採取用 HOME の下に bun / OS が作るキャッシュは観測でない（Linux の bun は
+      // `~/.bun/install/cache` に `.pile` を置き、macOS は `~/Library/Caches` に置く）。
+      if (relative(root, dir).startsWith("aidlc/.capture-home") && ["Library", ".cache", ".bun"].includes(entry.name)) continue;
       const path = join(dir, entry.name);
       if (entry.isDirectory()) visit(path);
       else if (entry.isFile()) {
