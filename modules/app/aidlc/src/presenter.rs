@@ -28,17 +28,11 @@
 //! 挿入順であって、契約として固定されたものではない。ここでは
 //! `aidlc-directive.ts` の interface 宣言順に合わせてある。
 //!
-//! # ゴールデンとの突き合わせ（b44 で配線した）
+//! # ゴールデンとの突き合わせ
 //!
-//! CLI 面のゴールデンは `tests/golden/upstream-3c3146cf/cli/` に 28 ケース採取済みで、
-//! `modules/app/aidlc/tests/cli_golden_test.rs` が突き合わせる。**バイト一致で固定できるのは
-//! 逐語文言だけの directive**（`continue/invalid-token`）で、`load-steering` と `run-stage` は
-//! **キー集合**を固定する（中身は採取時のワークスペースの memory 層と配置に依存するため）。
-//! どのケースが駆動できないか（逸脱台帳 #1 のコマンド綴り・vendored されていない scope
-//! identity・state なし群）はそのテストのモジュール doc に列挙してある。
-//!
-//! 既知の欠落 2 つ — upstream の `run-stage` が載せる `conductor_persona` と `narration` を
-//! こちらは載せない（b44 以前から。同テストが差を明示的に固定している）。
+//! `cli_golden_test.rs` は固定本家2.7.1の不正continue・parkを公開JSON全文で比較する。
+//! load-steering/run-stageの比較は合成グラフによるキー集合とpersona本文に限られる。
+//! 全入力・全公開面の互換検証は、実CLIを使う別の契約テストが担う。
 
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 use core_query_interface_adapter::mint_continue_token;
@@ -106,8 +100,11 @@ impl Presenter {
             Directive::LoadSteering(load) => self.fill_load_steering(&mut object, load),
             Directive::RunStage(run) => fill_run_stage(&mut object, run),
             Directive::Ask(ask) => fill_ask(&mut object, ask),
-            Directive::Print { message } => {
+            Directive::Print { message, narration } => {
                 object.insert("message", text(message.clone()));
+                if let Some(narration) = narration {
+                    object.insert("narration", text(narration.clone()));
+                }
             }
             Directive::Error { message } => {
                 object.insert("message", text(message.clone()));
@@ -120,6 +117,7 @@ impl Presenter {
             Directive::Parked { stage, message } => {
                 object.insert("reason", text(message.clone()));
                 object.insert("stage", text(stage.as_str()));
+                object.insert("narration", text("Pausing here with everything saved. Run `/aidlc --resume` when you want to pick it back up."));
             }
         }
         object
@@ -149,9 +147,6 @@ impl Presenter {
 }
 
 fn fill_run_stage(object: &mut ObjectMembers, run: &RunStageDirective) {
-    if let Some(narration) = run.narration() {
-        object.insert("narration", text(narration));
-    }
     object.insert("stage", text(run.stage().as_str()));
     object.insert("phase", text(run.phase().as_str()));
     object.insert("lead_agent", text(run.lead_agent()));
@@ -169,6 +164,15 @@ fn fill_run_stage(object: &mut ObjectMembers, run: &RunStageDirective) {
     object.insert("rules_in_context", texts(run.rules_in_context()));
     object.insert("sensors_applicable", texts(run.sensors_applicable()));
     object.insert("stage_file", text(run.stage_file()));
+    if let Some(pipeline) = run.pipeline() {
+        let mut value = ObjectMembers::new();
+        value.insert("links", texts(pipeline.links()));
+        value.insert("completed", texts(pipeline.completed()));
+        object.insert("pipeline", JsonValue::Object(value));
+    }
+    if let Some(next) = run.next_stage() {
+        object.insert("next_stage", text(next));
+    }
     if let Some(reviewer) = run.reviewer() {
         object.insert("reviewer", text(reviewer));
     }
@@ -181,11 +185,14 @@ fn fill_run_stage(object: &mut ObjectMembers, run: &RunStageDirective) {
     if !run.protocol_modules().is_empty() {
         object.insert("protocol_modules", texts(run.protocol_modules()));
     }
-    if let Some(next) = run.next_stage() {
-        object.insert("next_stage", text(next));
-    }
     if let Some(unit) = run.unit() {
         object.insert("unit", text(unit.name().as_str()));
+    }
+    if let Some(persona) = run.conductor_persona() {
+        object.insert("conductor_persona", text(persona));
+    }
+    if let Some(narration) = run.narration() {
+        object.insert("narration", text(narration));
     }
 }
 
@@ -412,6 +419,7 @@ mod tests {
     fn a_print_directive_carries_its_message_verbatim() {
         let value = rendered(&Directive::Print {
             message: "Run `aidlc-utility intent-create --scope bugfix`.".to_string(),
+            narration: None,
         });
         assert_eq!(string_of(&value, "kind"), "print");
         assert_eq!(
@@ -492,7 +500,10 @@ mod tests {
     fn an_oversize_directive_is_refused_rather_than_half_emitted() {
         let huge = "x".repeat(DIRECTIVE_MAX_BYTES + 1);
         let error = presenter()
-            .render(&Directive::Print { message: huge })
+            .render(&Directive::Print {
+                message: huge,
+                narration: None,
+            })
             .expect_err("上限超過は拒否される");
         assert!(error.bytes() > DIRECTIVE_MAX_BYTES);
     }
@@ -504,12 +515,16 @@ mod tests {
         let envelope = presenter()
             .render(&Directive::Print {
                 message: String::new(),
+                narration: None,
             })
             .expect("空メッセージは描ける")
             .len();
         let message = "x".repeat(DIRECTIVE_MAX_BYTES - envelope);
         let line = presenter()
-            .render(&Directive::Print { message })
+            .render(&Directive::Print {
+                message,
+                narration: None,
+            })
             .expect("ちょうど上限なら描ける");
         assert_eq!(line.len(), DIRECTIVE_MAX_BYTES);
     }

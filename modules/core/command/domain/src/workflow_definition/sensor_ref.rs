@@ -9,6 +9,9 @@ pub struct SensorRef {
     path: String,
     /// capability glob の逐語コピー (欠損しうる)。
     matches: Option<String>,
+    fire_on: Option<String>,
+    default_severity: Option<String>,
+    category: Option<String>,
 }
 
 impl SensorRef {
@@ -18,12 +21,36 @@ impl SensorRef {
         id: impl Into<String>,
         path: impl Into<String>,
         matches: Option<String>,
+        fire_on: Option<String>,
+        default_severity: Option<String>,
+        category: Option<String>,
     ) -> SensorRef {
         SensorRef {
             id: id.into(),
             path: path.into(),
             matches,
+            fire_on,
+            default_severity,
+            category,
         }
+    }
+
+    /// 配布資産が指定する発火時機。実行機能はここには持たない。
+    #[must_use]
+    pub fn fire_on(&self) -> Option<&str> {
+        self.fire_on.as_deref()
+    }
+
+    /// 配布資産が指定する既定の重要度。
+    #[must_use]
+    pub fn default_severity(&self) -> Option<&str> {
+        self.default_severity.as_deref()
+    }
+
+    /// 配布資産が指定する分類。
+    #[must_use]
+    pub fn category(&self) -> Option<&str> {
+        self.category.as_deref()
     }
 
     /// センサー id。directive 射影 (`StageNode::sensor_ids`) が残すのはこの欄だけ。

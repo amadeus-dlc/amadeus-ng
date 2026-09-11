@@ -21,6 +21,11 @@ use super::intent_event_id_error::IntentEventIdError;
 pub struct IntentEventId(String);
 
 impl IntentEventId {
+    // 呼出元はUUIDv7の検査済み入力、またはUUIDv7採番結果に限る。
+    fn of_uuid(uuid: Uuid) -> Self {
+        Self(uuid.as_hyphenated().to_string())
+    }
+
     /// 前後の空白を落としてから UUIDv7 の正準表記として検証する。
     ///
     /// # Errors
@@ -37,7 +42,7 @@ impl IntentEventId {
         {
             return Err(IntentEventIdError::NotCanonicalUuidV7);
         }
-        Ok(IntentEventId(trimmed.to_string()))
+        Ok(Self::of_uuid(uuid))
     }
 
     /// 新しい識別子を採番する (UUIDv7 — 時刻順に単調な乱数)。
@@ -46,7 +51,7 @@ impl IntentEventId {
         // `Uuid::now_v7` は小文字の正準表記を生むので、この値は必ず `parse` を通る。
         // 採番をドメインに置くのは「イベント id は識別だけで、投影・ITF の答えに影響
         // しない」というオーナー裁定の例外である (`aggregate-commands.md` 2026-09-02)。
-        IntentEventId(Uuid::now_v7().as_hyphenated().to_string())
+        Self::of_uuid(Uuid::now_v7())
     }
 
     /// 生の識別子文字列 (trim 済み)。

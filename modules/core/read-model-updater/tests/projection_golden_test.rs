@@ -5,7 +5,7 @@
 //!
 //! 表示属性（ステージ番号・表題・担当エージェント）は `Started` が運ぶ（オーナー裁定
 //! 2026-08-29）。テストではその値を手で書かず、**upstream の出荷グラフそのもの**
-//! （`tests/golden/upstream-3c3146cf/stage-graph.json` の 33 ノード）と
+//! （`tests/golden/upstream-a277af21/data/stage-graph.json` の 33 ノード）と
 //! スコープグリッド（`scope-grid.json` の classic 列）から組む。手写しの値で合わせにいくと
 //! 「テストに合わせた実装」になってしまうためである。
 //!
@@ -28,6 +28,9 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
+
+#[path = "../../../../tests/support/native_audit_scope.rs"]
+mod native_audit_scope;
 
 use std::path::{Path, PathBuf};
 
@@ -75,14 +78,16 @@ const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 /// ゴールデンのフィクスチャが使うスコープ。
 const SCOPE: &str = "classic";
 
-/// 同フィクスチャの人間要求（`cli/intent-create` の実バイト）。
-const REQUEST: &str = "/aidlc Build a small ordering service";
+/// 同フィクスチャの人間要求（`cli/intent-create/classic-scope/argv` の `--arguments` 逐語。監査の
+/// `Request` 欄は投影が `/aidlc ` を前置する — upstream `aidlc-utility.ts:5550` @a277af21）。
+const REQUEST: &str = "Build a small ordering service";
 
-/// グリッド上 EXECUTE だが CONDITIONAL であり、greenfield では畳まれるステージ。
+/// グリッド上 EXECUTE だが CONDITIONAL であり、greenfield では畳まれるステージ
+/// (upstream `intent-create` の greenfield 調整 — `aidlc-utility.ts:5784-5793` @a277af21)。
 const CONDITIONAL_ON_BROWNFIELD: &str = "reverse-engineering";
 
 fn golden_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/upstream-3c3146cf")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/upstream-a277af21")
 }
 
 fn golden(case: &str) -> PathBuf {
@@ -113,11 +118,11 @@ fn entry(event: IntentExecutionEvent) -> JournalEntry {
 /// 実データ）。計画・走査結果の正本は intent 側で、`Started` は識別子だけを運ぶ (issue #56)。
 fn genesis_intent() -> Intent {
     let nodes: Vec<serde_json::Value> = serde_json::from_str(
-        &std::fs::read_to_string(golden_root().join("stage-graph.json")).expect("stage-graph"),
+        &std::fs::read_to_string(golden_root().join("data/stage-graph.json")).expect("stage-graph"),
     )
     .expect("stage-graph は JSON");
     let grid: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(golden_root().join("scope-grid.json")).expect("scope-grid"),
+        &std::fs::read_to_string(golden_root().join("data/scope-grid.json")).expect("scope-grid"),
     )
     .expect("scope-grid は JSON");
     let plan_of = &grid[SCOPE]["stages"];
@@ -126,12 +131,11 @@ fn genesis_intent() -> Intent {
         .iter()
         .map(|node| {
             let name = node["slug"].as_str().expect("slug");
-            let executes =
-                plan_of[name].as_str() == Some("EXECUTE") && name != CONDITIONAL_ON_BROWNFIELD;
-            StageEntry::new(
+            let grid_executes = plan_of[name].as_str() == Some("EXECUTE");
+            let entry = StageEntry::new(
                 slug(name),
                 PhaseId::parse(node["phase"].as_str().expect("phase")).expect("フェーズ名"),
-                if executes {
+                if grid_executes {
                     PlanAction::Execute
                 } else {
                     PlanAction::Skip
@@ -143,7 +147,13 @@ fn genesis_intent() -> Intent {
                     node["lead_agent"].as_str().expect("lead_agent"),
                 )
                 .expect("出荷グラフの表示属性は単一行"),
-            )
+            );
+            // 採取時のワークスペースは greenfield なので、ドメインと同じ調整で畳む。
+            if grid_executes && name == CONDITIONAL_ON_BROWNFIELD {
+                entry.adjusted_for_greenfield()
+            } else {
+                entry
+            }
         })
         .collect();
 
@@ -153,7 +163,10 @@ fn genesis_intent() -> Intent {
             IntentId::parse(INTENT).expect("UUIDv7"),
             WorkflowDefinitionId::parse("claude").expect("定義 id"),
             DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-            StartRequest::new(SCOPE, REQUEST),
+            StartRequest::new(SCOPE, REQUEST).with_source_baseline(
+                core_command_domain::orchestration::SourceBaseline::new(Some(String::new()))
+                    .unwrap(),
+            ),
             StageEntries::new(stages).expect("出荷グラフの計画は不変条件を満たす"),
             WorkspaceScan::new(
                 BrownfieldGreenfield::Greenfield,
@@ -238,7 +251,8 @@ fn assert_case(case: &str, event: IntentExecutionEvent) {
 /// どうかで検証される。
 fn assert_case_with_context(case: &str, event: IntentExecutionEvent, context: &str) {
     let dir = golden(case);
-    let expected_audit = std::fs::read_to_string(dir.join("audit.md")).expect("audit.md");
+    let raw_audit = std::fs::read_to_string(dir.join("audit.md")).expect("audit.md");
+    let expected_audit = native_audit_scope::expected_native_audit(&raw_audit);
     let diff = std::fs::read_to_string(dir.join("state.diff")).expect("state.diff");
     let (before, after) = before_and_after(&diff);
     let before = format!("{context}{before}");
@@ -327,6 +341,38 @@ fn revising_a_stage_re_enters_the_gate_with_the_verbatim_details() {
     );
 }
 
+/// 投影の入力には採取済みの検証根拠そのものを渡す。ここで確認するのは
+/// STAGE_COMPLETEDの逐語・欄順であり、根拠の採取はappの固定22観測で別途検査する。
+fn approved_observation(case: &str, stage: &str) -> IntentExecutionEvent {
+    use core_command_domain::orchestration::{
+        ReportId, ReportResult, ReportTransition, Reported, StageValidation, TransitionStep,
+        TransitionSteps,
+    };
+    let audit = std::fs::read_to_string(golden(case).join("audit.md")).unwrap();
+    let basis = audit
+        .lines()
+        .find_map(|line| line.strip_prefix("**Validation Basis**: "))
+        .unwrap();
+    IntentExecutionEvent::Reported(
+        Reported::new(
+            event_id(),
+            execution_id(),
+            ReportId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0003").unwrap(),
+            ReportResult::Committed {
+                stage: slug(stage),
+                scope: SCOPE.into(),
+                steps: TransitionSteps::new(vec![TransitionStep::Approve]).unwrap(),
+                transition: ReportTransition::GateApproved {
+                    user_input: Some("A".into()),
+                },
+            },
+            Some(StageValidation::Basis(basis.into())),
+            None,
+        )
+        .unwrap(),
+    )
+}
+
 #[test]
 fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
     // `- **Completed**: 3 → 4` はチェックボックスの数え直しである。既に完了している
@@ -334,12 +380,7 @@ fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
     // ハンクに写っていないので補う（補い方が正しければ 4 になる — それが検証になる）。
     assert_case_with_context(
         "report/approved",
-        IntentExecutionEvent::GateApproved(GateApproved::new(
-            event_id(),
-            execution_id(),
-            slug("practices-discovery"),
-            Some("A".to_string()),
-        )),
+        approved_observation("report/approved", "practices-discovery"),
         concat!(
             "### INITIALIZATION PHASE\n",
             "- [x] workspace-scaffold — EXECUTE\n",
@@ -349,7 +390,7 @@ fn approving_a_gate_completes_the_stage_and_starts_the_next_one() {
     );
 }
 
-// `tests/golden/upstream-3c3146cf/cli/report/completed-ungated/` には参照テストが無い —
+// `tests/golden/upstream-a277af21/cli/report/completed-ungated/` には参照テストが無い —
 // 非ゲート完了の投影 (`Stage <表示名> completed` の逐語) は b42 で撤去した (#85 = A)。
 // フィクスチャ自体は upstream 実バイトの証拠なので残してある。
 
@@ -376,6 +417,8 @@ fn jumping_forward_skips_the_source_and_opens_the_target() {
             event_id(),
             execution_id(),
             slug("domain-design"),
+            core_command_domain::orchestration::JumpDirection::Forward,
+            Some(jump_observation()),
         )),
         concat!(
             "### INITIALIZATION PHASE\n",
@@ -398,6 +441,8 @@ fn jumping_backward_resets_the_downstream_and_hands_the_phase_row_back() {
             event_id(),
             execution_id(),
             slug("workspace-scaffold"),
+            core_command_domain::orchestration::JumpDirection::Backward,
+            Some(jump_observation()),
         )),
     );
 }
@@ -415,6 +460,8 @@ fn jumping_forward_across_a_phase_verifies_the_one_it_leaves() {
             event_id(),
             execution_id(),
             slug("contract-design"),
+            core_command_domain::orchestration::JumpDirection::Forward,
+            Some(jump_observation()),
         )),
     );
 }
@@ -427,12 +474,7 @@ fn approving_the_last_stage_of_a_phase_counts_the_checkboxes_not_the_plan() {
     // ハンクの外なので補う。
     assert_case_with_context(
         "report/approved-across-phases",
-        IntentExecutionEvent::GateApproved(GateApproved::new(
-            event_id(),
-            execution_id(),
-            slug("delivery-planning"),
-            Some("A".to_string()),
-        )),
+        approved_observation("report/approved-across-phases", "delivery-planning"),
         "- [x] workspace-scaffold — EXECUTE\n",
     );
 }
@@ -573,7 +615,34 @@ fn a_stage_outside_the_plan_is_refused_rather_than_drawn_wrong() {
 fn the_golden_corpus_is_where_the_test_thinks_it_is() {
     let root: &Path = &golden("report/approved");
     assert!(root.join("audit.md").exists(), "実際: {}", root.display());
+    let metadata: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("case.json")).expect("採取来歴"))
+            .expect("来歴JSON");
+    assert_eq!(
+        metadata["provenance"]["commit"].as_str(),
+        Some("a277af218f0df7f325d3b8be7b6d90fce2c5bd40")
+    );
     // 出荷グラフ 33 ノードのうち classic の in-scope は 25（`- **Total Stages**: 25`）。
     assert_eq!(plan().stages().len(), 33);
     assert_eq!(plan().in_scope_count(), 25);
+}
+
+/// capture-cli.ts:412–414がjump前に作った実在成果物の観測材料。
+/// 監査の期待配列からは読まない。対象workspaceは同採取の正規化済み配置。
+fn jump_observation() -> core_command_domain::orchestration::JumpObservation {
+    use core_command_domain::orchestration::{JumpArtifact, JumpObservation, SourceBaseline};
+    let artifacts = ["team-practices.md", "discovered-rules.md", "evidence.md"]
+        .into_iter()
+        .map(|name| {
+            JumpArtifact::new(
+                slug("practices-discovery"),
+                format!(
+                    "aidlc/spaces/default/intents/<TS>-golden/inception/practices-discovery/{name}"
+                ),
+                true,
+                false,
+            )
+        })
+        .collect();
+    JumpObservation::new(SourceBaseline::new(Some(String::new())).unwrap(), artifacts)
 }

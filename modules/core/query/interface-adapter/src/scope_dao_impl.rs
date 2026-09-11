@@ -8,7 +8,9 @@ use super::read_model_store::ReadModelStore;
 
 /// 自然キー (`definition_id`, `scope` — UNIQUE 索引 `read_definition_scope_key`) の 1 行引当。
 const SELECT_SCOPE: &str = "SELECT scope, depth, keywords, skeleton, review_cap, \
-freeform_default, has_grid_column, cost_total, cost_execute, cost_gates, cost_per_unit_stages \
+freeform_default, has_grid_column, cost_total, cost_execute, cost_gates, cost_per_unit_stages, \
+greenfield_cost_total, greenfield_cost_execute, greenfield_cost_gates, \
+greenfield_cost_per_unit_stages \
 FROM read_definition_scope WHERE definition_id = ?1 AND scope = ?2";
 
 /// 定義 1 本の scope 列を綴り順で引く (索引列 `definition_id` の残余なし引当)。
@@ -16,7 +18,9 @@ FROM read_definition_scope WHERE definition_id = ?1 AND scope = ?2";
 /// 引く表は [`SELECT_SCOPE`] と同じ 1 表である。`ORDER BY` を置くのは、行が位置の列を
 /// 持たないため並びを決めるものが他に無いからであり、選別ではない。
 const SELECT_SCOPES: &str = "SELECT scope, depth, keywords, skeleton, review_cap, \
-freeform_default, has_grid_column, cost_total, cost_execute, cost_gates, cost_per_unit_stages \
+freeform_default, has_grid_column, cost_total, cost_execute, cost_gates, cost_per_unit_stages, \
+greenfield_cost_total, greenfield_cost_execute, greenfield_cost_gates, \
+greenfield_cost_per_unit_stages \
 FROM read_definition_scope WHERE definition_id = ?1 ORDER BY scope";
 
 /// scope カタログ 1 列を返す実装。
@@ -54,6 +58,10 @@ fn view_of(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScopeView> {
         row.get(8)?,
         row.get(9)?,
         row.get(10)?,
+        row.get(11)?,
+        row.get(12)?,
+        row.get(13)?,
+        row.get(14)?,
     ))
 }
 

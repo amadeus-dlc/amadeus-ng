@@ -12,12 +12,22 @@ use super::promoted_sections_error::PromotedSectionsError;
 /// 見出しは一意である — 同じ節を 2 回書けば後勝ちで本文が消え、監査行の
 /// `Sections Written` からどちらが書かれたか追えなくなるので、構築時に拒否する。
 /// 順序は upstream の `sectionsWritten` の綴り順そのものなので並べ替えない。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromotedSections {
     items: Vec<PromotedSection>,
 }
 
+impl Default for PromotedSections {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl PromotedSections {
+    // 検査済みの列・集合とその部分列は、この構築口で全状態を初期化する。
+    const fn of_items(items: Vec<PromotedSection>) -> Self {
+        Self { items }
+    }
+
     /// 書き込み順の節から列を組む (**この型の唯一の構築経路**)。
     ///
     /// # Errors
@@ -32,7 +42,7 @@ impl PromotedSections {
                 });
             }
         }
-        Ok(PromotedSections { items })
+        Ok(PromotedSections::of_items(items))
     }
 
     /// 書き込み順に並んだ見出し名の列 (`## ` を含まない)。
@@ -74,14 +84,13 @@ impl PromotedSections {
     /// 条件に一致する節を書き込み順のまま残す。見出しは一意のままなので不変条件は保たれる。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(&PromotedSection) -> bool) -> PromotedSections {
-        PromotedSections {
-            items: self
-                .items
+        PromotedSections::of_items(
+            self.items
                 .iter()
                 .filter(|section| predicate(section))
                 .cloned()
                 .collect(),
-        }
+        )
     }
 }
 

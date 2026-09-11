@@ -190,6 +190,8 @@ impl RunStageDirectiveBuilder {
             reviewer_max_iterations: self.reviewer_max_iterations,
             protocol_modules: self.protocol_modules,
             narration: self.narration,
+            conductor_persona: None,
+            pipeline: None,
             single: self.single,
             unit: self.unit,
             rules_in_context: self.rules_in_context,

@@ -1,6 +1,6 @@
 //! `ReviewPolicy` — 1 ステージ 1 実行分のレビュー方針（定義から解決した静的材料）。
 
-use crate::orchestration::ReviewVerdict;
+use crate::orchestration::{ArtifactTarget, ReviewVerdict};
 
 use super::review_cap_value::ReviewCapValue;
 
@@ -59,11 +59,40 @@ impl ReviewPolicy {
         self.max_iterations
     }
 
-    /// per-unit ステージか（`for_each: unit-of-work`）。**本 build では未配線** —
-    /// `--unit` の受領証は繰延であり、この値は材料として運ぶだけである（設計 §1 の繰延）。
+    /// per-unit ステージか（`for_each: unit-of-work`）。
+    ///
+    /// 受領証の**射程**がこの値で決まる — per-unit ステージの受領証は Unit ごとなので、
+    /// Unit 名の取れない書込みを覆わない（[`ReviewPolicy::receipt_covers`]）。`--unit` を
+    /// 伴う受領証の**記録**は本 build にまだ無い（`aidlc log review --unit` は拒否する）ので、
+    /// per-unit ステージのステージ水準の書込みは凍結されない — upstream の観測と同じである。
     #[must_use]
     pub const fn per_unit(&self) -> bool {
         self.per_unit
+    }
+
+    /// この方針の受領証が、その書込み先を覆うか。
+    ///
+    /// upstream の `judgeFreeze` は `for_each: unit-of-work` の枝で `unitVerdicts` /
+    /// `unitPending` **だけ**を見て `stageVerdict` を読まない（ピン `a277af21`
+    /// `hooks/aidlc-review-freeze.ts:147-193`）。つまり per-unit ステージの受領証は Unit ごと
+    /// であり、Unit 名の取れない書込み（ゼロ Unit の実行がステージ直下へ置く成果物）は
+    /// 覆わない。反復軸を持たないステージでは、宣言成果物のすべてを 1 つの受領証が覆う。
+    ///
+    /// 宣言外（[`ArtifactTarget::Foreign`]）はそもそも受領証の対象ではない。
+    ///
+    /// # Unit 宛先は「その Unit の受領証」ではなく試行で決まる
+    ///
+    /// upstream は Unit 宛先の凍結に `unitVerdicts.has(targetUnit)` を要求する。本 build に
+    /// Unit 鍵の受領証は無い（`aidlc log review --unit` は未配線）ので、ステージ 1 つの試行を
+    /// その代わりに使う。したがってステージ水準の受領証しか無いときの Unit 宛先は、upstream が
+    /// 通すのに対し本 build は凍結する — **本 build のほうが厳しい**既知の差である。
+    #[must_use]
+    pub const fn receipt_covers(&self, target: &ArtifactTarget) -> bool {
+        match target {
+            ArtifactTarget::Foreign => false,
+            ArtifactTarget::Unit(_) => true,
+            ArtifactTarget::Stage => !self.per_unit,
+        }
     }
 
     /// この試行で許される依頼の回数。
@@ -159,6 +188,41 @@ mod tests {
         assert!(!adversarial.is_terminal(ReviewVerdict::NotReady, 1));
         assert!(adversarial.is_terminal(ReviewVerdict::NotReady, 2));
         assert!(adversarial.is_terminal(ReviewVerdict::NotReady, 3));
+    }
+
+    /// 反復軸を持たないステージの受領証は、宣言成果物のすべてを覆う。
+    #[test]
+    fn a_stage_level_receipt_covers_every_declared_target() {
+        let stage_level = policy(ReviewCapValue::Adversarial, 2);
+        assert!(!stage_level.per_unit());
+        assert!(stage_level.receipt_covers(&ArtifactTarget::Stage));
+        assert!(!stage_level.receipt_covers(&ArtifactTarget::Foreign));
+    }
+
+    /// per-unit ステージの受領証は Unit ごとである — ステージ水準の宛先は覆わない。
+    ///
+    /// upstream `judgeFreeze` の `for_each: unit-of-work` 枝が `stageVerdict` を読まない
+    /// ことの写しである（`hooks/aidlc-review-freeze.ts:147-193`）。
+    #[test]
+    fn a_per_unit_receipt_covers_only_a_unit_scoped_target() {
+        let per_unit = ReviewPolicy::new(
+            "aidlc-architecture-reviewer-agent",
+            ReviewCapValue::Adversarial,
+            2,
+            true,
+        );
+        assert!(per_unit.per_unit());
+        assert!(
+            !per_unit.receipt_covers(&ArtifactTarget::Stage),
+            "ゼロ Unit の実行がステージ直下へ置く成果物は覆わない"
+        );
+        assert!(
+            per_unit.receipt_covers(&ArtifactTarget::Unit(
+                crate::orchestration::UnitName::parse("u2-workflow-authority").unwrap()
+            )),
+            "Unit を名指した書込みは覆う"
+        );
+        assert!(!per_unit.receipt_covers(&ArtifactTarget::Foreign));
     }
 
     #[test]

@@ -55,6 +55,8 @@ enum ContinueTokenGateDto {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ContinueTokenPayloadDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    t: Option<String>,
     v: u32,
     s: String,
     c: String,
@@ -121,6 +123,9 @@ fn query_gate(gate: &ContinueTokenGateDto) -> Result<GateField, InvalidContinueT
 
 fn to_payload_dto(token: &ContinueToken) -> ContinueTokenPayloadDto {
     ContinueTokenPayloadDto {
+        t: token
+            .state_text_digest()
+            .map(|digest| digest.as_str().to_string()),
         v: token.version().as_u32(),
         s: token.stage().as_str().to_string(),
         c: token.scope().as_str().to_string(),
@@ -194,7 +199,13 @@ fn query_token(payload: &ContinueTokenPayloadDto) -> Result<ContinueToken, Inval
     if payload.x {
         builder = builder.with_single();
     }
-    Ok(builder.build())
+    let mut token = builder.build();
+    if let Some(raw) = &payload.t {
+        let digest = core_query_use_case::orchestration::StateTextDigest::parse(raw)
+            .ok_or(InvalidContinueToken)?;
+        token = token.with_state_text_digest(digest);
+    }
+    Ok(token)
 }
 
 #[cfg(test)]

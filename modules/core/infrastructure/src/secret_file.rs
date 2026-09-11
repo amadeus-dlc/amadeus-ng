@@ -402,6 +402,27 @@ mod tests {
         assert!(error.to_string().contains("unreadable"), "{error}");
     }
 
+    /// 親の名前が既に**ファイル**に取られていれば、鍵の読取りは不在ではなく `Unreadable`
+    /// で止まる（不在と誤認して鋳造へ進み、親のファイルを壊さない）。
+    #[test]
+    fn a_parent_that_is_a_file_makes_the_secret_unreadable_not_absent() {
+        let dir = tempfile::tempdir().expect("一時ディレクトリ");
+        let parent = dir.path().join("taken");
+        fs::write(&parent, b"not a directory").expect("親の名前を取るファイル");
+
+        let secret = SecretFile::new(parent.join("key"), 32);
+        let error = secret.load_or_mint().expect_err("親を辿れない");
+
+        assert!(
+            matches!(error, SecretFileError::Unreadable { ref path, .. } if path == secret.path()),
+            "{error:?}"
+        );
+        assert_eq!(
+            fs::read(&parent).expect("親のファイルは無傷"),
+            b"not a directory"
+        );
+    }
+
     /// 親ディレクトリが書けなければ鋳造は `Uncreatable` で止まる（黙って諦めない）。
     #[cfg(unix)]
     #[test]

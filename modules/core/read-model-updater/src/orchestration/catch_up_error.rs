@@ -8,6 +8,11 @@ use super::journal_read_error::JournalReadError;
 /// キャッチアップの失敗。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatchUpError {
+    /// 対象別への移行が必要な旧共有投影が公開済み。
+    LegacyProjection {
+        /// 旧投影の識別名。
+        projection: String,
+    },
     /// 計画の前提とファイル内容が一致しない。
     PublicationConflict {
         /// 内容が計画の前提と一致しない対象。
@@ -90,6 +95,10 @@ pub enum CatchUpError {
 impl core::fmt::Display for CatchUpError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            CatchUpError::LegacyProjection { projection } => write!(
+                f,
+                "legacy shared projection requires migration: {projection}"
+            ),
             CatchUpError::PublicationConflict { path } => {
                 write!(f, "publication conflict: {}", path.display())
             }
@@ -137,6 +146,7 @@ impl std::error::Error for CatchUpError {
             CatchUpError::ReadTables(inner) => Some(inner),
             CatchUpError::SteeringPack(inner) => Some(inner),
             CatchUpError::PublicationConflict { .. }
+            | CatchUpError::LegacyProjection { .. }
             | CatchUpError::PublicationIo { .. }
             | CatchUpError::StateFileRead(_)
             | CatchUpError::StateFileWrite(_)

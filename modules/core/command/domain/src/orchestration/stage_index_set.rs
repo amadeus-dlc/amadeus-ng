@@ -15,34 +15,38 @@ use super::stage_index::StageIndex;
 /// 空集合を許し和集合が全域なので、`combine` は空集合を単位元とする可換冪等 Monoid になる
 /// (`coding-rules/first-class-collections.md` § 結合と差集合)。`divide` は結合の逆演算では
 /// なく差集合である。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageIndexSet {
     items: BTreeSet<StageIndex>,
 }
 
+impl Default for StageIndexSet {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl StageIndexSet {
+    // 検査済みの列・集合とその部分列は、この構築口で全状態を初期化する。
+    const fn of_items(items: BTreeSet<StageIndex>) -> Self {
+        Self { items }
+    }
+
     /// 和集合の単位元となる空集合。
     #[must_use]
     pub const fn empty() -> StageIndexSet {
-        StageIndexSet {
-            items: BTreeSet::new(),
-        }
+        StageIndexSet::of_items(BTreeSet::new())
     }
 
     /// 位置 1 つだけを含む集合。
     #[must_use]
     pub fn singleton(stage: StageIndex) -> StageIndexSet {
-        StageIndexSet {
-            items: BTreeSet::from([stage]),
-        }
+        StageIndexSet::of_items(BTreeSet::from([stage]))
     }
 
     /// 位置の並びを集合にする (重複は畳まれ、昇順に整列する)。
     #[must_use]
     pub fn new(stages: impl IntoIterator<Item = StageIndex>) -> StageIndexSet {
-        StageIndexSet {
-            items: stages.into_iter().collect(),
-        }
+        StageIndexSet::of_items(stages.into_iter().collect())
     }
 
     /// 半開区間 `[from, to_exclusive)` の位置集合。前進しない区間は空集合。
@@ -85,30 +89,25 @@ impl StageIndexSet {
     /// 条件に一致する位置の集合 (昇順のまま)。結果は空になり得る。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(StageIndex) -> bool) -> StageIndexSet {
-        StageIndexSet {
-            items: self
-                .items
+        StageIndexSet::of_items(
+            self.items
                 .iter()
                 .filter(|stage| predicate(**stage))
                 .copied()
                 .collect(),
-        }
+        )
     }
 
     /// 両方の位置を含む和集合。元の集合は変更しない。
     #[must_use]
     pub fn combine(&self, other: &StageIndexSet) -> StageIndexSet {
-        StageIndexSet {
-            items: self.items.union(&other.items).copied().collect(),
-        }
+        StageIndexSet::of_items(self.items.union(&other.items).copied().collect())
     }
 
     /// 他方に含まれる位置を除いた差集合。元の集合は変更しない。
     #[must_use]
     pub fn divide(&self, other: &StageIndexSet) -> StageIndexSet {
-        StageIndexSet {
-            items: self.items.difference(&other.items).copied().collect(),
-        }
+        StageIndexSet::of_items(self.items.difference(&other.items).copied().collect())
     }
 }
 

@@ -1,4 +1,4 @@
-//! `StageNode` — コンパイル済み `stage-graph.json` の 1 要素 (`FIELD_ORDER` 28 フィールド) の
+//! `StageNode` — コンパイル済み `stage-graph.json` の 1 要素 (`FIELD_ORDER` 29 フィールド) の
 //! 型付き表現 (レポート §2.2)。
 //!
 //! 形の観測可能契約 (レポート §6.1-3/4/5):
@@ -32,6 +32,9 @@ mod stage_node_builder;
 
 pub use stage_node_builder::StageNodeBuilder;
 
+/// 反復軸の観測値 (upstream `PER_UNIT_FOR_EACH` — Published Language の値、逐語)。
+pub(crate) const PER_UNIT_FOR_EACH: &str = "unit-of-work";
+
 /// コンパイル済みグラフの 1 ノード。フィールドは `FIELD_ORDER` の 28 エントリに 1:1 対応する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageNode {
@@ -54,6 +57,7 @@ pub struct StageNode {
     sensors: Vec<String>,
     scopes: Vec<String>,
     reviewer: Option<String>,
+    review_artifact: Option<String>,
     reviewer_max_iterations: Option<u32>,
     review_class: Option<ReviewClass>,
     summary_confirmation: Option<String>,
@@ -209,6 +213,12 @@ impl StageNode {
         self.reviewer.as_deref()
     }
 
+    /// レビュー本文を追記する成果物の識別子。
+    #[must_use]
+    pub fn review_artifact(&self) -> Option<&str> {
+        self.review_artifact.as_deref()
+    }
+
     /// 正整数。`reviewer` 宣言が前提 (ADR 0001 決定 4 — 整数は整数型で持つ)。
     #[must_use]
     pub const fn reviewer_max_iterations(&self) -> Option<u32> {
@@ -291,6 +301,89 @@ impl StageNode {
             .map(RuleInContext::path)
             .collect()
     }
+
+    // ---- 成果物語彙 (レポート §2.2 — 名前とファイル名は 1:1 ではない) ----
+
+    /// 反復軸が作業単位か (`for_each: unit-of-work`)。
+    #[must_use]
+    pub fn is_per_unit(&self) -> bool {
+        self.for_each.as_deref() == Some(PER_UNIT_FOR_EACH)
+    }
+
+    /// 宣言された成果物のファイル名 (`produces` のみ、宣言順)。
+    #[must_use]
+    pub fn produced_artifact_files(&self) -> Vec<String> {
+        self.produces
+            .iter()
+            .map(|name| artifact_filename(name))
+            .collect()
+    }
+
+    /// レビューが覆う成果物のファイル名 (`produces` ∪ `optional_produces`、宣言順)。
+    ///
+    /// 条件付き成果物も受領証の対象である — upstream の review-freeze は
+    /// `[...produces, ...optional_produces]` を 1 つの列として照合する。
+    #[must_use]
+    pub fn reviewed_artifact_files(&self) -> Vec<String> {
+        self.produces
+            .iter()
+            .chain(self.optional_produces.iter())
+            .map(|name| artifact_filename(name))
+            .collect()
+    }
+
+    /// 書込み先がこのステージのレビュー対象成果物のどれに当たるか。
+    ///
+    /// 照合は接尾辞 `/<slug>/<filename>` の一致である (upstream `producesArtifactFile`)。
+    /// per-unit ステージでは、その手前の `/construction/<unit>` から 1 階層の Unit 名を
+    /// 取り出す。Unit 名が取れない (ステージ直下・入れ子) 場合は
+    /// [`ArtifactTarget::Stage`] — upstream の `null` と同じく「ステージ水準または
+    /// 曖昧」を表す。
+    ///
+    /// `reverse-engineering` の codekb 分岐は写していない — 本グラフでレビュアーを宣言する
+    /// ステージに codekb 出力は無く、凍結の判断に到達しないためである。
+    #[must_use]
+    pub fn reviewed_artifact_target(
+        &self,
+        target: &crate::orchestration::WriteTarget,
+    ) -> crate::orchestration::ArtifactTarget {
+        use crate::orchestration::{ArtifactTarget, UnitName};
+        const UNIT_MARKER: &str = "/construction/";
+        for filename in self.reviewed_artifact_files() {
+            let suffix = format!("/{}/{filename}", self.slug.as_str());
+            let Some(head) = target.without_suffix(&suffix) else {
+                continue;
+            };
+            if !self.is_per_unit() {
+                return ArtifactTarget::Stage;
+            }
+            let Some(marker) = head.rfind(UNIT_MARKER) else {
+                return ArtifactTarget::Stage;
+            };
+            // `rfind` の返す位置と ASCII の目印なので境界は必ず合うが、添字で落とさない。
+            return head
+                .get(marker + UNIT_MARKER.len()..)
+                .and_then(|raw| UnitName::parse(raw).ok())
+                .map_or(ArtifactTarget::Stage, ArtifactTarget::Unit);
+        }
+        ArtifactTarget::Foreign
+    }
+}
+
+/// 成果物の宣言名から物理ファイル名への写像 (upstream `aidlc-artifact-vocabulary.ts`)。
+///
+/// 例外だけを表に持ち、それ以外は `<name>.md` である。既に拡張子を持つ綴りは
+/// そのまま通す — 本リポジトリのコンパイル済みグラフに該当はないが、読取モデル側の
+/// 経路組み立てと同じ扱いにして観測差を作らない。
+fn artifact_filename(name: &str) -> String {
+    if name.ends_with(".md") || name.ends_with(".json") {
+        return name.to_string();
+    }
+    match name {
+        "build-test-results" | "load-test-results" => "test-results.md".to_string(),
+        "traceability" => "traceability.json".to_string(),
+        _ => format!("{name}.md"),
+    }
 }
 
 #[cfg(test)]
@@ -351,6 +444,9 @@ mod tests {
                 "no-todo",
                 ".claude/sensors/no-todo.md",
                 Some("**/*.rs".to_string()),
+                None,
+                None,
+                None,
             )])
             .build();
         // 格納形はオブジェクト配列 (scope / path / matches が生きている)
@@ -459,7 +555,7 @@ mod tests {
                 .sensors_applicable(
                     ids.iter()
                         .map(|id| {
-                            SensorRef::new(id.clone(), format!(".claude/sensors/{id}.md"), None)
+                            SensorRef::new(id.clone(), format!(".claude/sensors/{id}.md"), None, None, None, None)
                         })
                         .collect(),
                 )

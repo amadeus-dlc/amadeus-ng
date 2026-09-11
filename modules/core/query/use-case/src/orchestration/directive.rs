@@ -34,6 +34,10 @@ pub enum Directive {
     Print {
         /// 逐語メッセージ (コマンドの名指しを含む)。
         message: String,
+        /// 人間へ読み上げる 1 行 (upstream `PrintDirective.narration` — 任意)。誕生の print と
+        /// composer ディスパッチだけが持ち、無い print はキーごと描かない
+        /// (`aidlc-orchestrate.ts:1676-1678` @a277af21)。
+        narration: Option<String>,
     },
     /// エラーで停止。`message` はユーザへ逐語で見せる。
     Error {
@@ -108,7 +112,8 @@ mod tests {
         );
         assert_eq!(
             Directive::Print {
-                message: "aidlc-utility status".to_string()
+                message: "aidlc-utility status".to_string(),
+                narration: None,
             }
             .kind(),
             DirectiveKind::Print

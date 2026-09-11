@@ -1,4 +1,4 @@
-//! ドメインイベント 16 変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
+//! ドメインイベント全変種の永続化 DTO — ジャーナル行 `payload` 列のバイト形。
 //!
 //! 外部タグ付き列挙 (`{"Started": { .. }}`)。**変種名・フィールド名・並びが契約**である。
 //!
@@ -6,11 +6,21 @@
 //! 先頭に持つ — ドメインイベントはエンティティの一種だからである (オーナー裁定 2026-09-02)。
 //! `Unparked` はドメインの材料を持たないが識別子は運ぶので、単位変種ではなく構造体である。
 
+use super::answer_recorded_dto::AnswerRecordedDto;
+use super::command_failed_dto::CommandFailedDto;
+use super::decision_recorded_dto::DecisionRecordedDto;
+use super::directive_context_invalidated_dto::DirectiveContextInvalidatedDto;
+use super::directive_issued_dto::DirectiveIssuedDto;
+use super::health_checked_dto::HealthCheckedDto;
+use super::learnings_captured_dto::LearningsCapturedDto;
+use super::memory_journals_observed_dto::MemoryJournalsObservedDto;
+use super::prompt_observed_dto::PromptObservedDto;
+use super::reported_dto::ReportedDto;
 use core_command_domain::orchestration::{
     ArtifactPaths, AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent,
     IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, PracticesAffirmed,
-    Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded,
-    StageEntries, StageEntry, StageRevised, StageSkipped, StageSlugSet, Started, Unparked,
+    Recomposed, SingleStageRunCommitted, SkeletonStanceRecorded, StageEntries, StageEntry,
+    StageRevised, StageSkipped, StageSlugSet, Started, TaskSynchronized, Unparked,
 };
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{PromotedSections, RuleLines};
@@ -19,8 +29,7 @@ use serde::{Deserialize, Serialize};
 use super::autonomy_mode_set_dto::AutonomyModeSetDto;
 use super::dto_decode_error::DtoDecodeError;
 use super::dto_vocabulary::{
-    autonomy_of, autonomy_spelling, review_verdict_of, review_verdict_spelling, skeleton_stance_of,
-    skeleton_stance_spelling,
+    autonomy_of, autonomy_spelling, skeleton_stance_of, skeleton_stance_spelling,
 };
 use super::gate_approved_dto::GateApprovedDto;
 use super::gate_opened_dto::GateOpenedDto;
@@ -37,11 +46,40 @@ use super::skeleton_stance_recorded_dto::SkeletonStanceRecordedDto;
 use super::stage_revised_dto::StageRevisedDto;
 use super::stage_skipped_dto::StageSkippedDto;
 use super::started_dto::StartedDto;
+use super::task_synchronized_dto::TaskSynchronizedDto;
 use super::unparked_dto::UnparkedDto;
 
 /// ジャーナル行 `payload` の形。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IntentExecutionEventDto {
+    /// 単独pipeline開始。
+    SingleStageRunStarted(super::single_stage_run_started_dto::SingleStageRunStartedDto),
+    /// Pipeline link完了の受領。
+    PipelineLinkCompleted(super::pipeline_link_completed_dto::PipelineLinkCompletedDto),
+    /// 指示発行の事実。
+    DirectiveIssued(DirectiveIssuedDto),
+    /// 保存済み指示の文脈失効。
+    DirectiveContextInvalidated(DirectiveContextInvalidatedDto),
+    /// 回答の受理結果。
+    AnswerRecorded(AnswerRecordedDto),
+    /// 保護された計画回答の監査記録。
+    PlanAnswerLogged(Box<super::plan_answer_logged_dto::PlanAnswerLoggedDto>),
+    /// フックの応答観測。
+    PromptObserved(PromptObservedDto),
+    /// 質問提示の事実。
+    DecisionRecorded(DecisionRecordedDto),
+    /// コマンド失敗の記録。
+    CommandFailed(CommandFailedDto),
+    /// 作業の診断実施。
+    HealthChecked(HealthCheckedDto),
+    /// runtime-graph の compile が読んだ日誌観測。
+    MemoryJournalsObserved(Box<MemoryJournalsObservedDto>),
+    /// §13 の儀式が確定した学びの書込み。
+    LearningsCaptured(Box<LearningsCapturedDto>),
+    /// TaskUpdate が指した stage への現在位置の同期。
+    TaskSynchronized(TaskSynchronizedDto),
+    /// 報告を受理した事実。
+    Reported(ReportedDto),
     /// 実行の開始 (事実の主体 = intent の識別子だけ — issue #56)。
     Started(StartedDto),
     /// 承認ゲートの開放。
@@ -126,6 +164,50 @@ impl IntentExecutionEventDto {
     #[must_use]
     pub fn of(event: &IntentExecutionEvent) -> IntentExecutionEventDto {
         match event {
+            IntentExecutionEvent::SingleStageRunStarted(e) => Self::SingleStageRunStarted(
+                super::single_stage_run_started_dto::SingleStageRunStartedDto::of(e),
+            ),
+            IntentExecutionEvent::PipelineLinkCompleted(event) => Self::PipelineLinkCompleted(
+                super::pipeline_link_completed_dto::PipelineLinkCompletedDto::of(event),
+            ),
+            IntentExecutionEvent::TaskSynchronized(payload) => {
+                Self::TaskSynchronized(TaskSynchronizedDto {
+                    id: payload.id().as_str().to_string(),
+                    aggregate_id: payload.aggregate_id().as_str().to_string(),
+                    stage: slug_spelling(payload.stage()),
+                })
+            }
+            IntentExecutionEvent::HealthChecked(payload) => {
+                Self::HealthChecked(HealthCheckedDto::of(payload))
+            }
+            IntentExecutionEvent::LearningsCaptured(payload) => {
+                Self::LearningsCaptured(Box::new(LearningsCapturedDto::of(payload)))
+            }
+            IntentExecutionEvent::MemoryJournalsObserved(payload) => {
+                Self::MemoryJournalsObserved(Box::new(MemoryJournalsObservedDto::of(payload)))
+            }
+            IntentExecutionEvent::CommandFailed(payload) => {
+                Self::CommandFailed(CommandFailedDto::of(payload))
+            }
+            IntentExecutionEvent::DecisionRecorded(payload) => {
+                Self::DecisionRecorded(DecisionRecordedDto::of(payload))
+            }
+            IntentExecutionEvent::PromptObserved(payload) => {
+                Self::PromptObserved(PromptObservedDto::of(payload))
+            }
+            IntentExecutionEvent::PlanAnswerLogged(payload) => Self::PlanAnswerLogged(Box::new(
+                super::plan_answer_logged_dto::PlanAnswerLoggedDto::of(payload),
+            )),
+            IntentExecutionEvent::AnswerRecorded(payload) => {
+                Self::AnswerRecorded(AnswerRecordedDto::of(payload))
+            }
+            IntentExecutionEvent::DirectiveContextInvalidated(payload) => {
+                Self::DirectiveContextInvalidated(DirectiveContextInvalidatedDto::of(payload))
+            }
+            IntentExecutionEvent::DirectiveIssued(payload) => {
+                Self::DirectiveIssued(DirectiveIssuedDto::of(payload))
+            }
+            IntentExecutionEvent::Reported(payload) => Self::Reported(ReportedDto::of(payload)),
             IntentExecutionEvent::Started(payload) => {
                 IntentExecutionEventDto::Started(StartedDto {
                     id: payload.id().as_str().to_string(),
@@ -181,11 +263,9 @@ impl IntentExecutionEventDto {
                     reason: payload.reason().to_string(),
                 })
             }
-            IntentExecutionEvent::Jumped(payload) => IntentExecutionEventDto::Jumped(JumpedDto {
-                id: payload.id().as_str().to_string(),
-                aggregate_id: payload.aggregate_id().as_str().to_string(),
-                target: slug_spelling(payload.target()),
-            }),
+            IntentExecutionEvent::Jumped(payload) => {
+                IntentExecutionEventDto::Jumped(JumpedDto::of(payload))
+            }
             IntentExecutionEvent::Parked(payload) => IntentExecutionEventDto::Parked(ParkedDto {
                 id: payload.id().as_str().to_string(),
                 aggregate_id: payload.aggregate_id().as_str().to_string(),
@@ -227,24 +307,10 @@ impl IntentExecutionEventDto {
                 })
             }
             IntentExecutionEvent::ReviewRequested(payload) => {
-                IntentExecutionEventDto::ReviewRequested(ReviewRequestedDto {
-                    id: payload.id().as_str().to_string(),
-                    aggregate_id: payload.aggregate_id().as_str().to_string(),
-                    stage: slug_spelling(payload.stage()),
-                    reviewer: payload.reviewer().to_string(),
-                    iteration: payload.iteration(),
-                    retry: payload.is_retry(),
-                })
+                Self::ReviewRequested(ReviewRequestedDto::of(payload))
             }
             IntentExecutionEvent::ReviewCompleted(payload) => {
-                IntentExecutionEventDto::ReviewCompleted(ReviewCompletedDto {
-                    id: payload.id().as_str().to_string(),
-                    aggregate_id: payload.aggregate_id().as_str().to_string(),
-                    stage: slug_spelling(payload.stage()),
-                    reviewer: payload.reviewer().to_string(),
-                    iteration: payload.iteration(),
-                    verdict: review_verdict_spelling(payload.verdict()).to_string(),
-                })
+                Self::ReviewCompleted(ReviewCompletedDto::of(payload))
             }
             IntentExecutionEvent::PracticesAffirmed(payload) => {
                 IntentExecutionEventDto::PracticesAffirmed(PracticesAffirmedDto {
@@ -272,6 +338,50 @@ impl IntentExecutionEventDto {
     /// 閉集合外の綴り・文法外のステージ参照・文法外の intent 識別子は `Malformed` を返す。
     pub fn to_domain(&self) -> Result<IntentExecutionEvent, DtoDecodeError> {
         Ok(match self {
+            Self::SingleStageRunStarted(e) => {
+                IntentExecutionEvent::SingleStageRunStarted(e.to_domain()?)
+            }
+            Self::PipelineLinkCompleted(event) => {
+                IntentExecutionEvent::PipelineLinkCompleted(event.to_domain()?)
+            }
+            Self::TaskSynchronized(payload) => {
+                IntentExecutionEvent::TaskSynchronized(TaskSynchronized::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.stage, "stage")?,
+                ))
+            }
+            Self::HealthChecked(payload) => {
+                IntentExecutionEvent::HealthChecked(payload.to_domain()?)
+            }
+            Self::LearningsCaptured(payload) => {
+                IntentExecutionEvent::LearningsCaptured(payload.to_domain()?)
+            }
+            Self::MemoryJournalsObserved(payload) => {
+                IntentExecutionEvent::MemoryJournalsObserved(payload.to_domain()?)
+            }
+            Self::CommandFailed(payload) => {
+                IntentExecutionEvent::CommandFailed(payload.to_domain()?)
+            }
+            Self::DecisionRecorded(payload) => {
+                IntentExecutionEvent::DecisionRecorded(payload.to_domain()?)
+            }
+            Self::PromptObserved(payload) => {
+                IntentExecutionEvent::PromptObserved(payload.to_domain()?)
+            }
+            Self::PlanAnswerLogged(payload) => {
+                IntentExecutionEvent::PlanAnswerLogged(Box::new(payload.to_domain()?))
+            }
+            Self::AnswerRecorded(payload) => {
+                IntentExecutionEvent::AnswerRecorded(payload.to_domain()?)
+            }
+            Self::DirectiveContextInvalidated(payload) => {
+                IntentExecutionEvent::DirectiveContextInvalidated(payload.to_domain()?)
+            }
+            Self::DirectiveIssued(payload) => {
+                IntentExecutionEvent::DirectiveIssued(payload.to_domain()?)
+            }
+            Self::Reported(payload) => IntentExecutionEvent::Reported(payload.to_domain()?),
             IntentExecutionEventDto::Started(payload) => {
                 let stages = payload
                     .stages
@@ -330,11 +440,16 @@ impl IntentExecutionEventDto {
                     payload.reason.clone(),
                 ))
             }
-            IntentExecutionEventDto::Jumped(payload) => IntentExecutionEvent::Jumped(Jumped::new(
-                event_id_of(&payload.id)?,
-                aggregate_id_of(&payload.aggregate_id)?,
-                slug_of(&payload.target, "target")?,
-            )),
+            IntentExecutionEventDto::Jumped(payload) => IntentExecutionEvent::Jumped(
+                Jumped::new(
+                    event_id_of(&payload.id)?,
+                    aggregate_id_of(&payload.aggregate_id)?,
+                    slug_of(&payload.target, "target")?,
+                    payload.direction()?,
+                    payload.observation()?,
+                )
+                .with_scope(payload.scope()?),
+            ),
             IntentExecutionEventDto::Parked(payload) => IntentExecutionEvent::Parked(Parked::new(
                 event_id_of(&payload.id)?,
                 aggregate_id_of(&payload.aggregate_id)?,
@@ -376,24 +491,10 @@ impl IntentExecutionEventDto {
                 ))
             }
             IntentExecutionEventDto::ReviewRequested(payload) => {
-                IntentExecutionEvent::ReviewRequested(ReviewRequested::new(
-                    event_id_of(&payload.id)?,
-                    aggregate_id_of(&payload.aggregate_id)?,
-                    slug_of(&payload.stage, "stage")?,
-                    payload.reviewer.clone(),
-                    payload.iteration,
-                    payload.retry,
-                ))
+                IntentExecutionEvent::ReviewRequested(payload.to_domain()?)
             }
             IntentExecutionEventDto::ReviewCompleted(payload) => {
-                IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
-                    event_id_of(&payload.id)?,
-                    aggregate_id_of(&payload.aggregate_id)?,
-                    slug_of(&payload.stage, "stage")?,
-                    payload.reviewer.clone(),
-                    payload.iteration,
-                    review_verdict_of(&payload.verdict, "verdict")?,
-                ))
+                IntentExecutionEvent::ReviewCompleted(payload.to_domain()?)
             }
             IntentExecutionEventDto::PracticesAffirmed(payload) => {
                 IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(

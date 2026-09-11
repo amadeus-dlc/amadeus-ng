@@ -31,6 +31,99 @@ pub struct StageSlots {
 }
 
 impl StageSlots {
+    /// `in_plan` は跳躍に使う計画で EXECUTE の位置集合 (集約が導く)。
+    pub(super) fn apply_jump(
+        &mut self,
+        event: &super::intent_execution_event::Jumped,
+        source: StageIndex,
+        target: StageIndex,
+        in_plan: &super::StageIndexSet,
+    ) {
+        for (position, slot) in self.items.iter_mut().enumerate() {
+            let position = StageIndex::new(position);
+            slot.apply_jump(event, position, source, target, in_plan.contains(position));
+        }
+    }
+
+    pub(super) fn from_started(event: &super::intent_execution_event::Started) -> Self {
+        let (_, items) =
+            event
+                .stages()
+                .fold_left((false, Vec::new()), |(active, mut items), entry| {
+                    let initialization =
+                        entry.phase() == crate::workflow_definition::PhaseId::Initialization;
+                    let in_scope = entry.plan_action() == PlanAction::Execute;
+                    let starts = !initialization && in_scope && !active;
+                    let checkbox = if initialization && in_scope {
+                        CheckboxState::Completed
+                    } else if starts {
+                        CheckboxState::InProgress
+                    } else {
+                        CheckboxState::Pending
+                    };
+                    items.push(StageSlot::new(
+                        StageKey::new(entry.slug().clone(), entry.phase()),
+                        entry.plan_action(),
+                        checkbox,
+                        false,
+                        0,
+                        super::ReviewAttempt::default(),
+                        false,
+                        false,
+                    ));
+                    (active || starts, items)
+                });
+        Self::of_items(items)
+    }
+
+    /// 記録されたステージ遷移だけから、該当する位置の進捗を適用する。
+    pub(super) fn apply_progress(&mut self, event: &super::IntentExecutionEvent) {
+        for slot in &mut self.items {
+            slot.apply_progress(event);
+        }
+        if let Some(stage) = event.advancing_stage()
+            && let Some(position) = self.position_of(stage)
+            && let Some(next) = self
+                .items
+                .iter_mut()
+                .skip(position.to_usize().saturating_add(1))
+                .find(|slot| slot.plan_action() == PlanAction::Execute)
+        {
+            next.apply_predecessor_completion(event);
+        }
+    }
+    /// いまの承認について日誌の空記録がまだ無い承認済みの位置を、計画順に選ぶ。
+    ///
+    /// 「日誌が空」は観測 (`survey`) が答え、「承認済みか・記録済みか」はこの列が答える。
+    /// 日誌そのものが無い位置は観測に載らないので選ばれない (件数 0 とは区別する)。
+    pub(super) fn empty_memory_stages(
+        &self,
+        survey: &super::MemoryJournalSurvey,
+    ) -> super::EmptyMemoryStages {
+        super::EmptyMemoryStages::new(self.items.iter().fold(Vec::new(), |mut chosen, slot| {
+            if slot.awaits_memory_empty()
+                && survey
+                    .find(slot.key().slug())
+                    .is_some_and(super::StageMemoryJournal::is_empty)
+            {
+                chosen.push(slot.key().slug().clone());
+            }
+            chosen
+        }))
+    }
+
+    /// 選ばれた位置へ「この承認について記録済み」を印す。
+    pub(super) fn apply_memory_empty(&mut self, stages: &super::EmptyMemoryStages) {
+        for slot in &mut self.items {
+            if stages.contains(slot.key().slug()) {
+                slot.record_memory_empty();
+            }
+        }
+    }
+    const fn of_items(items: Vec<StageSlot>) -> Self {
+        Self { items }
+    }
+
     /// 保存された行から列を組み直す (**永続化境界からの再構成専用**)。
     ///
     /// # Errors
@@ -49,7 +142,7 @@ impl StageSlots {
                 });
             }
         }
-        Ok(StageSlots { items })
+        Ok(Self::of_items(items))
     }
 
     /// 誕生時の列 — 計画の各位置に未着手の記録を 1 つずつ置く。
@@ -57,15 +150,15 @@ impl StageSlots {
     /// 計画 ([`StageEntries`]) が非空・slug 一意を保証しているので、この経路は失敗しない。
     #[must_use]
     pub fn genesis(stages: &StageEntries) -> StageSlots {
-        StageSlots {
-            items: stages.fold_left(Vec::with_capacity(stages.len()), |mut slots, entry| {
+        Self::of_items(
+            stages.fold_left(Vec::with_capacity(stages.len()), |mut slots, entry| {
                 slots.push(StageSlot::genesis(
                     StageKey::new(entry.slug().clone(), entry.phase()),
                     entry.plan_action(),
                 ));
                 slots
             }),
-        }
+        )
     }
 
     /// 文書順の位置で参照する。範囲外は `None` (panic しない)。
@@ -118,20 +211,6 @@ impl StageSlots {
         )
     }
 
-    /// 状態マーカーを置き換える。
-    ///
-    /// # Errors
-    ///
-    /// 位置が列の外なら [`StageSlotsError::OutOfRange`]。
-    pub fn mark(
-        &mut self,
-        stage: StageIndex,
-        checkbox: CheckboxState,
-    ) -> Result<(), StageSlotsError> {
-        self.slot_mut(stage)?.mark(checkbox);
-        Ok(())
-    }
-
     /// ゲート通過を記録する。
     ///
     /// # Errors
@@ -162,20 +241,6 @@ impl StageSlots {
         Ok(())
     }
 
-    /// 実効計画を置き換える (recompose のオーバレイ)。
-    ///
-    /// # Errors
-    ///
-    /// 位置が列の外なら [`StageSlotsError::OutOfRange`]。
-    pub fn override_plan(
-        &mut self,
-        stage: StageIndex,
-        plan_action: PlanAction,
-    ) -> Result<(), StageSlotsError> {
-        self.slot_mut(stage)?.override_plan(plan_action);
-        Ok(())
-    }
-
     /// その位置の現在の試行を空へ戻す (フロア)。
     ///
     /// # Errors
@@ -195,8 +260,11 @@ impl StageSlots {
         &mut self,
         stage: StageIndex,
         iteration: u32,
+        binding: super::ReviewBinding,
+        retry: bool,
     ) -> Result<(), StageSlotsError> {
-        self.slot_mut(stage)?.record_review_request(iteration);
+        self.slot_mut(stage)?
+            .record_review_request(iteration, binding, retry);
         Ok(())
     }
 
@@ -210,9 +278,10 @@ impl StageSlots {
         stage: StageIndex,
         iteration: u32,
         verdict: ReviewVerdict,
+        completion: super::ReviewCompletion,
     ) -> Result<(), StageSlotsError> {
         self.slot_mut(stage)?
-            .record_review_verdict(iteration, verdict);
+            .record_review_verdict(iteration, verdict, completion);
         Ok(())
     }
 
@@ -226,26 +295,14 @@ impl StageSlots {
         Ok(())
     }
 
-    /// 名指された位置の状態マーカーをまとめて置き換える (jump の読み飛ばし・巻き戻し)。
-    ///
-    /// 位置集合は区間や述語から組むので、この列に**在る位置だけ**を動かす集合演算である。
-    pub fn mark_all(&mut self, stages: &StageIndexSet, checkbox: CheckboxState) {
-        stages.fold_left((), |(), stage| {
-            if let Some(slot) = self.items.get_mut(stage.to_usize()) {
-                slot.mark(checkbox);
-            }
-        });
-    }
-
-    /// 名指された位置の実効プランをまとめて書き替える (`Recomposed` の適用)。
-    ///
-    /// [`StageSlots::mark_all`] と同じく、この列に**在る位置だけ**を動かす集合演算である。
-    pub fn override_plan_all(&mut self, stages: &StageIndexSet, plan_action: PlanAction) {
-        stages.fold_left((), |(), stage| {
-            if let Some(slot) = self.items.get_mut(stage.to_usize()) {
-                slot.override_plan(plan_action);
-            }
-        });
+    /// 記録済みの再構成が名指すslugだけに、実効計画の反転を適用する。
+    pub(super) fn apply_recomposition(
+        &mut self,
+        event: &super::intent_execution_event::Recomposed,
+    ) {
+        for slot in &mut self.items {
+            slot.apply_recomposition(event);
+        }
     }
 
     /// 名指された位置のゲート通過の記録をまとめて取り消す (巻き戻し・再合成)。
@@ -376,6 +433,135 @@ mod tests {
     }
 
     #[test]
+    fn started_constructs_completed_initialization_and_the_first_active_stage() {
+        use crate::orchestration::{IntentExecutionEventId, IntentExecutionId, IntentId};
+        let event = super::super::intent_execution_event::Started::new(
+            IntentExecutionEventId::generate(),
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            IntentId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0001").unwrap(),
+            plan(),
+        );
+        let slots = StageSlots::from_started(&event);
+        assert_eq!(
+            slots.at(StageIndex::new(0)).unwrap().checkbox(),
+            CheckboxState::Completed
+        );
+        assert_eq!(
+            slots.at(StageIndex::new(1)).unwrap().checkbox(),
+            CheckboxState::InProgress
+        );
+        assert_eq!(
+            slots.at(StageIndex::new(2)).unwrap().checkbox(),
+            CheckboxState::Pending
+        );
+        assert!(!(0..3).any(|position| slots.at(StageIndex::new(position)).unwrap().approved()));
+    }
+
+    #[test]
+    fn a_recorded_completion_starts_only_the_next_effective_stage() {
+        use crate::orchestration::intent_execution_event::GateApproved;
+        use crate::orchestration::{
+            IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
+        };
+        let mut slots = StageSlots::new(vec![
+            StageSlot::genesis(key("first", PhaseId::Inception), PlanAction::Execute),
+            StageSlot::genesis(key("omitted", PhaseId::Inception), PlanAction::Skip),
+            StageSlot::genesis(key("next", PhaseId::Inception), PlanAction::Execute),
+        ])
+        .unwrap();
+        let event = IntentExecutionEvent::GateApproved(GateApproved::new(
+            IntentExecutionEventId::generate(),
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap(),
+            slug("first"),
+            None,
+        ));
+        slots.apply_progress(&event);
+        assert_eq!(
+            slots.at(StageIndex::new(0)).unwrap().checkbox(),
+            CheckboxState::Completed
+        );
+        assert_eq!(
+            slots.at(StageIndex::new(1)).unwrap().checkbox(),
+            CheckboxState::Pending
+        );
+        assert_eq!(
+            slots.at(StageIndex::new(2)).unwrap().checkbox(),
+            CheckboxState::InProgress
+        );
+    }
+
+    #[test]
+    fn jump_events_preserve_forward_skips_and_backward_resets() {
+        use crate::orchestration::intent_execution_event::Jumped;
+        use crate::orchestration::{IntentExecutionEventId, IntentExecutionId};
+        let mut slots = StageSlots::new(
+            ["first", "middle", "last"]
+                .into_iter()
+                .enumerate()
+                .map(|(position, name)| {
+                    StageSlot::new(
+                        key(name, PhaseId::Inception),
+                        PlanAction::Execute,
+                        if position == 0 {
+                            CheckboxState::InProgress
+                        } else {
+                            CheckboxState::Pending
+                        },
+                        false,
+                        0,
+                        ReviewAttempt::default(),
+                        false,
+                        false,
+                    )
+                })
+                .collect(),
+        )
+        .unwrap();
+        let execution = IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap();
+        let forward = Jumped::new(
+            IntentExecutionEventId::generate(),
+            execution.clone(),
+            slug("last"),
+            crate::orchestration::JumpDirection::Forward,
+            None,
+        );
+        let all = super::StageIndexSet::range(StageIndex::new(0), StageIndex::new(3));
+        slots.apply_jump(&forward, StageIndex::new(0), StageIndex::new(2), &all);
+        assert_eq!(
+            slots.at(StageIndex::new(0)).unwrap().checkbox(),
+            CheckboxState::Skipped
+        );
+        assert_eq!(
+            slots.at(StageIndex::new(1)).unwrap().checkbox(),
+            CheckboxState::Skipped
+        );
+        assert_eq!(
+            slots.at(StageIndex::new(2)).unwrap().checkbox(),
+            CheckboxState::InProgress
+        );
+        let back = Jumped::new(
+            IntentExecutionEventId::generate(),
+            execution,
+            slug("first"),
+            crate::orchestration::JumpDirection::Backward,
+            None,
+        );
+        slots.apply_jump(&back, StageIndex::new(2), StageIndex::new(0), &all);
+        assert_eq!(
+            slots.at(StageIndex::new(0)).unwrap().checkbox(),
+            CheckboxState::InProgress
+        );
+        assert_eq!(
+            slots.at(StageIndex::new(1)).unwrap().checkbox(),
+            CheckboxState::Pending
+        );
+        assert_eq!(
+            slots.at(StageIndex::new(2)).unwrap().checkbox(),
+            CheckboxState::Pending
+        );
+    }
+
+    #[test]
     fn genesis_gives_every_position_of_the_plan_a_pending_slot() {
         let slots = slots();
         assert_eq!(slots.len(), 3);
@@ -422,14 +608,6 @@ mod tests {
         let mut slots = slots();
         let out_of_range = StageIndex::new(3);
         assert_eq!(
-            slots
-                .mark(out_of_range, CheckboxState::Completed)
-                .unwrap_err(),
-            StageSlotsError::OutOfRange {
-                stage: out_of_range
-            }
-        );
-        assert_eq!(
             slots.record_approval(out_of_range).unwrap_err(),
             StageSlotsError::OutOfRange {
                 stage: out_of_range
@@ -452,13 +630,49 @@ mod tests {
     fn each_positional_command_lands_on_exactly_that_position() {
         let mut slots = slots();
         let target = StageIndex::new(1);
-        slots.mark(target, CheckboxState::AwaitingApproval).unwrap();
+        slots.apply_progress(&crate::orchestration::IntentExecutionEvent::GateOpened(
+            crate::orchestration::intent_execution_event::GateOpened::new(
+                crate::orchestration::IntentExecutionEventId::generate(),
+                crate::orchestration::IntentExecutionId::parse(
+                    "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+                )
+                .unwrap(),
+                slots.stage_key(target).unwrap().slug().clone(),
+                crate::orchestration::ArtifactPaths::empty(),
+            ),
+        ));
         slots.record_approval(target).unwrap();
         slots.bump_revision(target).unwrap();
-        slots.override_plan(target, PlanAction::Skip).unwrap();
-        slots.record_review_request(target, 1).unwrap();
+        slots.apply_recomposition(
+            &crate::orchestration::intent_execution_event::Recomposed::new(
+                crate::orchestration::IntentExecutionEventId::generate(),
+                crate::orchestration::IntentExecutionId::parse(
+                    "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+                )
+                .unwrap(),
+                crate::orchestration::StageSlugSet::new([slots
+                    .stage_key(target)
+                    .unwrap()
+                    .slug()
+                    .clone()]),
+                crate::orchestration::StageSlugSet::empty(),
+            ),
+        );
         slots
-            .record_review_verdict(target, 1, ReviewVerdict::Ready)
+            .record_review_request(
+                target,
+                1,
+                crate::orchestration::review_test_fixture::binding(),
+                false,
+            )
+            .unwrap();
+        slots
+            .record_review_verdict(
+                target,
+                1,
+                ReviewVerdict::Ready,
+                crate::orchestration::review_test_fixture::completion(),
+            )
             .unwrap();
         slots.affirm_practices(target).unwrap();
 
@@ -490,24 +704,15 @@ mod tests {
         for position in 0..3 {
             slots.record_approval(StageIndex::new(position)).unwrap();
             slots
-                .record_review_request(StageIndex::new(position), 1)
+                .record_review_request(
+                    StageIndex::new(position),
+                    1,
+                    crate::orchestration::review_test_fixture::binding(),
+                    false,
+                )
                 .unwrap();
         }
         let targets = StageIndexSet::new([StageIndex::new(0), StageIndex::new(2)]);
-
-        slots.mark_all(&targets, CheckboxState::Skipped);
-        assert_eq!(
-            slots.at(StageIndex::new(0)).map(StageSlot::checkbox),
-            Some(CheckboxState::Skipped)
-        );
-        assert_eq!(
-            slots.at(StageIndex::new(1)).map(StageSlot::checkbox),
-            Some(CheckboxState::Pending)
-        );
-        assert_eq!(
-            slots.at(StageIndex::new(2)).map(StageSlot::checkbox),
-            Some(CheckboxState::Skipped)
-        );
 
         slots.invalidate_approvals(&targets);
         assert_eq!(
@@ -534,13 +739,14 @@ mod tests {
     #[test]
     fn a_bulk_command_naming_a_position_past_the_end_touches_only_what_exists() {
         let mut slots = slots();
-        slots.mark_all(
-            &StageIndexSet::new([StageIndex::new(1), StageIndex::new(9)]),
-            CheckboxState::Skipped,
-        );
+        slots.record_approval(StageIndex::new(1)).unwrap();
+        slots.invalidate_approvals(&StageIndexSet::new([
+            StageIndex::new(1),
+            StageIndex::new(9),
+        ]));
         assert_eq!(
-            slots.at(StageIndex::new(1)).map(StageSlot::checkbox),
-            Some(CheckboxState::Skipped)
+            slots.at(StageIndex::new(1)).map(StageSlot::approved),
+            Some(false)
         );
         assert_eq!(slots.len(), 3, "存在しない位置は生えない");
     }

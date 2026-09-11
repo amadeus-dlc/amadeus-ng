@@ -20,26 +20,32 @@ use crate::workflow_definition::StageSlug;
 ///
 /// [`StageIndexSet`]: super::StageIndexSet
 /// [`StageEntries::slugs_at`]: super::StageEntries::slugs_at
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageSlugSet {
     items: BTreeSet<StageSlug>,
 }
 
+impl Default for StageSlugSet {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl StageSlugSet {
+    // 検査済みの列・集合とその部分列は、この構築口で全状態を初期化する。
+    const fn of_items(items: BTreeSet<StageSlug>) -> Self {
+        Self { items }
+    }
+
     /// 和集合の単位元となる空集合。
     #[must_use]
     pub const fn empty() -> StageSlugSet {
-        StageSlugSet {
-            items: BTreeSet::new(),
-        }
+        StageSlugSet::of_items(BTreeSet::new())
     }
 
     /// slug の並びを集合にする (重複は畳まれ、辞書順に整列する)。
     #[must_use]
     pub fn new(slugs: impl IntoIterator<Item = StageSlug>) -> StageSlugSet {
-        StageSlugSet {
-            items: slugs.into_iter().collect(),
-        }
+        StageSlugSet::of_items(slugs.into_iter().collect())
     }
 
     /// その slug を含むか。
@@ -74,30 +80,25 @@ impl StageSlugSet {
     /// 条件に一致する slug の集合 (辞書順のまま)。結果は空になり得る。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(&StageSlug) -> bool) -> StageSlugSet {
-        StageSlugSet {
-            items: self
-                .items
+        StageSlugSet::of_items(
+            self.items
                 .iter()
                 .filter(|slug| predicate(slug))
                 .cloned()
                 .collect(),
-        }
+        )
     }
 
     /// 両方の slug を含む和集合。元の集合は変更しない。
     #[must_use]
     pub fn combine(&self, other: &StageSlugSet) -> StageSlugSet {
-        StageSlugSet {
-            items: self.items.union(&other.items).cloned().collect(),
-        }
+        StageSlugSet::of_items(self.items.union(&other.items).cloned().collect())
     }
 
     /// 他方に含まれる slug を除いた差集合。元の集合は変更しない。
     #[must_use]
     pub fn divide(&self, other: &StageSlugSet) -> StageSlugSet {
-        StageSlugSet {
-            items: self.items.difference(&other.items).cloned().collect(),
-        }
+        StageSlugSet::of_items(self.items.difference(&other.items).cloned().collect())
     }
 }
 

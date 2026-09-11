@@ -14,16 +14,26 @@ use super::review_closure::ReviewClosure;
 /// (`coding-rules/tell-dont-ask.md`)。
 ///
 /// [`ReviewAttempt`]: super::ReviewAttempt
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewClosures {
     items: Vec<ReviewClosure>,
 }
 
+impl Default for ReviewClosures {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl ReviewClosures {
+    // 検査済みの列・集合とその部分列は、この構築口で全状態を初期化する。
+    const fn of_items(items: Vec<ReviewClosure>) -> Self {
+        Self { items }
+    }
+
     /// まだ 1 件も閉じていない試行の列。
     #[must_use]
     pub const fn empty() -> ReviewClosures {
-        ReviewClosures { items: Vec::new() }
+        ReviewClosures::of_items(Vec::new())
     }
 
     /// 保存された行から列を組み直す (**永続化境界からの再構成専用**)。
@@ -31,7 +41,7 @@ impl ReviewClosures {
     /// 通常の構築は [`ReviewClosures::empty`] と [`ReviewClosures::record`] である。
     #[must_use]
     pub const fn new(items: Vec<ReviewClosure>) -> ReviewClosures {
-        ReviewClosures { items }
+        ReviewClosures::of_items(items)
     }
 
     /// 判定が返った依頼を 1 件記録する (記録順に積む)。
@@ -81,14 +91,13 @@ impl ReviewClosures {
     /// 条件に一致する受領証を記録順のまま残す。結果は空になり得る。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(ReviewClosure) -> bool) -> ReviewClosures {
-        ReviewClosures {
-            items: self
-                .items
+        ReviewClosures::of_items(
+            self.items
                 .iter()
                 .filter(|closure| predicate(**closure))
                 .copied()
                 .collect(),
-        }
+        )
     }
 }
 

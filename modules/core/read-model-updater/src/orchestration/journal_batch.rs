@@ -2,6 +2,7 @@
 
 use core_command_domain::orchestration::Intent;
 
+use super::artifact_journal_entry::ArtifactJournalEntry;
 use super::definition_entry::DefinitionEntry;
 use super::global_seq_nr::GlobalSeqNr;
 use super::journal_entry::JournalEntry;
@@ -29,6 +30,8 @@ pub struct JournalBatch {
     executions: Vec<JournalEntry>,
     intents: Vec<Intent>,
     definitions: Vec<DefinitionEntry>,
+    artifacts: Vec<ArtifactJournalEntry>,
+    sessions: Vec<super::SessionJournalEntry>,
     scanned_to: Option<GlobalSeqNr>,
 }
 
@@ -45,6 +48,8 @@ impl JournalBatch {
             executions,
             intents,
             definitions,
+            artifacts: Vec::new(),
+            sessions: Vec::new(),
             scanned_to,
         }
     }
@@ -71,6 +76,31 @@ impl JournalBatch {
     #[must_use]
     pub fn definitions(&self) -> &[DefinitionEntry] {
         &self.definitions
+    }
+
+    /// ArtifactSavedの行。
+    #[must_use]
+    pub fn artifacts(&self) -> &[ArtifactJournalEntry] {
+        &self.artifacts
+    }
+
+    /// Artifact行を伴う新しいバッチ。
+    #[must_use]
+    pub fn with_artifacts(mut self, artifacts: Vec<ArtifactJournalEntry>) -> Self {
+        self.artifacts = artifacts;
+        self
+    }
+
+    /// SessionAuditの保存行。
+    #[must_use]
+    pub fn sessions(&self) -> &[super::SessionJournalEntry] {
+        &self.sessions
+    }
+    /// セッション監査行を伴う断面。
+    #[must_use]
+    pub fn with_sessions(mut self, sessions: Vec<super::SessionJournalEntry>) -> Self {
+        self.sessions = sessions;
+        self
     }
 
     /// 走査した最終行の global 通番 (`None` = 1 行も無かった)。

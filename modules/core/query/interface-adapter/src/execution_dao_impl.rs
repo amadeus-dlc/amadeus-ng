@@ -16,7 +16,7 @@ macro_rules! select_execution {
     ($where_clause:literal) => {
         concat!(
             "SELECT id, intent_id, scope, status, cursor_slug, parked_at_slug, parked_active, \
-             state_binding FROM read_execution WHERE ",
+             state_binding, first_substantive_run, continuation_wait FROM read_execution WHERE ",
             $where_clause
         )
     };
@@ -41,7 +41,9 @@ fn execution_row(row: &Row<'_>) -> rusqlite::Result<ExecutionView> {
         row.get(5)?,
         row.get(6)?,
         row.get(7)?,
-    ))
+    )
+    .with_first_substantive_run(row.get(8)?)
+    .with_continuation_wait(row.get(9)?))
 }
 
 /// 実行の現在地 1 行を返す実装 (2 動詞とも同じ 1 表を鍵違いで引く)。

@@ -13,21 +13,46 @@
 //! [`ReadModelDaos`] を 1 度だけ開き、12 実装がそれを分け合う。多段の引当 (`next` は最大
 //! 5 表) が同じスナップショットを見るためである。
 
+use core_command_domain::workflow_definition::BrownfieldGreenfield;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_query_interface_adapter::ReadModelDaos;
 use core_query_use_case::orchestration::{
     AskDirective, AskKind, ContinueToken, Directive, EngineCommand, FindContinuationUseCase,
-    FindDefinitionUseCase, FindExecutionUseCase, FindJumpUseCase, FindNextAnswerUseCase,
-    FindPhaseEntryUseCase, FindRunStageUseCase, FindScopeChangeUseCase, FindScopeKeywordUseCase,
-    FindScopeUseCase, FindSteeringUseCase, GateField, JumpView, NextTurnInput, NextTurnView,
-    PhaseView, ReadModelReadError, RunStageView, ScopeDao, ScopeSlugView, ScopeView, StageSlugView,
-    SteeringDeliveryView,
+    FindDefinitionUseCase, FindExecutionUseCase, FindInitializationUseCase, FindJumpUseCase,
+    FindNextAnswerUseCase, FindPhaseEntryUseCase, FindRunStageUseCase, FindScopeChangeUseCase,
+    FindScopeKeywordUseCase, FindScopeUseCase, FindSteeringUseCase, GateField, JumpView,
+    NextTurnInput, NextTurnView, PhaseView, ReadModelReadError, RunStageView, ScopeDao,
+    ScopeSlugView, ScopeView, StageSlugView, SteeringDeliveryView,
 };
 
 use crate::directive_drawing;
 use crate::execution_cursor::ExecutionCursor;
 use crate::layout::Layout;
 use crate::wording;
+
+mod workspace_command;
+
+fn role_in_words(agent: &str) -> String {
+    let Some(role) = agent
+        .trim()
+        .strip_prefix("aidlc-")
+        .and_then(|role| role.strip_suffix("-agent"))
+    else {
+        return String::new();
+    };
+    match role {
+        "product" => "product manager".to_string(),
+        "design" => "designer".to_string(),
+        "delivery" => "delivery lead".to_string(),
+        "aws-platform" => "platform engineer".to_string(),
+        "compliance" => "compliance specialist".to_string(),
+        "devsecops" => "security engineer".to_string(),
+        "quality" => "quality engineer".to_string(),
+        "pipeline-deploy" => "release engineer".to_string(),
+        "operations" => "operations engineer".to_string(),
+        other => other.replace('-', " "),
+    }
+}
 
 /// デフォルト scope (`export const DEFAULT_SCOPE = "classic";`)。
 const DEFAULT_SCOPE: &str = "classic";
@@ -95,14 +120,19 @@ pub(crate) fn pre_guard(input: &NextTurnInput) -> Option<Directive> {
     if let Some(verb) = input.read_only() {
         return Some(Directive::Print {
             message: wording::read_only(&EngineCommand::ReadOnlyUtility(verb).cli_spelling()),
+            narration: None,
         });
     }
     // 分岐 1b/1c/1d: 名詞トークン (先頭トークン意味論のみ)。
     if let Some(token) = input.noun_token() {
+        if token.family() == core_query_use_case::orchestration::NounFamily::Workspace {
+            return Some(workspace_command::draw(token.tokens()));
+        }
         return Some(Directive::Print {
             message: wording::terminal_utility(
                 &EngineCommand::NounTokens(token.tokens().to_vec()).cli_spelling(),
             ),
+            narration: None,
         });
     }
     // 分岐 2: --stage と --phase の併用。
@@ -152,6 +182,36 @@ impl<'a> Turn<'a> {
         }
     }
 
+    /// 費用節のために観測するワークスペースの種別 (本家 `detectedProjectType`
+    /// `aidlc-orchestrate.ts:1355-1367` @a277af21)。
+    ///
+    /// 走査に失敗したら `None` — 本家も `try { detectWorkspace } catch { null }` で名目値へ
+    /// 落とす (「費用の開示がルーティングを止めてはならない」)。費用節を組む分岐でしか
+    /// 呼ばないので、`next` のたびに走査するわけではない。
+    fn project_kind(&self) -> Option<BrownfieldGreenfield> {
+        crate::workspace_scanner::WorkspaceScanner::new(self.layout.project_dir().to_path_buf())
+            .scan()
+            .ok()
+            .map(|scan| scan.project_kind())
+    }
+
+    /// 作業の記録に書かれた種別 (本家 `projectTypeFrom` — 状態ファイルの `Project Type` を
+    /// 小文字にして `brownfield` / `greenfield` 以外は `None`)。
+    ///
+    /// 状態ファイルの `Project Type` は intent 鋳造時の走査結果の投影であり、読み面
+    /// `read_intent.project_type` が同じ値を持つ。`consumes[].conditional_on` の絞り込みは
+    /// ここで読んだ種別で行い、走査し直さない (走査は費用節のためのもので、記録の種別と
+    /// 食い違い得る)。
+    fn recorded_project_kind(
+        &self,
+        intent_id: &str,
+    ) -> Result<Option<BrownfieldGreenfield>, Box<Directive>> {
+        Ok(FindInitializationUseCase::new(self.daos.initialization())
+            .execute(intent_id)
+            .map_err(|error| Box::new(Turn::unreadable(&error)))?
+            .and_then(|view| BrownfieldGreenfield::parse(&view.project_type().to_lowercase()).ok()))
+    }
+
     /// record が指す実行の識別子 (カーソルが無い・読めないなら `None`)。
     fn execution_id(&self) -> Option<String> {
         let record = self.layout.record_dir()?;
@@ -198,6 +258,7 @@ impl<'a> Turn<'a> {
                 "unpark-then-resume" => {
                     return Directive::Print {
                         message: wording::unpark_then_resume(&EngineCommand::Unpark.cli_spelling()),
+                        narration: None,
                     };
                 }
                 _ => {}
@@ -242,6 +303,7 @@ impl<'a> Turn<'a> {
                 message: wording::dispatch_composer(
                     &EngineCommand::DispatchComposer.cli_spelling(),
                 ),
+                narration: None,
             });
         }
         // 分岐 4a: --new-intent。明示 `--scope` が勝ち、無ければ解決済み scope へ落ちる。
@@ -265,16 +327,8 @@ impl<'a> Turn<'a> {
         {
             return Some(directive);
         }
-        // 分岐 6: state ありでの --resume。
-        if let Some(view) = answer
-            && view.answer().decision_kind() == "resume-menu"
-        {
-            let stage = view.answer().stage_slug().unwrap_or_default();
-            return Some(Directive::Ask(AskDirective::new(
-                AskKind::ResumeMenu,
-                wording::resume_menu(stage),
-            )));
-        }
+        // 分岐 6 (state ありでの --resume) は本家 2.7.1 で選択肢を出さず通常経路へ落ちるので、
+        // 集約は `resume-menu` を答えない (RMU の `read_tables_test` が固定)。ここに腕は無い。
         // 分岐 7: --stage / --phase (jump)。
         if input.stage().is_some() || input.phase().is_some() {
             return Some(self.jump(input, scope, answer));
@@ -444,6 +498,7 @@ impl<'a> Turn<'a> {
                             }
                             .cli_spelling(),
                         ),
+                        narration: None,
                     });
                 }
                 Ok(_) => {}
@@ -459,6 +514,7 @@ impl<'a> Turn<'a> {
                     }
                     .cli_spelling(),
                 ),
+                narration: None,
             });
         }
         None
@@ -517,13 +573,13 @@ impl<'a> Turn<'a> {
             (Some(stage), _, Some(view)) => {
                 let found = FindJumpUseCase::new(self.daos.jump(), self.daos.jump_phase())
                     .execute(view.execution().execution_id(), stage);
-                Turn::jump_command(found, &wording::unknown_stage(stage))
+                Turn::jump_command(found, scope, &wording::unknown_stage(stage))
             }
             (None, Some(phase), Some(view)) => {
                 let lowered = phase.to_lowercase();
                 let found = FindJumpUseCase::new(self.daos.jump(), self.daos.jump_phase())
                     .execute_phase(view.execution().execution_id(), &lowered);
-                Turn::jump_command(found, &wording::unknown_phase(phase))
+                Turn::jump_command(found, scope, &wording::unknown_phase(phase))
             }
             // state なし: 定義側の入口を引いて孤立 run-stage を届ける。
             (Some(stage), _, None) => self.isolated_run_stage(scope, stage),
@@ -558,6 +614,7 @@ impl<'a> Turn<'a> {
     /// `refused` なら、拒否理由の綴りがそのまま行き先である。
     fn jump_command(
         found: Result<Option<JumpView>, ReadModelReadError>,
+        scope: &ScopeSlugView,
         absent: &str,
     ) -> Directive {
         match found {
@@ -576,9 +633,15 @@ impl<'a> Turn<'a> {
             },
             Ok(Some(jump)) => match StageSlugView::parse(jump.target_slug()) {
                 Ok(stage) => Directive::Print {
-                    message: wording::resolve_jump(
-                        &EngineCommand::ResolveJump { stage }.cli_spelling(),
+                    message: wording::execute_jump(
+                        &EngineCommand::ExecuteJump {
+                            stage,
+                            direction: jump.outcome().to_string(),
+                            scope: scope.clone(),
+                        }
+                        .cli_spelling(),
                     ),
+                    narration: None,
                 },
                 Err(_) => Directive::Error {
                     message: wording::unknown_stage(jump.target_slug()),
@@ -641,7 +704,8 @@ impl<'a> Turn<'a> {
                 let cost = match self.scope_row(inferred.as_str()) {
                     Err(directive) => return *directive,
                     Ok(found) => found.map_or_else(String::new, |view| {
-                        cost_clause(&view).map_or_else(String::new, |clause| format!(" - {clause}"))
+                        cost_clause(&view, self.project_kind())
+                            .map_or_else(String::new, |clause| format!(" - {clause}"))
                     }),
                 };
                 Directive::Ask(AskDirective::new(
@@ -672,7 +736,7 @@ impl<'a> Turn<'a> {
         };
         let cost = match self.scope_row(scope) {
             Err(directive) => return *directive,
-            Ok(found) => found.and_then(|view| cost_clause(&view)),
+            Ok(found) => found.and_then(|view| cost_clause(&view, self.project_kind())),
         };
         let description = description.map(str::trim).filter(|text| !text.is_empty());
         let spelled = EngineCommand::MintIntent {
@@ -686,10 +750,13 @@ impl<'a> Turn<'a> {
         Directive::Print {
             message: wording::birth_print(
                 &spelled,
-                &cost.map_or_else(String::new, |clause| format!(" ({clause})")),
+                &cost
+                    .as_deref()
+                    .map_or_else(String::new, |clause| format!(" ({clause})")),
                 description.is_some(),
                 new_intent,
             ),
+            narration: Some(wording::birth_narration(scope, cost.as_deref())),
         }
     }
 
@@ -754,6 +821,7 @@ impl<'a> Turn<'a> {
                             slug,
                             &EngineCommand::ReportSkipped { stage }.cli_spelling(),
                         ),
+                        narration: None,
                     },
                     Err(_) => Directive::Error {
                         message: wording::unknown_stage(slug),
@@ -789,6 +857,119 @@ impl<'a> Turn<'a> {
         }
     }
 
+    fn draw_run_stage(
+        &self,
+        row: &RunStageView,
+        gate: GateField,
+        single: bool,
+        state: Option<&str>,
+    ) -> Result<core_query_use_case::orchestration::RunStageDirective, Box<Directive>> {
+        let execution = match state {
+            Some(binding) => FindExecutionUseCase::new(self.daos.execution())
+                .execute_by_state_binding(binding)
+                .map_err(|error| Box::new(Turn::unreadable(&error)))?,
+            None => None,
+        };
+        let project_kind = match &execution {
+            Some(view) => self.recorded_project_kind(view.intent_id())?,
+            None => None,
+        };
+        let mut directive =
+            directive_drawing::run_stage(row, self.layout, gate, single, project_kind)
+                .map_err(|message| Box::new(Directive::Error { message }))?;
+        if row.mode() == "pipeline" {
+            let id = self.execution_id().ok_or_else(|| {
+                Box::new(Directive::Error {
+                    message: "pipeline execution unavailable".into(),
+                })
+            })?;
+            let progress = core_query_use_case::orchestration::PipelineProgressUseCase::new(
+                self.daos.pipeline_progress(),
+            )
+            .execute(&id, row.stage_slug(), single)
+            .map_err(|error| Box::new(Turn::unreadable(&error)))?
+            .ok_or_else(|| {
+                Box::new(Directive::Error {
+                    message: "pipeline progress projection unavailable".into(),
+                })
+            })?;
+            let mut links = vec![row.lead_agent().to_string()];
+            links.extend(
+                directive_drawing::strings("support_agents", row.support_agents())
+                    .map_err(|message| Box::new(Directive::Error { message }))?,
+            );
+            let completed = directive_drawing::strings("pipeline.completed", progress.completed())
+                .map_err(|message| Box::new(Directive::Error { message }))?;
+            directive = directive.with_pipeline(
+                core_query_use_case::orchestration::PipelineDirective::new(links, completed),
+            );
+        }
+        let stage = core_query_use_case::orchestration::FindDefinitionStageUseCase::new(
+            self.daos.definition_stage(),
+        )
+        .execute(row.definition_id(), row.stage_slug())
+        .map_err(|error| Box::new(Turn::unreadable(&error)))?
+        .ok_or_else(|| {
+            Box::new(Directive::Error {
+                message: "stage metadata unavailable".to_string(),
+            })
+        })?;
+        let first = execution
+            .as_ref()
+            .is_some_and(|view| view.first_substantive_run());
+        if (single || (first && row.phase() != "initialization"))
+            && let Ok(persona) =
+                std::fs::read_to_string(self.layout.harness_dir().join("aidlc-common/conductor.md"))
+        {
+            directive = directive.with_conductor_persona(persona);
+        }
+        let lead = role_in_words(row.lead_agent());
+        let narration = if matches!(row.mode(), "pipeline" | "subagent") {
+            if lead.is_empty() {
+                format!("Now working on {}.", stage.name())
+            } else {
+                format!("Bringing in the {lead} to work on {}.", stage.name())
+            }
+        } else if first {
+            format!(
+                "Starting the {} plan for this project. First step is {}, and I will stop for your review before anything is final.",
+                row.scope(),
+                stage.name()
+            )
+        } else if single || gate == GateField::Ungated {
+            format!(
+                "Next up: {}. This one runs through without needing your input.",
+                stage.name()
+            )
+        } else {
+            let supports = directive
+                .support_agents()
+                .iter()
+                .map(|agent| role_in_words(agent))
+                .filter(|role| !role.is_empty())
+                .collect::<Vec<_>>();
+            let clause = if lead.is_empty() {
+                format!("in the {} phase", row.phase())
+            } else if supports.is_empty() {
+                format!("wearing the {lead} hat")
+            } else {
+                let (last, rest) = supports.split_last().ok_or_else(|| {
+                    Box::new(Directive::Error {
+                        message: "support metadata unavailable".to_string(),
+                    })
+                })?;
+                let list = if rest.is_empty() {
+                    last.clone()
+                } else {
+                    format!("{} and {last}", rest.join(", "))
+                };
+                format!("wearing the {lead} hat, with the {list} on hand")
+            };
+            format!("Now working on {}, {clause}.", stage.name())
+        };
+        Ok(directive.with_narration(narration))
+    }
+
     /// run-stage を steering 連鎖経由で届ける (空計画なら bare run-stage)。
     ///
     /// 配信計画の 2 面 (計画とその第 1 部) は、答えの行を持つ分岐ならそれが運んでいるので
@@ -803,9 +984,9 @@ impl<'a> Turn<'a> {
         state: Option<&str>,
         delivery: Option<SteeringDeliveryView>,
     ) -> Directive {
-        let directive = match directive_drawing::run_stage(row, self.layout, gate, single) {
+        let directive = match self.draw_run_stage(row, gate, single, state) {
             Ok(directive) => directive,
-            Err(message) => return Directive::Error { message },
+            Err(directive) => return *directive,
         };
         let delivery = match delivery {
             Some(delivery) => Some(delivery),
@@ -855,7 +1036,13 @@ impl<'a> Turn<'a> {
                         message: wording::STATE_MOVED_ON.to_string(),
                     };
                 }
-                Ok(Some(_)) => {}
+                Ok(Some(execution)) => {
+                    if self.execution_id().as_deref() != Some(execution.execution_id()) {
+                        return Directive::Error {
+                            message: wording::STALE_CONTINUATION.to_string(),
+                        };
+                    }
+                }
             }
         }
         let delivered = token.next_part_index();
@@ -884,14 +1071,14 @@ impl<'a> Turn<'a> {
             }
             Ok(Some(continuation)) => continuation,
         };
-        let rebuilt = match directive_drawing::run_stage(
+        let rebuilt = match self.draw_run_stage(
             continuation.run_stage(),
-            self.layout,
             token.gate(),
             token.is_single(),
+            state,
         ) {
             Ok(directive) => directive.with_pins(token),
-            Err(message) => return Directive::Error { message },
+            Err(directive) => return *directive,
         };
         let bindings =
             directive_drawing::bindings(continuation.run_stage(), continuation.plan(), state);
@@ -949,13 +1136,28 @@ const fn gate_of(gated: bool) -> GateField {
 }
 
 /// コスト節 (4 列が揃っている scope だけが持つ)。
-fn cost_clause(view: &ScopeView) -> Option<String> {
-    Some(wording::cost_clause(
-        view.cost_total()?,
-        view.cost_execute()?,
-        view.cost_gates()?,
-        view.cost_per_unit_stages()?,
-    ))
+///
+/// 本家 `effectiveScopeCostSummary` (`aidlc-orchestrate.ts:1369-1381` @a277af21) は、ワーク
+/// スペースが greenfield と判定されたときだけ reverse-engineering を SKIP に畳んだ費用を
+/// 使う。畳んだ値も畳まない値も RMU が行に書いてあり、ここは観測した種別で列を選ぶだけである
+/// (判断は定義集約 `scope_cost` が持つ)。判定できなかった (`None`) ときは本家と同じく名目値へ
+/// 落ちる。
+fn cost_clause(view: &ScopeView, project_kind: Option<BrownfieldGreenfield>) -> Option<String> {
+    let (total, execute, gates, per_unit) = match project_kind {
+        Some(BrownfieldGreenfield::Greenfield) => (
+            view.greenfield_cost_total()?,
+            view.greenfield_cost_execute()?,
+            view.greenfield_cost_gates()?,
+            view.greenfield_cost_per_unit_stages()?,
+        ),
+        Some(BrownfieldGreenfield::Brownfield) | None => (
+            view.cost_total()?,
+            view.cost_execute()?,
+            view.cost_gates()?,
+            view.cost_per_unit_stages()?,
+        ),
+    };
+    Some(wording::cost_clause(total, execute, gates, per_unit))
 }
 
 #[cfg(test)]
@@ -1078,10 +1280,20 @@ mod tests {
             workspace
         }
 
-        /// active-intent カーソルを消す (ストアは残るので record だけが無くなる)。
-        fn forget_cursor(&self) {
-            fs::remove_file(self.path("aidlc/spaces/default/intents/active-intent"))
-                .expect("カーソル");
+        /// record を解決できなくする (ストアは残るので record だけが無くなる)。
+        ///
+        /// カーソルを消すだけでは足りない — 本家 `activeIntent` はカーソルが無くても記録が
+        /// ちょうど 1 つならそれへ後退する (lone intent)。記録は `aidlc-state.md` を持つ
+        /// ディレクトリだけなので、唯一の記録の状態ファイルも消して「記録 0」にする。
+        fn forget_record(&self) {
+            let intents = self.path("aidlc/spaces/default/intents");
+            fs::remove_file(intents.join("active-intent")).expect("カーソル");
+            for entry in fs::read_dir(&intents).expect("intents") {
+                let state = entry.expect("entry").path().join("aidlc-state.md");
+                if state.exists() {
+                    fs::remove_file(state).expect("状態ファイル");
+                }
+            }
         }
     }
 
@@ -1092,7 +1304,7 @@ mod tests {
     /// directive が運ぶ人間可読の文字列 (取り出しはここ 1 か所に閉じる — テスト衛生)。
     fn message_of(directive: &Directive) -> String {
         match directive {
-            Directive::Error { message } | Directive::Print { message } => message.clone(),
+            Directive::Error { message } | Directive::Print { message, .. } => message.clone(),
             Directive::Parked { message, .. } => message.clone(),
             Directive::Done { reason } => reason.clone().unwrap_or_default(),
             Directive::Ask(ask) => ask.question().to_string(),
@@ -1224,11 +1436,11 @@ mod tests {
 
         assert_eq!(
             message_of(&directive),
-            wording::read_only("aidlc-utility doctor")
+            wording::read_only("bun .claude/tools/aidlc-utility.ts doctor")
         );
     }
 
-    /// 名詞トークンは逐語で通し、終端ユーティリティとして名指す。
+    /// workspace名詞のlistは本家の短縮形へ写し、終端ユーティリティとして名指す。
     #[test]
     fn the_pre_guard_passes_noun_tokens_through_verbatim() {
         let input = NextTurnInput::new().with_noun_token(NounToken::new(
@@ -1240,7 +1452,7 @@ mod tests {
 
         assert_eq!(
             message_of(&directive),
-            wording::terminal_utility("aidlc-utility intent list")
+            "Run `bun .claude/tools/aidlc-utility.ts intent`, print its output verbatim, then stop."
         );
     }
 
@@ -1412,7 +1624,11 @@ mod tests {
     #[test]
     fn a_missing_jump_row_uses_the_absence_wording_the_caller_supplies() {
         assert_eq!(
-            message_of(&Turn::jump_command(Ok(None), "absent")),
+            message_of(&Turn::jump_command(
+                Ok(None),
+                &scope_of("classic"),
+                "absent"
+            )),
             "absent"
         );
     }
@@ -1423,7 +1639,7 @@ mod tests {
         let error = ReadModelReadError::new(ErrorKind::WouldBlock, None);
 
         assert_eq!(
-            Turn::jump_command(Err(error.clone()), "absent"),
+            Turn::jump_command(Err(error.clone()), &scope_of("classic"), "absent"),
             Turn::unreadable(&error)
         );
     }
@@ -1436,10 +1652,15 @@ mod tests {
             "state-init".to_string(),
             "refused".to_string(),
             Some("invalid-target".to_string()),
+            None,
         );
 
         assert_eq!(
-            message_of(&Turn::jump_command(Ok(Some(refused)), "absent")),
+            message_of(&Turn::jump_command(
+                Ok(Some(refused)),
+                &scope_of("classic"),
+                "absent"
+            )),
             wording::INIT_JUMP
         );
     }
@@ -1452,10 +1673,15 @@ mod tests {
             "contract-design".to_string(),
             "refused".to_string(),
             Some("out-of-scope".to_string()),
+            None,
         );
 
         assert_eq!(
-            message_of(&Turn::jump_command(Ok(Some(refused)), "absent")),
+            message_of(&Turn::jump_command(
+                Ok(Some(refused)),
+                &scope_of("classic"),
+                "absent"
+            )),
             wording::unknown_stage("contract-design")
         );
     }
@@ -1468,21 +1694,38 @@ mod tests {
             "contract-design".to_string(),
             "forward".to_string(),
             None,
+            None,
         );
 
         assert_eq!(
-            message_of(&Turn::jump_command(Ok(Some(accepted)), "absent")),
-            wording::resolve_jump("aidlc-jump resolve --stage contract-design")
+            message_of(&Turn::jump_command(
+                Ok(Some(accepted)),
+                &scope_of("classic"),
+                "absent"
+            )),
+            wording::execute_jump(
+                "bun .claude/tools/aidlc-jump.ts execute --target contract-design --direction forward --scope classic"
+            )
         );
     }
 
     /// 受理されても目的地の綴りが読めなければ未知ステージとして拒む。
     #[test]
     fn an_accepted_jump_to_an_unreadable_slug_is_refused() {
-        let accepted = JumpView::new(2, "Not A Slug".to_string(), "forward".to_string(), None);
+        let accepted = JumpView::new(
+            2,
+            "Not A Slug".to_string(),
+            "forward".to_string(),
+            None,
+            None,
+        );
 
         assert_eq!(
-            message_of(&Turn::jump_command(Ok(Some(accepted)), "absent")),
+            message_of(&Turn::jump_command(
+                Ok(Some(accepted)),
+                &scope_of("classic"),
+                "absent"
+            )),
             wording::unknown_stage("Not A Slug")
         );
     }
@@ -1995,6 +2238,8 @@ mod tests {
             "[]".to_string(),
             "[]".to_string(),
             "[]".to_string(),
+            "[]".to_string(),
+            "[]".to_string(),
             None,
             None,
             None,
@@ -2009,9 +2254,9 @@ mod tests {
     #[tokio::test]
     async fn a_delivery_without_a_record_reports_that_it_cannot_assemble_the_run_stage() {
         let workspace = Workspace::minted().await;
-        workspace.forget_cursor();
+        workspace.forget_record();
         let layout = workspace.layout();
-        assert_eq!(layout.record_dir(), None, "カーソルは消してある");
+        assert_eq!(layout.record_dir(), None, "記録は解決できない");
         let turn = Turn::open(&layout).expect("ストア");
         let row = row_of(&turn, "classic", "domain-design");
 
@@ -2271,7 +2516,7 @@ mod tests {
             let turn = Turn::open(&layout).expect("ストア");
             live_bindings(&turn, None).0
         };
-        workspace.forget_cursor();
+        workspace.forget_record();
         let layout = workspace.layout();
         let turn = Turn::open(&layout).expect("ストア");
 
@@ -2333,6 +2578,16 @@ mod tests {
         assert!(is_read_failure(&next(&layout, &NextTurnInput::new())));
     }
 
+    /// 規則配送の計画表を引けなければ、bare な run-stage へ落とさず読取失敗を答える。
+    #[tokio::test]
+    async fn an_unreadable_steering_plan_table_stops_the_run_stage() {
+        let workspace = Workspace::minted().await;
+        workspace.drop_table("read_steering_plan");
+        let layout = workspace.layout();
+
+        assert!(is_read_failure(&next(&layout, &NextTurnInput::new())));
+    }
+
     /// 定義が取り込まれていなくてもカーソルが在れば、定義データの所在を名指して直せと言う。
     #[tokio::test]
     async fn a_cursor_without_a_projected_definition_names_the_stage_graph_file() {
@@ -2354,7 +2609,7 @@ mod tests {
     async fn neither_a_definition_nor_a_cursor_is_reported_as_no_state() {
         let workspace = Workspace::minted().await;
         workspace.drop_definition_rows();
-        workspace.forget_cursor();
+        workspace.forget_record();
         let layout = workspace.layout();
 
         assert_eq!(
@@ -2374,7 +2629,7 @@ mod tests {
 
         assert_eq!(
             message_of(&next(&layout, &NextTurnInput::new().with_resume())),
-            wording::unpark_then_resume("aidlc-state unpark")
+            wording::unpark_then_resume("bun .claude/tools/aidlc-state.ts unpark")
         );
     }
 
@@ -2711,6 +2966,10 @@ mod tests {
     }
 
     /// コスト 4 列のどれか 1 つでも欠けたらコスト節は付かない (4 列そろって初めて意味を持つ)。
+    ///
+    /// 名目値と greenfield 畳込み値は別の 4 列組であり、鋳造時に観測した種別の組だけを
+    /// 読む (`cost_clause`)。一時ワークスペースは greenfield と判定されるので、名目列だけを
+    /// 欠かせても畳込み列から節が出る — 両方の組を同時に欠かせて確かめる。
     #[tokio::test]
     async fn a_cost_clause_needs_all_four_columns() {
         let workspace = Workspace::minted().await;
@@ -2723,7 +2982,8 @@ mod tests {
 
         for column in columns {
             workspace.update_row(&format!(
-                "UPDATE read_definition_scope SET {column} = NULL WHERE scope = 'classic'"
+                "UPDATE read_definition_scope SET {column} = NULL, greenfield_{column} = NULL \
+                 WHERE scope = 'classic'"
             ));
             let layout = workspace.layout();
             let turn = Turn::open(&layout).expect("ストア");
@@ -2792,7 +3052,7 @@ mod tests {
              VALUES ('bad-scope', 'claude', 'Not A Slug', NULL, '[]', NULL, NULL, 0, 0, \
                      NULL, NULL, NULL, NULL, 0)",
         );
-        workspace.forget_cursor();
+        workspace.forget_record();
         let layout = workspace.layout();
         let turn = Turn::open(&layout).expect("ストア");
 

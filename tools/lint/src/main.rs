@@ -24,6 +24,7 @@
 
 mod check;
 mod domain_getter;
+mod setter_methods;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

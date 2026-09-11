@@ -7,10 +7,10 @@ use crate::workflow_definition::StageSlug;
 ///
 /// `retry` は upstream の `Retry: pending-request` 欄に対応する — 差し向けたのに判定が
 /// 返ってこなかった依頼を**もう一度**呼び直す形であり、依頼の回数には数えない
-/// （ピン `3c3146cf` `aidlc-log.ts:810-812`）。したがって `retry` が真のイベントの適用は
-/// フレーム空である。
+/// （固定本家2.7.1）。retryでも元の内容結合を保存するが、通常要求数は増やさない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewRequested {
+    evidence: crate::orchestration::ReviewBinding,
     id: IntentExecutionEventId,
     aggregate_id: IntentExecutionId,
     stage: StageSlug,
@@ -29,8 +29,10 @@ impl ReviewRequested {
         reviewer: impl Into<String>,
         iteration: u32,
         retry: bool,
+        evidence: crate::orchestration::ReviewBinding,
     ) -> ReviewRequested {
         ReviewRequested {
+            evidence,
             id,
             aggregate_id,
             stage,
@@ -40,6 +42,11 @@ impl ReviewRequested {
         }
     }
 
+    /// この操作が確定した内容結合。
+    #[must_use]
+    pub const fn evidence(&self) -> &crate::orchestration::ReviewBinding {
+        &self.evidence
+    }
     /// レビューを依頼したステージ。
     #[must_use]
     pub const fn stage(&self) -> &StageSlug {

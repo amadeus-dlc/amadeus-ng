@@ -15,13 +15,24 @@ use super::review_verdict::ReviewVerdict;
 ///
 /// 空の試行（[`ReviewAttempt::default`]）が「まだ 1 度も依頼していない」を表す。フロアは
 /// この値を空へ戻すことで表現される。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewAttempt {
+    history: super::ReviewHistory,
     requests: u32,
     pending: PendingIterations,
     closed: ReviewClosures,
 }
 
+impl Default for ReviewAttempt {
+    fn default() -> Self {
+        Self::restored(
+            0,
+            Vec::new(),
+            ReviewClosures::default(),
+            super::ReviewHistory::default(),
+        )
+    }
+}
 impl ReviewAttempt {
     /// 保存された行から試行を組み直す（**永続化境界からの再構成専用**）。
     ///
@@ -37,8 +48,14 @@ impl ReviewAttempt {
     /// そこで**この口だけ**が通し番号の並びを受け取り、内部で集合へ畳む。閉じた依頼
     /// (`closed`) は公開型 [`ReviewClosures`] なので、そのまま値で受ける。
     #[must_use]
-    pub fn restored(requests: u32, pending: Vec<u32>, closed: ReviewClosures) -> ReviewAttempt {
+    pub fn restored(
+        requests: u32,
+        pending: Vec<u32>,
+        closed: ReviewClosures,
+        history: super::ReviewHistory,
+    ) -> ReviewAttempt {
         ReviewAttempt {
+            history,
             requests,
             pending: pending.into_iter().fold(
                 PendingIterations::empty(),
@@ -51,6 +68,11 @@ impl ReviewAttempt {
         }
     }
 
+    /// 現試行に属する内容結合の履歴。
+    #[must_use]
+    pub const fn history(&self) -> &super::ReviewHistory {
+        &self.history
+    }
     /// 数え上げ済みの依頼数（`Retry: pending-request` は**数えない** — upstream
     /// `:810-812`）。
     #[must_use]
@@ -96,13 +118,28 @@ impl ReviewAttempt {
     }
 
     /// 新しい依頼を 1 件数える（通常の `REVIEW_REQUESTED`）。
-    pub(super) fn record_request(&mut self, iteration: u32) {
+    pub(super) fn record_request(
+        &mut self,
+        iteration: u32,
+        binding: super::ReviewBinding,
+        retry: bool,
+    ) {
+        self.history.record_request(iteration, binding, retry);
+        if retry {
+            return;
+        }
         self.requests = self.requests.saturating_add(1);
         self.pending.with(iteration);
     }
 
     /// 判定を 1 件閉じる（`REVIEW_COMPLETED`）。
-    pub(super) fn record_verdict(&mut self, iteration: u32, verdict: ReviewVerdict) {
+    pub(super) fn record_verdict(
+        &mut self,
+        iteration: u32,
+        verdict: ReviewVerdict,
+        completion: super::ReviewCompletion,
+    ) {
+        self.history.record_completion(iteration, completion);
         self.pending.without(iteration);
         self.closed.record(ReviewClosure::new(iteration, verdict));
     }
@@ -134,12 +171,20 @@ mod tests {
     #[test]
     fn a_request_is_counted_and_left_pending_until_its_verdict_lands() {
         let mut attempt = ReviewAttempt::default();
-        attempt.record_request(1);
+        attempt.record_request(
+            1,
+            crate::orchestration::review_test_fixture::binding(),
+            false,
+        );
         assert_eq!(attempt.request_count(), 1);
         assert!(attempt.is_pending(1));
         assert!(!attempt.is_pending(2));
 
-        attempt.record_verdict(1, ReviewVerdict::Ready);
+        attempt.record_verdict(
+            1,
+            ReviewVerdict::Ready,
+            crate::orchestration::review_test_fixture::completion(),
+        );
         assert_eq!(attempt.request_count(), 1);
         assert!(!attempt.is_pending(1));
         assert_eq!(attempt.closed().len(), 1);
@@ -153,13 +198,29 @@ mod tests {
     #[test]
     fn a_below_cap_not_ready_is_not_terminal_and_does_not_invalidate() {
         let mut attempt = ReviewAttempt::default();
-        attempt.record_request(1);
-        attempt.record_verdict(1, ReviewVerdict::NotReady);
+        attempt.record_request(
+            1,
+            crate::orchestration::review_test_fixture::binding(),
+            false,
+        );
+        attempt.record_verdict(
+            1,
+            ReviewVerdict::NotReady,
+            crate::orchestration::review_test_fixture::completion(),
+        );
         assert!(!attempt.has_terminal(&policy(ReviewCapValue::Adversarial)));
 
         // 上限に達した 2 回目の NOT-READY は終端になる。
-        attempt.record_request(2);
-        attempt.record_verdict(2, ReviewVerdict::NotReady);
+        attempt.record_request(
+            2,
+            crate::orchestration::review_test_fixture::binding(),
+            false,
+        );
+        attempt.record_verdict(
+            2,
+            ReviewVerdict::NotReady,
+            crate::orchestration::review_test_fixture::completion(),
+        );
         assert!(attempt.has_terminal(&policy(ReviewCapValue::Adversarial)));
     }
 
@@ -167,8 +228,16 @@ mod tests {
     #[test]
     fn an_advisory_pass_is_terminal_at_the_first_verdict() {
         let mut attempt = ReviewAttempt::default();
-        attempt.record_request(1);
-        attempt.record_verdict(1, ReviewVerdict::NotReady);
+        attempt.record_request(
+            1,
+            crate::orchestration::review_test_fixture::binding(),
+            false,
+        );
+        attempt.record_verdict(
+            1,
+            ReviewVerdict::NotReady,
+            crate::orchestration::review_test_fixture::completion(),
+        );
         assert!(attempt.has_terminal(&policy(ReviewCapValue::Advisory)));
     }
 
@@ -176,16 +245,32 @@ mod tests {
     #[test]
     fn an_effective_none_never_yields_a_terminal_receipt() {
         let mut attempt = ReviewAttempt::default();
-        attempt.record_request(1);
-        attempt.record_verdict(1, ReviewVerdict::Ready);
+        attempt.record_request(
+            1,
+            crate::orchestration::review_test_fixture::binding(),
+            false,
+        );
+        attempt.record_verdict(
+            1,
+            ReviewVerdict::Ready,
+            crate::orchestration::review_test_fixture::completion(),
+        );
         assert!(!attempt.has_terminal(&policy(ReviewCapValue::None)));
     }
 
     #[test]
     fn a_reset_empties_the_attempt() {
         let mut attempt = ReviewAttempt::default();
-        attempt.record_request(1);
-        attempt.record_verdict(1, ReviewVerdict::Ready);
+        attempt.record_request(
+            1,
+            crate::orchestration::review_test_fixture::binding(),
+            false,
+        );
+        attempt.record_verdict(
+            1,
+            ReviewVerdict::Ready,
+            crate::orchestration::review_test_fixture::completion(),
+        );
         attempt.reset();
         assert_eq!(attempt, ReviewAttempt::default());
     }

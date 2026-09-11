@@ -29,14 +29,31 @@ const FORBIDDEN_HEADING: &str = "## Forbidden";
 /// 誰が承認したか・受け取ってよいかは集約 (`IntentExecution::affirm_practices`) が決める
 /// (設計 §1)。空の昇格 ([`PracticesPromotion::default`]) も正規の値である — upstream は
 /// 節も規則も無い昇格を `Sections Written: `（空）と 0 / 0 で受理する。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PracticesPromotion {
     sections: PromotedSections,
     mandated: RuleLines,
     forbidden: RuleLines,
 }
 
+impl Default for PracticesPromotion {
+    fn default() -> Self {
+        Self::of_rules(Default::default(), Default::default(), Default::default())
+    }
+}
 impl PracticesPromotion {
+    const fn of_rules(
+        sections: PromotedSections,
+        mandated: RuleLines,
+        forbidden: RuleLines,
+    ) -> Self {
+        Self {
+            sections,
+            mandated,
+            forbidden,
+        }
+    }
+
     /// ドラフト 2 本と正本 2 本から昇格の内容を計算する (upstream Step 4a / 4b の写し)。
     ///
     /// - 5 節を順に見て、ドラフトに**本文のある**節があればそれを採る (不在・空は据え置き —
@@ -105,11 +122,11 @@ impl PracticesPromotion {
             }
         }
 
-        Ok(PracticesPromotion {
-            sections: PromotedSections::new(sections)?,
-            mandated: RuleLines::new(mandated),
-            forbidden: RuleLines::new(forbidden),
-        })
+        Ok(Self::of_rules(
+            PromotedSections::new(sections)?,
+            RuleLines::new(mandated),
+            RuleLines::new(forbidden),
+        ))
     }
 
     /// 置き換える節 (team.md の書込順)。

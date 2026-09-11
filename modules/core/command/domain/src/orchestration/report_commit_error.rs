@@ -6,6 +6,10 @@ use std::fmt;
 /// 判断された遷移をコミットできない理由。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReportCommitError {
+    /// 報告事実の構築拒否。
+    InvalidResult(super::ReportResultError),
+    /// 報告自体を拒否した。
+    Refused(super::ReportRefusal),
     /// 対象コマンドのガードが拒否した。
     Transition {
         /// 拒否された遷移。
@@ -22,6 +26,8 @@ pub enum ReportCommitError {
 impl fmt::Display for ReportCommitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidResult(error) => write!(f, "{error}"),
+            Self::Refused(error) => write!(f, "{error}"),
             Self::Transition { step, error } => write!(f, "{step:?}: {error}"),
             Self::Unwired { step } => write!(f, "unwired transition: {step:?}"),
         }
@@ -30,6 +36,8 @@ impl fmt::Display for ReportCommitError {
 impl std::error::Error for ReportCommitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::InvalidResult(error) => Some(error),
+            Self::Refused(error) => Some(error),
             Self::Transition { error, .. } => Some(error),
             Self::Unwired { .. } => None,
         }

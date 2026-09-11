@@ -7,6 +7,7 @@ use core_command_domain::workflow_definition::StageSlug;
 use super::port::IntentExecutionRepository;
 use super::port::IntentRepository;
 use super::port::RepositoryError;
+use super::port::WorkflowDefinitionRepository;
 use super::single_stage_run_error::SingleStageRunError;
 
 /// 隔離実行したステージの疑似ワークフロー ID 付き対を記録する
@@ -29,7 +30,14 @@ use super::single_stage_run_error::SingleStageRunError;
 ///
 /// `dyn` は使わない（`coding-rules/use-case-rules.md` §2）。結線は合成ルートだけが行う。
 #[derive(Debug)]
-pub struct RecordSingleStageRunUseCase<E: IntentExecutionRepository, I: IntentRepository> {
+pub struct RecordSingleStageRunUseCase<
+    E: IntentExecutionRepository,
+    I: IntentRepository,
+    D: WorkflowDefinitionRepository,
+> {
+    definitions: D,
+    handoff: Option<core_command_domain::orchestration::PipelineHandoff>,
+    disabled: bool,
     intent_execution_repository: E,
     intent_repository: I,
 }
@@ -46,14 +54,22 @@ enum AttemptOutcome {
     Conflicted(RepositoryError<IntentExecutionId>),
 }
 
-impl<E: IntentExecutionRepository, I: IntentRepository> RecordSingleStageRunUseCase<E, I> {
+impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRepository>
+    RecordSingleStageRunUseCase<E, I, D>
+{
     /// ポートの実装を 2 つ注入する（**この型の唯一の構築経路**）。
     #[must_use]
     pub const fn new(
         intent_execution_repository: E,
         intent_repository: I,
-    ) -> RecordSingleStageRunUseCase<E, I> {
+        definitions: D,
+        handoff: Option<core_command_domain::orchestration::PipelineHandoff>,
+        disabled: bool,
+    ) -> RecordSingleStageRunUseCase<E, I, D> {
         RecordSingleStageRunUseCase {
+            definitions,
+            handoff,
+            disabled,
             intent_execution_repository,
             intent_repository,
         }
@@ -107,6 +123,30 @@ impl<E: IntentExecutionRepository, I: IntentRepository> RecordSingleStageRunUseC
             .intent_repository
             .find_for_execution(&aggregate)
             .await?;
+        let definition = self
+            .definitions
+            .find_for_intent(&intent)
+            .await
+            .map_err(SingleStageRunError::DefinitionRepository)?;
+        aggregate
+            .require_pipeline_single(
+                &intent,
+                &definition,
+                stage,
+                self.handoff.as_ref(),
+                self.disabled,
+            )
+            .map_err(|error| match error {
+                core_command_domain::orchestration::CommandError::UnknownStage(_) => {
+                    SingleStageRunError::UnknownStage {
+                        slug: stage.clone(),
+                    }
+                }
+                error => SingleStageRunError::Command {
+                    stage: stage.clone(),
+                    error,
+                },
+            })?;
         let event = aggregate
             .record_single_stage_run(&intent, stage, occurred_at)
             .map_err(|error| match error {
@@ -156,6 +196,7 @@ mod tests {
         use_case: RecordSingleStageRunUseCase<
             InMemoryIntentExecutionRepository,
             InMemoryIntentRepository,
+            super::super::test_support::InMemoryWorkflowDefinitionRepository,
         >,
     }
 
@@ -175,12 +216,22 @@ mod tests {
             use_case: RecordSingleStageRunUseCase::new(
                 InMemoryIntentExecutionRepository::holding(aggregate, version),
                 InMemoryIntentRepository::holding(intent),
+                super::super::test_support::InMemoryWorkflowDefinitionRepository::holding(
+                    super::super::test_support::definition(32),
+                ),
+                None,
+                false,
             ),
         }
     }
 
     fn running(stage_count: usize) -> (Intent, IntentExecution) {
-        let (intent, aggregate, _) = genesis(stage_count);
+        let (intent, mut aggregate, _) = genesis(stage_count);
+        for index in 1..stage_count {
+            aggregate
+                .begin_single_stage_run(&intent, &slug(index), at())
+                .unwrap();
+        }
         (intent, aggregate)
     }
 
@@ -246,11 +297,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_stage_whose_attempt_was_never_opened_is_refused_by_the_aggregate() {
+        // `running` と違い、開始を記録していない: 集約の拒否をこの UseCase の封筒へ写す。
+        let (intent, aggregate, _) = genesis(3);
+        let mut subject = use_case((intent, aggregate), 1);
+
+        let err = subject
+            .execute(&slug(2))
+            .await
+            .expect_err("開いていない試行は記録できない");
+
+        assert!(matches!(
+            err,
+            SingleStageRunError::Command {
+                ref stage,
+                error: CommandError::SingleStageAttemptNotOpen,
+            } if stage == &slug(2)
+        ));
+        assert!(subject.intent_execution_repository().committed().is_empty());
+    }
+
+    #[tokio::test]
     async fn a_missing_aggregate_is_reported_as_not_found() {
         let (intent, _, _) = genesis(3);
         let mut use_case = RecordSingleStageRunUseCase::new(
             InMemoryIntentExecutionRepository::empty(),
             InMemoryIntentRepository::holding(intent),
+            super::super::test_support::InMemoryWorkflowDefinitionRepository::holding(
+                super::super::test_support::definition(32),
+            ),
+            None,
+            false,
         );
 
         let err = use_case
@@ -270,6 +347,11 @@ mod tests {
         let mut use_case = RecordSingleStageRunUseCase::new(
             InMemoryIntentExecutionRepository::holding(aggregate, 7),
             InMemoryIntentRepository::empty(),
+            super::super::test_support::InMemoryWorkflowDefinitionRepository::holding(
+                super::super::test_support::definition(32),
+            ),
+            None,
+            false,
         );
 
         let err = use_case
@@ -292,6 +374,11 @@ mod tests {
                     aggregate, 7, 1,
                 ),
                 InMemoryIntentRepository::holding(intent),
+                super::super::test_support::InMemoryWorkflowDefinitionRepository::holding(
+                    super::super::test_support::definition(32),
+                ),
+                None,
+                false,
             ),
         };
 
@@ -320,6 +407,11 @@ mod tests {
                     aggregate, 7, 2,
                 ),
                 InMemoryIntentRepository::holding(intent),
+                super::super::test_support::InMemoryWorkflowDefinitionRepository::holding(
+                    super::super::test_support::definition(32),
+                ),
+                None,
+                false,
             ),
         };
 

@@ -283,7 +283,7 @@ impl Fixture {
 }
 
 /// 出荷ハーネスの `harness.json` と同じ形 (upstream 実バイトは
-/// `tests/golden/upstream-3c3146cf/harness.json`)。
+/// `tests/golden/upstream-a277af21/data/harness.json`)。
 const DEFAULT_HARNESS_JSON: &str = r#"{
   "name": "claude",
   "harnessDir": ".claude",

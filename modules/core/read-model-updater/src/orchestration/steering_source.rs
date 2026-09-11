@@ -37,6 +37,7 @@ const BASE_FILES: [&str; 3] = ["org.md", "team.md", "project.md"];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SteeringSource {
     memory_dir: PathBuf,
+    workspace_root: Option<PathBuf>,
 }
 
 impl SteeringSource {
@@ -46,13 +47,49 @@ impl SteeringSource {
     /// この綴りをそのまま載せるので、**どの綴りで渡すかは呼び手 (合成ルート) が決める**。
     #[must_use]
     pub const fn new(memory_dir: PathBuf) -> SteeringSource {
-        SteeringSource { memory_dir }
+        SteeringSource {
+            memory_dir,
+            workspace_root: None,
+        }
+    }
+
+    /// 配信するパスをワークスペース相対にする。実際の読取先は変更しない。
+    #[must_use]
+    pub fn relative_to(mut self, root: PathBuf) -> Self {
+        self.workspace_root = Some(root);
+        self
     }
 
     /// 読む先のディレクトリ。
     #[must_use]
     pub fn memory_dir(&self) -> &Path {
         &self.memory_dir
+    }
+
+    /// テスト契約はテンプレート内のコメントも入力ハッシュへ含めるため、省略せず読む。
+    /// # Errors
+    /// 存在する規則文書をUTF-8として読めない場合。
+    pub fn read_testing_sections(
+        &self,
+    ) -> Result<core_command_domain::orchestration::TestingSections, CatchUpError> {
+        let read = |name: &str| {
+            let path = self.memory_dir.join(name);
+            match fs::read_to_string(&path) {
+                Ok(text) => Ok(text),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+                Err(error) => Err(CatchUpError::SteeringRead {
+                    path: display(&path),
+                    kind: error.kind(),
+                }),
+            }
+        };
+        Ok(
+            core_command_domain::orchestration::TestingSections::from_documents(
+                &read("org.md")?,
+                &read("team.md")?,
+                &read("project.md")?,
+            ),
+        )
     }
 
     /// memory 層を読み順どおりに読む。
@@ -87,7 +124,17 @@ impl SteeringSource {
     fn read_if_present(&self, relative: &str) -> Result<Option<RuleContent>, CatchUpError> {
         let path = self.memory_dir.join(relative);
         match fs::read_to_string(&path) {
-            Ok(text) => Ok(Some(RuleContent::new(display(&path), text))),
+            Ok(text) => {
+                if !Self::text_is_substantive(&text) {
+                    return Ok(None);
+                }
+                let displayed = self
+                    .workspace_root
+                    .as_ref()
+                    .and_then(|root| path.strip_prefix(root).ok())
+                    .unwrap_or(&path);
+                Ok(Some(RuleContent::new(display(displayed), text)))
+            }
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(CatchUpError::SteeringRead {
                 path: display(&path),
@@ -95,8 +142,54 @@ impl SteeringSource {
             }),
         }
     }
+
+    /// 規則テンプレートが**中身を持つ**か（本家 `isSubstantiveRuleText`）。
+    ///
+    /// 本家はこの述語を `tools/aidlc-steering.ts` から 1 本だけ輸出し、取得ループと
+    /// dispatch のフックの両方に使わせている — 「エンジン→指揮者」と「指揮者→部下」の
+    /// 2 つの hop が同じ判定を使うことが本家の明示された狙いである。こちらも同じ理由で
+    /// 1 か所に置き、規則配送のフックはここを呼ぶ。
+    #[must_use]
+    pub fn text_is_substantive(text: &str) -> bool {
+        let mut stripped = String::new();
+        let mut rest = text;
+        while let Some(start) = rest.find("<!--") {
+            let (before, comment) = rest.split_at(start);
+            let (_, after) = comment.split_at(4);
+            let Some(end) = after.find("-->") else {
+                break;
+            };
+            stripped.push_str(before);
+            rest = after.split_at(end + 3).1;
+        }
+        stripped.push_str(rest);
+        stripped
+            .lines()
+            .map(core_infrastructure::ecmascript::trim)
+            .any(|line| {
+                !(line.is_empty()
+                    || line.starts_with('#')
+                    || TEMPLATE_PREAMBLE.contains(&line)
+                    || line.len() >= 3 && line.bytes().all(|b| b == b'-'))
+            })
+    }
 }
 
+// 本家aidlc-steering.tsの空テンプレート前書きだけを除外する。利用者の引用文は規則として残す。
+const TEMPLATE_PREAMBLE: &[&str] = &[
+    "> This team's affirmed practices and corrections. Loaded after `org.md` as",
+    "> strict-additive guidance; contradictions with broader policy are rejected.",
+    "> Populated by the practices-discovery affirmation gate. Edit at the gate,",
+    "> not directly.",
+    "> Project-specific specialisation and corrections. Loaded after `org.md` and",
+    "> `team.md` as strict-additive guidance; contradictions with broader policy",
+    "> are rejected. Populated by practices-discovery and the self-learning loop.",
+    ">",
+    "> Use sparingly: most teams don't need a project layer. Reach for it",
+    "> only when this specific project needs stable, durable guidance beyond the",
+    "> team practice (for example, package-specific release checks or an additional",
+    "> regression suite for a legacy component).",
+];
 /// フェーズの全列挙 (番号順)。
 fn all_phases() -> impl Iterator<Item = PhaseId> {
     (0..=4_u32).filter_map(PhaseId::from_index)
@@ -109,8 +202,46 @@ fn display(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    // 想定外ケースの即時失敗はテストの検証手段である (house style)。
     #![allow(clippy::panic)]
+
+    #[test]
+    fn substantive_rules_match_fixed_upstream_inputs() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../tests/golden/selfhost-stage1/steering-content.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            corpus
+                .get("source")
+                .and_then(|v| v.get("commit"))
+                .and_then(serde_json::Value::as_str)
+                .expect("source.commit"),
+            "a277af218f0df7f325d3b8be7b6d90fce2c5bd40"
+        );
+        let cases = corpus
+            .get("observations")
+            .and_then(serde_json::Value::as_array)
+            .expect("observations");
+        assert!(!cases.is_empty());
+        for case in cases {
+            assert_eq!(
+                super::SteeringSource::text_is_substantive(
+                    case.get("text")
+                        .and_then(serde_json::Value::as_str)
+                        .expect("text")
+                ),
+                case.get("substantive")
+                    .and_then(serde_json::Value::as_bool)
+                    .expect("substantive"),
+                "{}",
+                case.get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("case")
+            );
+        }
+    }
+
+    // 想定外ケースの即時失敗はテストの検証手段である (house style)。
 
     use super::*;
     use tempfile::{TempDir, tempdir};
@@ -138,9 +269,12 @@ mod tests {
     fn the_bundle_reads_in_resolution_order_and_skips_missing_files() {
         // team.md は無い — 正常スキップ。
         let dir = memory_layer(&[
-            ("org.md", "# Org\n"),
-            ("project.md", "# Project\n"),
-            ("phases/inception.md", "# Inception\n"),
+            ("org.md", "# Org\nFollow organization rules.\n"),
+            ("project.md", "# Project\nFollow project rules.\n"),
+            (
+                "phases/inception.md",
+                "# Inception\nFollow inception rules.\n",
+            ),
         ]);
         let rules = SteeringSource::new(dir.path().to_path_buf())
             .read()
@@ -166,8 +300,11 @@ mod tests {
     #[test]
     fn the_initialization_phase_rule_is_never_read_even_when_it_exists() {
         let dir = memory_layer(&[
-            ("org.md", "# Org\n"),
-            ("phases/initialization.md", "# Never delivered\n"),
+            ("org.md", "# Org\nFollow organization rules.\n"),
+            (
+                "phases/initialization.md",
+                "# Never delivered\nThis instruction must not be delivered.\n",
+            ),
         ]);
         let rules = SteeringSource::new(dir.path().to_path_buf())
             .read()

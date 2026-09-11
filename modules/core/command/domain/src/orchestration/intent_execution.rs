@@ -53,9 +53,10 @@ use super::gate_decision::GateDecision;
 use super::intent::Intent;
 use super::intent_execution_error::IntentExecutionError;
 use super::intent_execution_event::{
-    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped, Parked,
-    PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested, SingleStageRunCommitted,
-    SkeletonStanceRecorded, StageRevised, StageSkipped, Started, Unparked,
+    AutonomyModeSet, GateApproved, GateOpened, GateRejected, IntentExecutionEvent, Jumped,
+    MemoryJournalsObserved, Parked, PracticesAffirmed, Recomposed, ReviewCompleted,
+    ReviewRequested, SingleStageRunCommitted, SkeletonStanceRecorded, StageRevised, StageSkipped,
+    Started, Unparked,
 };
 use super::intent_execution_event_id::IntentExecutionEventId;
 use super::intent_execution_id::IntentExecutionId;
@@ -79,7 +80,6 @@ use super::stage_index_set::StageIndexSet;
 use super::stage_key::StageKey;
 use super::stage_slot::StageSlot;
 use super::stage_slots::StageSlots;
-use super::stage_slug_set::StageSlugSet;
 use super::state_binding::StateBinding;
 use super::status::Status;
 use super::transition_step::TransitionStep;
@@ -87,6 +87,7 @@ use super::transition_steps::TransitionSteps;
 use super::verdict::Verdict;
 use crate::workflow_definition::{
     ExecutionKind, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction, ReviewPolicy, StageSlug,
+    WorkflowDefinition,
 };
 use crate::workspace::{CheckboxState, HumanTurns, PracticesPromotion};
 use core_infrastructure::canon_json::{JsonValue, Number, ObjectMembers, hash_compact};
@@ -130,6 +131,11 @@ const REJECT_PRECONDITION: [CheckboxState; 2] =
 /// [`IntentExecution::new`] を必ず通る — 検査点が 1 か所に保たれる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentExecution {
+    pipeline_history: crate::orchestration::PipelineHistory,
+    approval_publications: super::PlanAppliedOperations,
+    code_generation_run_floor: Option<super::CodeGenerationRunFloor>,
+    active_directive: Option<super::ActiveDirective>,
+    interactions: super::InteractionState,
     id: IntentExecutionId,
     /// 実行の対象 intent — **ID で参照し、`Intent` を埋め込まない**
     /// (coding-rules/aggregate-references.md)。1 intent : n 実行なので、埋め込めば同じ静的
@@ -150,6 +156,21 @@ pub struct IntentExecution {
     /// 要る判断は従来どおり `&Intent` を引数で受け取る。
     slots: StageSlots,
     cursor: StageIndex,
+    /// カーソルの現在位置が **TaskUpdate 同期** (`TaskSynchronized`) によって実効 EXECUTE の
+    /// 外へ置かれたか。本家 2.7.1 の `set-status` は実効 SKIP のステージも現在位置として受理し
+    /// (`taskupdate/out-of-scope-stage` 観測)、その状態では `next` が skip の不整合を報告する。
+    /// エンジン自身の遷移 (advance / jump) がカーソルを動かした時点で偽へ戻る — 不変条件
+    /// `cursor_in_scope` はエンジン遷移の空回りを検出する守りであり、同期由来の位置には
+    /// 適用しない (裁定 2026-09-09: task-update-contract Q1 = A)。
+    cursor_synchronized: bool,
+    /// カーソルの現在位置が **`--scope` を名指した直接 execute** (`Jumped` が `JumpScope` を
+    /// 運ぶ) によって、自 scope の実効計画では EXECUTE でない位置へ置かれたか。本家 2.7.1
+    /// (`aidlc-jump.ts:257-296, 308-375`) の直接 execute 契約では、別 scope の静的な列で
+    /// 到達可否と読み飛ばしを導くため、到達点が自計画の外に立ちうる。
+    /// `cursor_synchronized` (TaskUpdate **同期**由来) とは由来が違う — こちらは**跳躍**由来
+    /// の印であり、混同を避けるため別フィールドにする (裁定 2026-09-10: jump-contract Q1 = A)。
+    /// エンジン自身の遷移 (advance / 同期) がカーソルを動かした時点で偽へ戻る。
+    cursor_foreign_scoped: bool,
     status: Status,
     parked_at: Option<StageIndex>,
     autonomy: AutonomyMode,
@@ -171,6 +192,7 @@ pub struct IntentExecution {
     /// 欄が無い歴史は `None` で読む — 後方互換ではなく「まだ解決していない」という正規の
     /// 意味である。
     last_gate_resolution_at: Option<DateTime<Utc>>,
+    progress_seq_nr: usize,
     seq_nr: usize,
     /// ストアが採番した楽観 version — **次の書込に提示する不透明トークン**である。
     ///
@@ -192,6 +214,211 @@ pub struct IntentExecution {
 }
 
 impl IntentExecution {
+    /// 単独ステージの開始を一度だけ記録する。
+    /// # Errors
+    /// 別intent、未知stage、既に開いている場合、通番枯渇。
+    pub fn begin_single_stage_run(
+        &mut self,
+        intent: &Intent,
+        stage: &StageSlug,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        let target = self
+            .resolve(stage)
+            .map_err(|_| CommandError::UnknownStage(stage.as_str().into()))?;
+        self.require_gated(target)?;
+        if self.pipeline_history.single_is_open(stage.as_str()) {
+            return Err(CommandError::SingleStageAttemptAlreadyOpen);
+        }
+        self.commit(
+            IntentExecutionEvent::SingleStageRunStarted(super::SingleStageRunStarted::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                stage.clone(),
+            )),
+            at,
+        )
+    }
+    /// 単独完了は通常実行の受領を使わず、開始済みの試行だけを検査する。
+    /// # Errors
+    /// 試行未開始、またはlinkが不足する場合。
+    pub fn require_pipeline_single(
+        &self,
+        intent: &Intent,
+        definition: &WorkflowDefinition,
+        stage: &StageSlug,
+        current: Option<&super::PipelineHandoff>,
+        disabled: bool,
+    ) -> Result<(), CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        let node = definition
+            .graph()
+            .get(stage)
+            .ok_or_else(|| CommandError::UnknownStage(stage.as_str().into()))?;
+        if node.phase() == PhaseId::Initialization {
+            return Err(CommandError::InvalidTarget(StageIndex::new(0)));
+        }
+        if !self.pipeline_history.single_is_open(stage.as_str()) {
+            return Err(CommandError::SingleStageAttemptNotOpen);
+        }
+        if node.mode() != crate::workflow_definition::StageMode::Pipeline {
+            return Ok(());
+        }
+        if !disabled && let Some(missing) = self.pipeline_history.missing(node, current, true) {
+            return Err(CommandError::PipelineLinksMissing {
+                stage: stage.as_str().into(),
+                missing,
+                single: true,
+            });
+        }
+        Ok(())
+    }
+
+    /// 報告前に、現在の宣言・履歴・handoffからpipeline完了根拠を確認する。
+    /// # Errors
+    /// 必要なlinkが現在の試行に揃っていない場合。
+    pub fn require_pipeline_for_report(
+        &self,
+        intent: &Intent,
+        definition: &WorkflowDefinition,
+        request: &ReportRequest,
+    ) -> Result<(), CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        if !request.requires_completion_evidence() || request.pipeline_disabled() {
+            return Ok(());
+        }
+        let stage = request
+            .stage()
+            .cloned()
+            .or_else(|| self.cursor_slug().cloned())
+            .ok_or(CommandError::InvalidTarget(self.cursor))?;
+        let index = self
+            .resolve(&stage)
+            .map_err(|_| CommandError::UnknownStage(stage.as_str().into()))?;
+        if self.checkbox(index) == Some(CheckboxState::Completed) {
+            return Ok(());
+        }
+        let node = definition
+            .graph()
+            .get(&stage)
+            .ok_or_else(|| CommandError::UnknownStage(stage.as_str().into()))?;
+        if node.mode() == crate::workflow_definition::StageMode::Pipeline
+            && let Some(missing) =
+                self.pipeline_history
+                    .missing(node, request.pipeline_handoff(), false)
+        {
+            return Err(CommandError::PipelineLinksMissing {
+                stage: stage.as_str().into(),
+                missing,
+                single: false,
+            });
+        }
+        Ok(())
+    }
+
+    /// 保存境界へ渡すpipelineの試行・受領履歴。
+    #[must_use]
+    pub const fn pipeline_history(&self) -> &crate::orchestration::PipelineHistory {
+        &self.pipeline_history
+    }
+
+    /// 宣言・順序・鮮度を確認し、完了受領を単一イベントとして保存可能にする。
+    /// # Errors
+    /// 別intent、pipeline以外、未宣言link、順序・重複・引継ぎ検査、通番枯渇の場合。
+    pub fn record_pipeline_link(
+        &mut self,
+        intent: &Intent,
+        definition: &WorkflowDefinition,
+        request: &super::PipelineLinkRequest,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, super::PipelineLinkError> {
+        use super::PipelineLinkError as E;
+        if !self.matches(intent) {
+            return Err(E::Command(CommandError::IntentMismatch));
+        }
+        let stage = StageSlug::parse(request.stage()).ok();
+        let node = stage
+            .as_ref()
+            .and_then(|stage| definition.graph().get(stage))
+            .filter(|node| node.mode() == crate::workflow_definition::StageMode::Pipeline)
+            .ok_or_else(|| E::NotPipeline {
+                stage: request.stage().into(),
+            })?;
+        let receipt = self.pipeline_history.accept(request, node)?;
+        self.commit(
+            IntentExecutionEvent::PipelineLinkCompleted(super::PipelineLinkCompleted::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                receipt,
+            )),
+            at,
+        )
+        .map_err(E::Command)
+    }
+
+    /// 現ステージの承認・改訂、または対話中の未回答質問を待つ。
+    #[must_use]
+    pub fn continuation_wait(&self) -> Option<super::ContinuationWait> {
+        let checkbox = self.checkbox(self.cursor);
+        if checkbox.is_some_and(CheckboxState::is_waiting_for_human) {
+            return Some(super::ContinuationWait::GateOrRevision);
+        }
+        if checkbox == Some(CheckboxState::InProgress)
+            && !self.autonomy.is_autonomous()
+            && self
+                .cursor_slug()
+                .is_some_and(|stage| self.interactions.has_question(stage.as_str()))
+        {
+            return Some(super::ContinuationWait::Decision);
+        }
+        None
+    }
+    /// 停止制御要求の既定上限を、この実行の自律モードから確定する。
+    /// # Errors
+    /// resetと待機を同時に要求する不整合がある場合。
+    pub fn prepare_continuation(
+        &self,
+        request: super::ContinuationRequest,
+        raw_limit: Option<&str>,
+        observations: &super::ContinuationObservations,
+    ) -> Result<super::ContinuationRequest, super::ContinuationError> {
+        let question_wait = !request.is_reset()
+            && !self.autonomy.is_autonomous()
+            && self.checkbox(self.cursor) == Some(CheckboxState::InProgress)
+            && observations.has_unanswered_question();
+        let wait = if observations.is_resume_waiting() && !self.autonomy.is_autonomous() {
+            Some(super::ContinuationWait::Resume)
+        } else if request.is_reset() {
+            None
+        } else if self.continuation_wait() == Some(super::ContinuationWait::GateOrRevision) {
+            Some(super::ContinuationWait::GateOrRevision)
+        } else if question_wait {
+            Some(super::ContinuationWait::Question)
+        } else if self.continuation_wait() == Some(super::ContinuationWait::Decision) {
+            Some(super::ContinuationWait::Decision)
+        } else if !self.autonomy.is_autonomous() && observations.is_conversational() {
+            Some(super::ContinuationWait::Conversation)
+        } else {
+            None
+        };
+        request.for_mode(self.autonomy, raw_limit).with_wait(wait)
+    }
+    /// 初期化後の完了・読み飛ばしがまだない、最初の実作業か。
+    #[must_use]
+    pub fn is_first_substantive_run(&self) -> bool {
+        self.slots.fold_left(true, |first, slot| {
+            first
+                && (slot.key().phase() == PhaseId::Initialization || !slot.checkbox().is_finished())
+        })
+    }
+
     /// まだ 1 度も永続化していない集約が提示する版 (新規作成の楽観 version)。
     ///
     /// 本家 v3 の規約「新規作成は `seq_nr == 1` かつ `version == 0`」の 0 に名前を与えた
@@ -288,15 +515,23 @@ impl IntentExecution {
                   (オーナー裁定 2026-08-30) ため、フィールドがそのまま引数になる"
     )]
     pub fn new(
+        pipeline_history: crate::orchestration::PipelineHistory,
+        approval_publications: super::PlanAppliedOperations,
+        code_generation_run_floor: Option<super::CodeGenerationRunFloor>,
+        active_directive: Option<super::ActiveDirective>,
+        interactions: super::InteractionState,
         id: IntentExecutionId,
         intent_id: IntentId,
         slots: StageSlots,
         cursor: usize,
+        cursor_synchronized: bool,
+        cursor_foreign_scoped: bool,
         status: Status,
         parked_at: Option<usize>,
         autonomy: AutonomyMode,
         skeleton_stance: Option<SkeletonStance>,
         last_gate_resolution_at: Option<DateTime<Utc>>,
+        progress_seq_nr: usize,
         seq_nr: usize,
         last_updated_at: DateTime<Utc>,
     ) -> Result<IntentExecution, IntentExecutionError> {
@@ -316,16 +551,39 @@ impl IntentExecution {
         if seq_nr == 0 {
             return Err(IntentExecutionError::new("seq_nr must be at least 1"));
         }
+        if !interactions.belongs_to(&id) {
+            return Err(IntentExecutionError::new(
+                "interaction state belongs to another execution",
+            ));
+        }
+        if progress_seq_nr == 0 || progress_seq_nr > seq_nr {
+            return Err(IntentExecutionError::new(
+                "progress sequence is outside the recorded history",
+            ));
+        }
+        if !pipeline_history.belongs_to(&id) {
+            return Err(IntentExecutionError::new(
+                "pipeline history belongs to another execution",
+            ));
+        }
         let execution = IntentExecution {
+            pipeline_history,
+            approval_publications,
+            code_generation_run_floor,
+            active_directive,
+            interactions,
             id,
             intent_id,
             slots,
             cursor: StageIndex::new(cursor),
+            cursor_synchronized,
+            cursor_foreign_scoped,
             status,
             parked_at: parked_at.map(StageIndex::new),
             autonomy,
             skeleton_stance,
             last_gate_resolution_at,
+            progress_seq_nr,
             seq_nr,
             version: IntentExecution::UNPERSISTED_VERSION,
             last_updated_at,
@@ -394,6 +652,12 @@ impl IntentExecution {
         self.seq_nr
     }
 
+    /// 最後に本流の進行状態が変わったイベントの通番。
+    #[must_use]
+    pub const fn progress_seq_nr(&self) -> usize {
+        self.progress_seq_nr
+    }
+
     /// 次の書込に提示する楽観 version (ストアが採番した不透明トークン)。
     ///
     /// 解釈も比較も算術もしない — 読んだ値をそのままストアへ返すだけである (BR5.3)。
@@ -444,6 +708,20 @@ impl IntentExecution {
         self.cursor
     }
 
+    /// カーソルが TaskUpdate 同期によって実効 EXECUTE の外に置かれているか
+    /// (`cursor_in_scope` の適用除外)。
+    #[must_use]
+    pub const fn cursor_synchronized(&self) -> bool {
+        self.cursor_synchronized
+    }
+
+    /// カーソルが別 scope を名指した直接 execute によって自実効計画の外に置かれているか
+    /// (`cursor_in_scope` の適用除外 — 裁定 2026-09-10: jump-contract Q1 = A)。
+    #[must_use]
+    pub const fn cursor_foreign_scoped(&self) -> bool {
+        self.cursor_foreign_scoped
+    }
+
     /// `Status` 行の現在値 (park マーカーとは直交)。
     #[must_use]
     pub const fn status(&self) -> Status {
@@ -476,6 +754,48 @@ impl IntentExecution {
     #[must_use]
     pub const fn skeleton_stance(&self) -> Option<SkeletonStance> {
         self.skeleton_stance
+    }
+
+    fn observe_run_boundary(
+        &mut self,
+        event: &IntentExecutionEvent,
+        before_cursor: StageIndex,
+        at: DateTime<Utc>,
+    ) -> Result<(), ApplyError> {
+        // TaskUpdateはstateの同期でありSTAGE_STARTED監査を生成しない。
+        if matches!(event, IntentExecutionEvent::TaskSynchronized(_)) {
+            return Ok(());
+        }
+        use super::{ReportResult, ReportTransition, RunBoundaryKind};
+        let jumped = matches!(event, IntentExecutionEvent::Jumped(_));
+        let rejected = match event {
+            IntentExecutionEvent::GateRejected(event) => {
+                event.stage().as_str() == "code-generation"
+            }
+            IntentExecutionEvent::Reported(event) => {
+                matches!(event.result(), ReportResult::Committed { stage, transition: ReportTransition::GateRejected { .. }, .. } if stage.as_str() == "code-generation")
+            }
+            _ => false,
+        };
+        let started = (jumped || before_cursor != self.cursor)
+            && self.status == Status::Running
+            && self
+                .slots
+                .at(self.cursor)
+                .is_some_and(|slot| slot.key().slug().as_str() == "code-generation");
+        let Some(floor) = self.code_generation_run_floor.as_mut() else {
+            return Ok(());
+        };
+        if rejected {
+            floor.record(RunBoundaryKind::GateRejected, at)?;
+        }
+        if jumped {
+            floor.record(RunBoundaryKind::StageJumped, at)?;
+        }
+        if started {
+            floor.record(RunBoundaryKind::StageStarted, at)?;
+        }
+        Ok(())
     }
 
     /// 名指しステージの**現在の試行**のレビュー会計。範囲外は `None`。
@@ -525,6 +845,67 @@ impl IntentExecution {
     #[must_use]
     pub fn checkbox(&self, stage: StageIndex) -> Option<CheckboxState> {
         self.slots.at(stage).map(StageSlot::checkbox)
+    }
+
+    /// 終端の受領証とゲートの間の書込みを凍結するか (upstream `review-freeze`)。
+    ///
+    /// 拒否するのは 3 条件がそろった書込みだけである:
+    /// レビュアーを宣言したステージの `produces` / `optional_produces` を名指し、
+    /// そのステージがまだ完了・読み飛ばしでなく、現在の試行に**終端の受領証**がある。
+    /// 3 つとも集約が持つか、引数で受け取る材料で決まる — 監査台帳を読み返さない
+    /// (`ReviewAttempt` が同じ会計を状態として持つ。設計 §1)。
+    ///
+    /// # per-unit ステージの受領証は Unit ごとである
+    ///
+    /// upstream の `judgeFreeze` は `for_each: unit-of-work` の枝で `unitVerdicts` /
+    /// `unitPending` **だけ**を見て `stageVerdict` を読まない。したがって Unit 名の取れない
+    /// 書込み — ゼロ Unit の実行がステージ直下へ置く成果物 — は凍結しない。射程の判断は
+    /// [`ReviewPolicy::receipt_covers`] が持つ。
+    ///
+    /// 兄弟 Unit の分岐 (Unit A の受領証が Unit B の書込みを凍結しない) は**まだ無い** —
+    /// `--unit` を伴う受領証の記録が本 build に無く、[`ReviewAttempt`] はステージ 1 つに
+    /// 1 つだからである。Unit 宛先の凍結は「この試行に終端の受領証がある」で決まる。
+    ///
+    /// [`ReviewPolicy::receipt_covers`]: crate::workflow_definition::ReviewPolicy::receipt_covers
+    #[must_use]
+    pub fn judge_review_freeze(
+        &self,
+        intent: &Intent,
+        definition: &crate::workflow_definition::WorkflowDefinition,
+        targets: &super::WriteTargets,
+    ) -> super::ReviewFreezeVerdict {
+        use super::ReviewFreezeVerdict;
+        // 別 intent の計画を当てて凍結しない。書込み先が無い呼出しは判断の対象ですらない。
+        if targets.is_empty() || !self.matches(intent) {
+            return ReviewFreezeVerdict::Allowed;
+        }
+        for position in 0..self.stage_count() {
+            let stage = StageIndex::new(position);
+            let Some(slot) = self.slots.at(stage) else {
+                continue;
+            };
+            // 完了・読み飛ばしのステージの成果物は恒久記録である。後段の追記は別の試行に
+            // 属し、そのフロアは既に戻っている。
+            if slot.checkbox().is_finished() {
+                continue;
+            }
+            let slug = slot.key().slug();
+            // レビュアー宣言なし・未知 slug・壊れた override は凍結の材料にならない
+            // (承認側の受領証ガードと同じ材料で判断する)。
+            let Ok(Some(policy)) = intent.resolve_review_policy(definition, slug) else {
+                continue;
+            };
+            if !slot.review_attempt().has_terminal(&policy) {
+                continue;
+            }
+            let Some(node) = definition.graph().get(slug) else {
+                continue;
+            };
+            if let Some(block) = targets.first_frozen_by(node, &policy) {
+                return ReviewFreezeVerdict::Blocked(block);
+            }
+        }
+        ReviewFreezeVerdict::Allowed
     }
 
     /// 名指しステージのゲート承認履歴。範囲外は `None`。
@@ -632,15 +1013,6 @@ impl IntentExecution {
         self.slots
             .position_of(slug)
             .ok_or_else(|| ApplyError::UnknownStage(slug.clone()))
-    }
-
-    /// ステージに状態の印を付ける (状態ファイルのチェックボックスがこの印の表現)。
-    ///
-    /// 位置は `resolve` / `all_positions` が束縛済みなので範囲外は起きない。それでも
-    /// `Err` を握り潰さないのは、起きたときに**壊れた歴史**として `apply_event` の panic
-    /// 経路まで届かせるためである (無言の no-op にしない)。
-    fn mark_stage(&mut self, stage: StageIndex, value: CheckboxState) -> Result<(), ApplyError> {
-        Ok(self.slots.mark(stage, value)?)
     }
 
     /// ステージの承認を記録する (`GateApproved` の適用)。
@@ -751,6 +1123,528 @@ impl IntentExecution {
     /// ので、そのいずれにも該当しない (該当したらプログラミング誤りであり、クラッシュが正 —
     /// オーナー裁定 2026-08-30)。通番枯渇だけは入口で明示に拒否する (`SequenceExhausted` —
     /// 飽和加算で seq_nr が停滞したまま成功を装わない)。
+    /// 対話の保存状態。読取り/永続化側へ渡す。
+    #[must_use]
+    pub const fn interactions(&self) -> &super::InteractionState {
+        &self.interactions
+    }
+
+    /// 通常の質問の回答を、未消費の人間応答に結び付けて受理する。
+    ///
+    /// # Errors
+    /// 新しい人間応答が無い場合、または通番枯渇。
+    pub fn record_answer(
+        &mut self,
+        answer_id: super::AnswerId,
+        request: &super::AnswerRequest,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, super::AnswerError> {
+        if request.is_non_answer() {
+            return Err(super::AnswerError::Dismissed);
+        }
+        let disposition = if let Some(evidence) = request.summary() {
+            super::SummaryChoice::parse(request.details())?;
+            let question = self
+                .interactions
+                .summary_prompt(request.stage(), evidence.questions_file())
+                .ok_or(super::AnswerError::SummaryQuestionMissing)?;
+            if request.human_presence_guard()
+                && (!self.interactions.has_fresh_human()
+                    || !self.interactions.human_after(question))
+            {
+                return Err(super::AnswerError::SummaryHumanReplyMissing);
+            }
+            super::AnswerDisposition::SummaryConfirmed(evidence.clone())
+        } else {
+            let at_gate = StageSlug::parse(request.stage())
+                .ok()
+                .and_then(|slug| self.slots.position_of(&slug))
+                .and_then(|stage| self.slots.at(stage))
+                .is_some_and(|slot| slot.checkbox() == CheckboxState::AwaitingApproval);
+            let disposition = if at_gate && !self.interactions.has_question(request.stage()) {
+                super::AnswerDisposition::ApprovalGateReportOwned
+            } else {
+                super::AnswerDisposition::Recorded
+            };
+            if request.human_presence_guard() && !self.interactions.has_fresh_human() {
+                return Err(super::AnswerError::HumanReplyMissing {
+                    approval_choice: disposition
+                        == super::AnswerDisposition::ApprovalGateReportOwned,
+                });
+            }
+            disposition
+        };
+        self.commit(
+            IntentExecutionEvent::AnswerRecorded(super::AnswerRecorded::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                answer_id,
+                request.stage(),
+                request.details(),
+                disposition,
+            )),
+            at,
+        )
+        .map_err(super::AnswerError::Command)
+    }
+
+    /// 計画承認の質問を、この実行の発行と現在の契約へ結び付ける。
+    /// # Errors
+    /// 依頼・指示・対象・文書・規則・回答欄が一致しない場合。
+    pub fn plan_approval_evidence(
+        &self,
+        intent: &Intent,
+        input: &super::PlanApprovalInput,
+        expected_answer: &str,
+    ) -> Result<super::PlanApprovalEvidence, super::PlanApprovalError> {
+        if !self.matches(intent) {
+            return Err(super::PlanApprovalError::new(
+                "Code Generation approval authority does not match the active intent",
+            ));
+        }
+        let authority = super::CodeGenerationAuthority::resolve(
+            self.active_directive(),
+            self.code_generation_run_floor(),
+            input.target().unit(),
+            input.state_sha256(),
+        )?;
+        let posture = super::TestingPosture::resolve(
+            input.sections(),
+            &super::TestingContext::for_intent(Some(intent)),
+        )
+        .ok();
+        super::PlanApprovalEvidence::verify_for_file(
+            authority,
+            input.documents(),
+            posture.as_ref(),
+            input.source_sha256(),
+            input.supplied_questions_file().unwrap_or(""),
+            expected_answer,
+        )
+    }
+
+    /// この実行に対する計画回答の対象・文書・選択を検証する。
+    /// # Errors
+    /// 実行参照、計画、規則、回答文書が現在の承認対象に一致しない場合。
+    pub fn verify_plan_answer(
+        &self,
+        intent: &Intent,
+        input: &super::PlanApprovalInput,
+        origin: &super::PlanApprovalOrigin,
+        stage: &str,
+        session: &super::PlanSession,
+        choice: super::PlanChoice,
+    ) -> Result<super::PlanAnswerInput, super::PlanApprovalError> {
+        if origin.execution_id() != self.id() {
+            return Err(super::PlanApprovalError::new(
+                "Plan Approval answer targets another execution",
+            ));
+        }
+        let evidence = self.plan_approval_evidence(intent, input, choice.as_str())?;
+        Ok(super::PlanAnswerInput::new(
+            origin.clone(),
+            stage.to_string(),
+            super::PlanDecisionEvidence::new(evidence, session.clone()),
+            choice,
+            input.source_sha256().map(str::to_string),
+        ))
+    }
+
+    /// 現在の実行・文書・規則と、共有側の受領から開始可否を判断する。
+    #[must_use]
+    pub fn code_generation_approval(
+        &self,
+        intent: &Intent,
+        input: &super::PlanApprovalInput,
+        receipts: &super::PlanReceipts,
+    ) -> super::CodeGenerationApproval {
+        let authority = if self.matches(intent) {
+            super::CodeGenerationAuthority::resolve(
+                self.active_directive(),
+                self.code_generation_run_floor(),
+                input.target().unit(),
+                input.state_sha256(),
+            )
+        } else {
+            Err(super::PlanApprovalError::new(
+                "Code Generation approval authority does not match the active intent",
+            ))
+        };
+        let posture = super::TestingPosture::resolve(
+            input.sections(),
+            &super::TestingContext::for_intent(Some(intent)),
+        );
+        super::CodeGenerationApproval::evaluate(
+            authority,
+            input.target(),
+            input.documents(),
+            posture,
+            receipts,
+            input.source_sha256(),
+        )
+    }
+
+    /// 計画の指紋を現在の発行と規則から計算する。RMUも同じ判断を呼ぶ。
+    /// # Errors
+    /// 依頼、指示、文書、または現在の契約が成立しない場合。
+    pub fn plan_fingerprint(
+        &self,
+        intent: &Intent,
+        input: &super::PlanApprovalInput,
+    ) -> Result<String, super::PlanApprovalError> {
+        use super::{
+            CodeGenerationAuthority, EmbeddedTestingContract, PlanApprovalError, PlanQuestions,
+            TestingContext, TestingPosture,
+        };
+        use core_infrastructure::ecmascript::trim;
+        if !self.matches(intent) {
+            return Err(PlanApprovalError::new(
+                "Code Generation approval authority does not match the active intent",
+            ));
+        }
+        let authority = CodeGenerationAuthority::resolve(
+            self.active_directive(),
+            self.code_generation_run_floor(),
+            input.target().unit(),
+            input.state_sha256(),
+        )?;
+        let documents = input.documents();
+        if PlanQuestions::parse(documents.questions()).approved() {
+            return Err(PlanApprovalError::new(
+                "reset the Plan Approval [Answer]: to blank before regenerating its fingerprint",
+            ));
+        }
+        let posture =
+            TestingPosture::resolve(input.sections(), &TestingContext::for_intent(Some(intent)))
+                .map_err(|error| PlanApprovalError::new(error.to_string()))?;
+        let embedded = EmbeddedTestingContract::parse(documents.plan());
+        let Some(contract) = embedded
+            .as_ref()
+            .filter(|contract| contract.is_current(&posture))
+        else {
+            let reason = if trim(documents.plan()).is_empty() {
+                "code-generation-plan.md is missing or empty"
+            } else if trim(documents.instructions()).is_empty() {
+                "unit-test-instructions.md is missing or empty"
+            } else if embedded.is_none() {
+                "code-generation-plan.md has no valid ## Testing Contract JSON block"
+            } else {
+                "the approved Testing Contract is stale because memory, scope, test strategy, or project type changed"
+            };
+            return Err(PlanApprovalError::new(reason));
+        };
+        Ok(authority.approval_fingerprint(
+            documents.plan(),
+            documents.instructions(),
+            contract.hash(),
+        ))
+    }
+
+    /// コード生成の現在の実行境界。旧保存データで情報が無い場合はNone。
+    #[must_use]
+    pub const fn code_generation_run_floor(&self) -> Option<&super::CodeGenerationRunFloor> {
+        self.code_generation_run_floor.as_ref()
+    }
+
+    /// 失効準備の元になった指示が、この実行で発行済みかを判定する。
+    #[must_use]
+    pub fn has_approval_publication(&self, id: &super::PlanApprovalOperationId) -> bool {
+        self.approval_publications.contains(id)
+    }
+
+    /// この実行に保存した指示発行の操作ID。別集約の状態は保持しない。
+    #[must_use]
+    pub const fn approval_publications(&self) -> &super::PlanAppliedOperations {
+        &self.approval_publications
+    }
+
+    /// 最新の指示発行状態。
+    #[must_use]
+    pub const fn active_directive(&self) -> Option<&super::ActiveDirective> {
+        self.active_directive.as_ref()
+    }
+    /// 実際に発行する指示を1イベントとして記録する。
+    /// # Errors
+    /// 発行回数またはイベント通番が枯渇した場合。
+    pub fn issue_directive(
+        &mut self,
+        publication: &super::DirectivePublication,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let directive = super::ActiveDirective::issue(
+            self.active_directive.as_ref(),
+            &self.intent_id,
+            publication,
+        )?;
+        self.commit(
+            IntentExecutionEvent::DirectiveIssued(super::DirectiveIssued::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                directive,
+            )),
+            at,
+        )
+    }
+
+    /// 所有者と文脈が一致する指示だけを失効させる。
+    /// # Errors
+    /// 文脈不一致、指示不在、世代または通番の枯渇。
+    pub fn invalidate_directive_context(
+        &mut self,
+        operation: &super::PlanApprovalOperationId,
+        request: &super::DirectiveContextInvalidation,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let directive = self
+            .active_directive
+            .as_ref()
+            .ok_or(CommandError::PlanResponseUnavailable)?
+            .invalidate_context(operation, request)?;
+        self.commit(
+            IntentExecutionEvent::DirectiveContextInvalidated(
+                super::DirectiveContextInvalidated::new(
+                    Self::next_event_id(),
+                    self.id.clone(),
+                    directive,
+                ),
+            ),
+            at,
+        )
+    }
+
+    /// 共有側の計画回答を、この実行の監査へ記録する。
+    /// # Errors
+    /// 操作・観測先・ソースが一致しない場合。
+    pub fn record_plan_answer(
+        &mut self,
+        approval: &super::PlanApprovalRuntime,
+        id: &super::PlanApprovalOperationId,
+        space: &crate::workspace::SpaceName,
+        source: Option<&str>,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let delivery = approval
+            .answer_delivery(id, space, self, source)
+            .map_err(|_| CommandError::PlanResponseUnavailable)?;
+        if delivery != super::PlanAnswerDelivery::RecordRequired {
+            return Err(CommandError::PlanResponseUnavailable);
+        }
+        let answer = approval
+            .answers()
+            .get(id)
+            .ok_or(CommandError::PlanResponseUnavailable)?;
+        self.commit(
+            IntentExecutionEvent::PlanAnswerLogged(Box::new(super::PlanAnswerLogged::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                id.clone(),
+                answer.input().clone(),
+            ))),
+            at,
+        )
+    }
+    /// 計画回答の同じ監査操作が保存済みか。
+    #[must_use]
+    pub fn has_plan_answer(&self, id: &super::PlanApprovalOperationId) -> bool {
+        self.interactions.plan_answers().contains(id)
+    }
+
+    /// 保護された応答の観測操作が、この実行へ保存済みか。
+    #[must_use]
+    pub fn has_approval_observation(&self, id: &super::PlanApprovalOperationId) -> bool {
+        self.interactions.approval_observations().contains(id)
+    }
+    /// 共有側が観測時点で固定した応答を、この実行の事実へ記録する。
+    /// # Errors
+    /// 対象・準備の不一致、二重記録、通番枯渇。
+    pub fn record_prepared_response(
+        &mut self,
+        approval: &super::PlanApprovalRuntime,
+        id: &super::PlanApprovalOperationId,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let pending = approval
+            .pending_responses()
+            .get(id)
+            .ok_or(CommandError::PlanResponseUnavailable)?;
+        if pending.origin().execution_id() != &self.id {
+            return Err(CommandError::PlanResponseTargetMismatch);
+        }
+        if self.has_approval_observation(id) {
+            return Err(CommandError::PlanResponseAlreadyRecorded);
+        }
+        let event = super::PromptObserved::new(
+            Self::next_event_id(),
+            self.id.clone(),
+            pending.session().raw(),
+            pending.response(),
+            false,
+        )
+        .with_approval_observation(Some(id.clone()));
+        self.commit(IntentExecutionEvent::PromptObserved(event), at)
+    }
+
+    /// フックが受け取った応答を記録する。無人フラグも事実として保持する。
+    ///
+    /// # Errors
+    /// イベント通番が枯渇した場合。
+    pub fn observe_prompt(
+        &mut self,
+        session: &str,
+        response: &str,
+        unattended: bool,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        self.commit(
+            IntentExecutionEvent::PromptObserved(super::PromptObserved::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                session,
+                response,
+                unattended,
+            )),
+            occurred_at,
+        )
+    }
+
+    /// TaskUpdateが示したstageを、他stageの進捗を保持して現在位置にする。
+    /// # Errors
+    /// 未知stage、イベント通番の上限。
+    pub fn synchronize_task(
+        &mut self,
+        stage: &StageSlug,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        if self.slots.position_of(stage).is_none() {
+            return Err(CommandError::UnknownStage(stage.as_str().to_string()));
+        }
+        self.commit(
+            IntentExecutionEvent::TaskSynchronized(super::TaskSynchronized::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                stage.clone(),
+            )),
+            at,
+        )
+    }
+
+    /// 作業の診断結果を記録する。完了・停止中でも進行を変更せず受け付ける。
+    /// # Errors
+    /// イベント通番が枯渇した場合。
+    pub fn record_health_check(
+        &mut self,
+        result: super::HealthCheckResult,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        self.commit(
+            IntentExecutionEvent::HealthChecked(super::HealthChecked::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                result,
+            )),
+            occurred_at,
+        )
+    }
+
+    /// runtime-graph の compile が読んだ日誌観測を記録する。
+    ///
+    /// 判定 (どの位置へ `MEMORY_EMPTY` を記録するか) は**ここで決まる** — 承認済みか、
+    /// この承認について既に記録したかは集約の状態でしか分からないからである。観測に
+    /// 載っていない位置は日誌そのものが無かった位置なので、記録の対象にしない。
+    /// 作業の進行も承認も変えない。
+    ///
+    /// # Errors
+    /// イベント通番が枯渇した場合。
+    pub fn observe_memory_journals(
+        &mut self,
+        survey: super::MemoryJournalSurvey,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        let empty_stages = self.slots.empty_memory_stages(&survey);
+        self.commit(
+            IntentExecutionEvent::MemoryJournalsObserved(Box::new(MemoryJournalsObserved::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                survey,
+                empty_stages,
+            ))),
+            occurred_at,
+        )
+    }
+
+    /// §13 の儀式が確定した学びを記録する。
+    ///
+    /// **重複抑止の判定材料はディスクの実測**である — 監査シャードもメモリ層も人が編集する
+    /// 面なので、集約の履歴だけからは「片側だけ消えた」を知れない。実測は
+    /// [`LearningObservations`] が運び、どちらを書くかは同型が決める
+    /// (`coding-rules/aggregate-references.md`)。集約が持つのは**計画がその位置を知っているか**
+    /// だけである。
+    ///
+    /// # Errors
+    /// 計画に無いステージ (`UnknownStage`)、またはイベント通番の枯渇。
+    pub fn capture_learnings(
+        &mut self,
+        stage: &StageSlug,
+        provenance: super::LearningProvenance,
+        observations: &super::LearningObservations,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        self.resolve(stage)
+            .map_err(|_| CommandError::UnknownStage(stage.as_str().into()))?;
+        self.commit(
+            IntentExecutionEvent::LearningsCaptured(Box::new(
+                super::intent_execution_event::LearningsCaptured::new(
+                    Self::next_event_id(),
+                    self.id.clone(),
+                    stage.clone(),
+                    provenance,
+                    observations.captured(),
+                ),
+            )),
+            occurred_at,
+        )
+    }
+
+    /// 失敗の観測を記録する。完了・停止中でも診断の記録は許す。
+    /// # Errors
+    /// イベント通番が枯渇した場合。
+    pub fn record_command_failure(
+        &mut self,
+        failure: super::CommandFailure,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        self.commit(
+            IntentExecutionEvent::CommandFailed(super::CommandFailed::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                failure,
+            )),
+            occurred_at,
+        )
+    }
+
+    /// 通常の質問を提示した事実を記録する。人間の回答を代行しない。
+    ///
+    /// # Errors
+    /// イベント通番が枯渇した場合。
+    pub fn record_decision(
+        &mut self,
+        prompt: super::DecisionPrompt,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, CommandError> {
+        self.commit(
+            IntentExecutionEvent::DecisionRecorded(
+                super::DecisionRecorded::new(Self::next_event_id(), self.id.clone(), prompt)
+                    .with_human_before(
+                        self.interactions
+                            .latest_human()
+                            .map(|event| event.id().clone()),
+                    ),
+            ),
+            occurred_at,
+        )
+    }
+
     fn commit(
         &mut self,
         event: IntentExecutionEvent,
@@ -937,24 +1831,81 @@ impl IntentExecution {
     /// カーソルの移動 — `Jumped` (BR1.6)。差分集合をイベントに載せ、承認の消去は適用側が
     /// `direction` と `target` から決定的に導出する。
     ///
+    /// 直接 execute のガードは resolve より緩い (本家 2.7.1 `handleExecute` — 裁定
+    /// jump-contract Q1 = A): 到達点が実効 EXECUTE であることだけを要求し、initialization
+    /// フェーズも受理する (`initialization-target` 観測: 初期化 3 段と現在 stage を pending へ
+    /// 戻す)。方向は渡された値をそのまま保存し、位置関係から導き直さない。
+    ///
     /// # Errors
     ///
-    /// [`IntentExecution::jump_resolve`] と同じ (`NotRunning` / `InvalidTarget`)。
+    /// 別 intent (`IntentMismatch`)、非受理 (`NotRunning`)、範囲外・実効 SKIP の到達点
+    /// (`InvalidTarget`)。
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "跳躍コマンドの材料 (対象・方向・観測・別 scope) を束ねる専用型を新設せず、\
+                  イベントのフィールドがそのまま引数になる"
+    )]
     pub fn jump(
         &mut self,
         intent: &Intent,
         target: StageIndex,
+        event_id: IntentExecutionEventId,
+        direction: JumpDirection,
+        observation: Option<super::JumpObservation>,
+        scope: Option<super::JumpScope>,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         // ガード (到達可否) はここ、読み飛ばし・巻き戻しの導出は適用側 (`apply_jump`) が
         // 持つ — イベントは到達点という事実だけを運ぶ (オーナー裁定 2026-08-30)。
-        let _ = self.jump_resolve(intent, target)?;
+        self.jump_execute_guard(intent, target, scope.as_ref())?;
         let material = Jumped::new(
-            IntentExecution::next_event_id(),
+            event_id,
             self.id.clone(),
             self.slug_of(target)?,
-        );
+            direction,
+            observation,
+        )
+        .with_scope(scope);
         self.commit(IntentExecutionEvent::Jumped(material), occurred_at)
+    }
+
+    /// 直接 execute の到達可否 (resolve の位置導出とは別のガード — 本家 `handleExecute`
+    /// `:257-296`)。到達点は跳躍に使う計画で EXECUTE であればよく、initialization も含む。
+    /// 別 scope が名指されていれば、その scope の静的な列で判定する (`foreign-scope` 観測)。
+    fn jump_execute_guard(
+        &self,
+        intent: &Intent,
+        target: StageIndex,
+        scope: Option<&super::JumpScope>,
+    ) -> Result<(), CommandError> {
+        if !self.matches(intent) {
+            return Err(CommandError::IntentMismatch);
+        }
+        if !self.accepts_commands() {
+            return Err(CommandError::NotRunning);
+        }
+        if target.to_usize() >= self.stage_count() || !self.jump_plan(scope).contains(target) {
+            return Err(CommandError::InvalidTarget(target));
+        }
+        Ok(())
+    }
+
+    /// 跳躍に使う計画で EXECUTE の位置集合 — 別 scope が無ければこの実行の実効計画である。
+    fn jump_plan(&self, scope: Option<&super::JumpScope>) -> StageIndexSet {
+        self.all_positions().filter(|stage| match scope {
+            Some(scope) => self
+                .key_at(stage)
+                .is_some_and(|key| scope.contains(key.slug())),
+            None => self.in_scope(stage),
+        })
+    }
+
+    /// 名指されたjump対象を、この実行の位置へ解決する。
+    /// # Errors
+    /// 実行に属さないstageの場合。
+    pub fn resolve_jump_target(&self, stage: &StageSlug) -> Result<StageIndex, CommandError> {
+        self.resolve(stage)
+            .map_err(|_| CommandError::UnknownStage(stage.as_str().into()))
     }
 
     /// park マーカーの設置 — `Parked` (autonomous 下は拒否 — BR1.7)。
@@ -1058,13 +2009,10 @@ impl IntentExecution {
             })
         })?;
         // 反転の向きは実効プランで決まる — EXECUTE を落とすのが skipped、SKIP を戻すのが added。
+        // 範囲外は上で拒否済みなので、残りの実効プランは EXECUTE か SKIP のどちらかである。
         let toward_skip =
             flips.filter(|stage| self.effective_plan(stage) == Some(PlanAction::Execute));
-        let toward_execute =
-            flips.filter(|stage| self.effective_plan(stage) == Some(PlanAction::Skip));
-        if let Some(stage) = flips.divide(&toward_skip).divide(&toward_execute).at(0) {
-            return Err(CommandError::InvalidTarget(stage));
-        }
+        let toward_execute = flips.divide(&toward_skip);
         let plan = intent.stages();
         // 適用後の in-scope 列はイベントに載せない — 状態は反転の事実から導ける
         // (オーナー裁定 2026-08-30)。
@@ -1226,6 +2174,11 @@ impl IntentExecution {
             .ok_or(SingleStageRunRefusal::UnknownStage)?;
         self.require_gated(target)
             .map_err(SingleStageRunRefusal::Command)?;
+        if !self.pipeline_history.single_is_open(stage.as_str()) {
+            return Err(SingleStageRunRefusal::Command(
+                CommandError::SingleStageAttemptNotOpen,
+            ));
+        }
         let material = SingleStageRunCommitted::new(
             IntentExecution::next_event_id(),
             self.id.clone(),
@@ -1322,6 +2275,7 @@ impl IntentExecution {
         reviewer: &str,
         iteration: u32,
         retry_pending: bool,
+        documents: &super::ReviewDocuments,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let (target, policy) = self.guard_review(intent, stage, policy, reviewer)?;
@@ -1350,6 +2304,12 @@ impl IntentExecution {
                     budget,
                 });
             }
+            let pending = attempt.pending_iterations();
+            if !pending.is_empty() {
+                return Err(CommandError::ReviewEvidence(
+                    super::ReviewEvidenceError::PendingIterations(pending),
+                ));
+            }
             if iteration != expected {
                 return Err(CommandError::ReviewOutOfSequence {
                     stage: target,
@@ -1358,6 +2318,26 @@ impl IntentExecution {
                 });
             }
         }
+        let binding = if retry_pending {
+            if attempt.history().retried(iteration) {
+                return Err(CommandError::ReviewEvidence(
+                    super::ReviewEvidenceError::RetryAlreadyUsed,
+                ));
+            }
+            let binding =
+                attempt
+                    .history()
+                    .request(iteration)
+                    .ok_or(CommandError::ReviewEvidence(
+                        super::ReviewEvidenceError::InvalidBinding,
+                    ))?;
+            documents
+                .verify_request(binding)
+                .map_err(CommandError::ReviewEvidence)?;
+            binding.clone()
+        } else {
+            documents.bind().map_err(CommandError::ReviewEvidence)?
+        };
         let material = ReviewRequested::new(
             IntentExecution::next_event_id(),
             self.id.clone(),
@@ -1365,6 +2345,7 @@ impl IntentExecution {
             reviewer,
             iteration,
             retry_pending,
+            binding,
         );
         self.commit(IntentExecutionEvent::ReviewRequested(material), occurred_at)
     }
@@ -1393,6 +2374,7 @@ impl IntentExecution {
         reviewer: &str,
         iteration: u32,
         verdict: ReviewVerdict,
+        documents: &super::ReviewDocuments,
         occurred_at: DateTime<Utc>,
     ) -> Result<IntentExecutionEvent, CommandError> {
         let (target, _) = self.guard_review(intent, stage, policy, reviewer)?;
@@ -1402,6 +2384,22 @@ impl IntentExecution {
                 iteration,
             });
         }
+        let attempt = self.attempt_at(target)?;
+        let binding = attempt
+            .history()
+            .request(iteration)
+            .ok_or(CommandError::ReviewEvidence(
+                super::ReviewEvidenceError::InvalidBinding,
+            ))?;
+        let completion = documents
+            .certify(
+                binding,
+                reviewer,
+                iteration,
+                verdict,
+                attempt.history().retried(iteration),
+            )
+            .map_err(CommandError::ReviewEvidence)?;
         let material = ReviewCompleted::new(
             IntentExecution::next_event_id(),
             self.id.clone(),
@@ -1409,6 +2407,7 @@ impl IntentExecution {
             reviewer,
             iteration,
             verdict,
+            completion,
         );
         self.commit(IntentExecutionEvent::ReviewCompleted(material), occurred_at)
     }
@@ -1528,6 +2527,9 @@ impl IntentExecution {
         let mut next = self.clone();
         next.mutate(event, occurred_at)
             .unwrap_or_else(|error| panic!("apply_event: corrupted history — {error}"));
+        if event.affects_progress() {
+            next.progress_seq_nr = seq_nr;
+        }
         next.seq_nr = seq_nr;
         next.last_updated_at = occurred_at;
         next.check_invariants()
@@ -1535,7 +2537,7 @@ impl IntentExecution {
         *self = next;
     }
 
-    /// 16 変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
+    /// 全変種の網羅 match (NFR1.3)。`#[non_exhaustive]` を付けないので腕の欠落はビルドで落ちる。
     ///
     /// `occurred_at` を受け取るのは、**ゲート解決の時刻そのものが状態**だからである
     /// (`last_gate_resolution_at` — I11 の材料)。`last_updated_at` (適用の共通後始末) とは
@@ -1545,7 +2547,60 @@ impl IntentExecution {
         event: &IntentExecutionEvent,
         occurred_at: DateTime<Utc>,
     ) -> Result<(), ApplyError> {
+        let before_cursor = self.cursor;
+        self.slots.apply_progress(event);
         match event {
+            IntentExecutionEvent::SingleStageRunStarted(_)
+            | IntentExecutionEvent::PipelineLinkCompleted(_) => {}
+            IntentExecutionEvent::DirectiveIssued(event) => {
+                if let Some(id) = event.directive().approval_operation_id() {
+                    self.approval_publications.insert(id.clone());
+                }
+                self.active_directive = Some(event.directive().clone())
+            }
+            IntentExecutionEvent::DirectiveContextInvalidated(event) => {
+                if let Some(id) = event.directive().approval_operation_id() {
+                    self.approval_publications.insert(id.clone());
+                }
+                self.active_directive = Some(event.directive().clone());
+            }
+            IntentExecutionEvent::PlanAnswerLogged(event) => self
+                .interactions
+                .record_plan_answer(event.operation_id().clone()),
+            IntentExecutionEvent::AnswerRecorded(event) => match event.disposition() {
+                super::AnswerDisposition::Recorded => self.interactions.consume(event.stage()),
+                super::AnswerDisposition::SummaryConfirmed(evidence) => self
+                    .interactions
+                    .consume_summary(event.stage(), evidence.questions_file()),
+                super::AnswerDisposition::ApprovalGateReportOwned => {}
+            },
+            IntentExecutionEvent::CommandFailed(_) => {}
+            IntentExecutionEvent::HealthChecked(_) => {}
+            IntentExecutionEvent::MemoryJournalsObserved(event) => {
+                self.slots.apply_memory_empty(event.empty_stages());
+            }
+            // 学びは進行を変えない — 重複抑止の正本は監査シャードとメモリ層 (人も編集する
+            // 面) なので、集約に控えを持つと片側が消えたときに復旧できなくなる。
+            IntentExecutionEvent::LearningsCaptured(_) => {}
+            IntentExecutionEvent::TaskSynchronized(event) => {
+                self.cursor = self.resolve(event.stage())?;
+                // 本家の set-status は実効 SKIP の stage も現在位置にする。その位置は
+                // エンジン遷移ではなく同期の事実なので、`cursor_in_scope` の対象外と印す。
+                self.cursor_synchronized = !self.in_scope(self.cursor);
+                // カーソルは同期が置き直す — 跳躍由来の印はここで落ちる。
+                self.cursor_foreign_scoped = false;
+                self.status = Status::Running;
+            }
+            IntentExecutionEvent::DecisionRecorded(event) => self.interactions.record(event),
+            IntentExecutionEvent::PromptObserved(event) => self.interactions.observe(event),
+            IntentExecutionEvent::Reported(reported) => {
+                if let crate::orchestration::ReportResult::Committed {
+                    stage, transition, ..
+                } = reported.result()
+                {
+                    self.apply_reported_transition(stage, transition, occurred_at)?;
+                }
+            }
             IntentExecutionEvent::Started(_) => {
                 // `Started` は genesis 専用 — 既存の集約には適用できない (BR2.2)。
                 return Err(ApplyError::InvariantViolation(
@@ -1553,20 +2608,20 @@ impl IntentExecution {
                 ));
             }
             IntentExecutionEvent::GateOpened(opened) => {
-                let stage = self.resolve(opened.stage())?;
-                self.mark_stage(stage, CheckboxState::AwaitingApproval)?;
+                self.resolve(opened.stage())?;
+                self.interactions.clear_question(opened.stage().as_str());
             }
             IntentExecutionEvent::GateApproved(approved) => {
                 let stage = self.resolve(approved.stage())?;
                 self.record_approval(stage)?;
-                self.mark_stage(stage, CheckboxState::Completed)?;
+
                 self.advance_from(stage)?;
                 // 承認はゲート解決である (upstream `GATE_RESOLUTION_EVENTS`)。
                 self.last_gate_resolution_at = Some(occurred_at);
             }
             IntentExecutionEvent::GateRejected(rejected) => {
                 let stage = self.resolve(rejected.stage())?;
-                self.mark_stage(stage, CheckboxState::Revising)?;
+
                 // 差し戻しはレビュー試行のフロアである (upstream `freshReviewReceipts` の
                 // FLOOR 4 つのうち `GATE_REJECTED`)。人間が「直せ」と言った時点で、
                 // それまでの受領証は次の試行には効かない。昇格受領証も同じ位置で落ちる
@@ -1578,12 +2633,12 @@ impl IntentExecution {
                 self.last_gate_resolution_at = Some(occurred_at);
             }
             IntentExecutionEvent::StageRevised(revised) => {
-                let stage = self.resolve(revised.stage())?;
-                self.mark_stage(stage, CheckboxState::AwaitingApproval)?;
+                self.resolve(revised.stage())?;
+                self.interactions.clear_question(revised.stage().as_str());
             }
             IntentExecutionEvent::StageSkipped(skipped) => {
                 let stage = self.resolve(skipped.stage())?;
-                self.mark_stage(stage, CheckboxState::Skipped)?;
+
                 self.advance_from(stage)?;
             }
             IntentExecutionEvent::Jumped(jumped) => {
@@ -1601,8 +2656,8 @@ impl IntentExecution {
                 self.parked_at = None;
             }
             IntentExecutionEvent::Recomposed(recomposed) => {
-                self.override_all(recomposed.skipped(), PlanAction::Skip)?;
-                self.override_all(recomposed.added(), PlanAction::Execute)?;
+                self.validate_recomposed_stages(recomposed)?;
+                self.slots.apply_recomposition(recomposed);
             }
             IntentExecutionEvent::AutonomyModeSet(set) => {
                 self.autonomy = set.mode();
@@ -1622,12 +2677,12 @@ impl IntentExecution {
             }
             IntentExecutionEvent::ReviewRequested(requested) => {
                 let stage = self.resolve(requested.stage())?;
-                // retry の適用は**フレーム空** — 呼び直しは依頼の回数に数えない
-                // (upstream `aidlc-log.ts:810-812`) し、判定待ち集合も既にその番号を含む。
-                if !requested.is_retry() {
-                    self.slots
-                        .record_review_request(stage, requested.iteration())?;
-                }
+                self.slots.record_review_request(
+                    stage,
+                    requested.iteration(),
+                    requested.evidence().clone(),
+                    requested.is_retry(),
+                )?;
             }
             IntentExecutionEvent::ReviewCompleted(completed) => {
                 let stage = self.resolve(completed.stage())?;
@@ -1635,6 +2690,7 @@ impl IntentExecution {
                     stage,
                     completed.iteration(),
                     completed.verdict(),
+                    completed.evidence().clone(),
                 )?;
             }
             IntentExecutionEvent::PracticesAffirmed(affirmed) => {
@@ -1644,6 +2700,12 @@ impl IntentExecution {
                 self.slots.affirm_practices(stage)?;
             }
         }
+        let next_stage = (self.status == Status::Running)
+            .then(|| self.cursor_slug().map(|stage| stage.as_str().to_string()))
+            .flatten();
+        self.pipeline_history
+            .observe(event, next_stage, occurred_at);
+        self.observe_run_boundary(event, before_cursor, occurred_at)?;
         Ok(())
     }
 
@@ -1657,21 +2719,14 @@ impl IntentExecution {
         Ok(self.slots.reset_attempt(stage)?)
     }
 
-    /// 名指しされた slug の実効プランを一斉に書き替える (`Recomposed` の適用)。
-    ///
-    /// slug 集合は辞書順だが、適用は位置ごとに独立なので順序は結果に影響しない。
-    fn override_all(
-        &mut self,
-        slugs: &StageSlugSet,
-        plan_action: PlanAction,
-    ) -> Result<(), ApplyError> {
-        let positions = slugs.fold_left(
-            Ok(StageIndexSet::empty()),
-            |acc: Result<StageIndexSet, ApplyError>, slug| {
-                Ok(acc?.combine(&StageIndexSet::singleton(self.resolve(slug)?)))
-            },
-        )?;
-        self.slots.override_plan_all(&positions, plan_action);
+    /// 保存された再構成の対象が、実行の添字帳に属することを確かめる。
+    fn validate_recomposed_stages(&self, event: &Recomposed) -> Result<(), ApplyError> {
+        for slugs in [event.skipped(), event.added()] {
+            slugs.fold_left(Ok(()), |result: Result<(), ApplyError>, slug| {
+                result?;
+                self.resolve(slug).map(|_| ())
+            })?;
+        }
         Ok(())
     }
 
@@ -1680,53 +2735,34 @@ impl IntentExecution {
         // による導出であり、出発点 = 適用前のカーソルである (オーナー裁定 2026-08-30)。
         let source = self.cursor;
         let target = self.resolve(jumped.target())?;
-        let direction = JumpDirection::of(source.to_usize(), target.to_usize());
+        let direction = jumped.direction();
+        let in_plan = self.jump_plan(jumped.scope());
+        self.slots.apply_jump(jumped, source, target, &in_plan);
         match direction {
-            JumpDirection::Forward => {
-                let skipped = self.stages_skipped_by_forward_jump(source, target);
-                self.slots.mark_all(&skipped, CheckboxState::Skipped);
-            }
+            JumpDirection::Forward => {}
             JumpDirection::Backward => {
-                let rewound = self.stages_reset_by_backward_jump(target);
-                self.slots.mark_all(&rewound, CheckboxState::Pending);
-                // backward は target 以降の承認履歴を無効化する (BR1.6)。
-                let invalidated = StageIndexSet::range(target, StageIndex::new(self.stage_count()));
+                // backward は到達点と、pending へ巻き戻す下流の in-scope ステージの承認履歴を
+                // 無効化する (BR1.6 / I3)。巻き戻さないステージ (実効 SKIP のまま完了済み —
+                // TaskUpdate 同期の後に承認された stage がこれに当たる) は checkbox が動かない
+                // ので承認も残す: 「再承認が要る = pending に戻った」の対応を崩さない
+                // (Quint v2.8 の no_gate_bypass と同型)。
+                let invalidated = self
+                    .positions_after(target)
+                    .filter(|stage| in_plan.contains(stage))
+                    .combine(&StageIndexSet::singleton(target));
                 self.slots.invalidate_approvals(&invalidated);
             }
             // redo は出発点の承認履歴を無効化する (BR1.6)。
             JumpDirection::Redo => self
                 .slots
-                .invalidate_approvals(&StageIndexSet::singleton(source)),
+                .invalidate_approvals(&StageIndexSet::singleton(target)),
         }
-        self.mark_stage(target, CheckboxState::InProgress)?;
         self.cursor = target;
+        self.cursor_synchronized = false;
+        // 別 scope を名指した直接 execute が、自 scope の実効計画では EXECUTE でない位置へ
+        // カーソルを置いた事実を印す (裁定 2026-09-10: jump-contract Q1 = A)。
+        self.cursor_foreign_scoped = jumped.scope().is_some() && !self.in_scope(target);
         Ok(())
-    }
-
-    /// 前方跳躍が読み飛ばす位置集合 (出発点で稼働中のもの + 中間の in-scope 未了 — BR1.6)。
-    ///
-    /// 実効 SKIP の中間は触らない — upstream の実バイト
-    /// (`jump/execute-forward-across-phases` — `SKIP` 行はそのまま) が正本である。
-    fn stages_skipped_by_forward_jump(
-        &self,
-        source: StageIndex,
-        target: StageIndex,
-    ) -> StageIndexSet {
-        StageIndexSet::range(source, target).filter(|stage| {
-            let Some(marker) = self.checkbox(stage) else {
-                return false;
-            };
-            let skip_current = stage == source && marker.is_active();
-            let skip_between = stage != source && self.in_scope(stage) && marker.is_in_flight();
-            skip_current || skip_between
-        })
-    }
-
-    /// 後方跳躍が pending へ巻き戻す位置集合 (到達点より後ろの in-scope 既着手 — BR1.6)。
-    fn stages_reset_by_backward_jump(&self, target: StageIndex) -> StageIndexSet {
-        self.positions_after(target).filter(|stage| {
-            self.in_scope(stage) && self.checkbox(stage) != Some(CheckboxState::Pending)
-        })
     }
 
     /// 完了・スキップの後段 — 次の in-scope ステージへ進むか、無ければ完了する (BR1.5)。
@@ -1735,8 +2771,9 @@ impl IntentExecution {
     fn advance_from(&mut self, stage: StageIndex) -> Result<(), ApplyError> {
         match self.next_in_scope(stage) {
             Some(next) => {
-                self.mark_stage(next, CheckboxState::InProgress)?;
                 self.cursor = next;
+                self.cursor_synchronized = false;
+                self.cursor_foreign_scoped = false;
                 // 次ステージに立つ = upstream の `STAGE_STARTED` — レビュー試行のフロアで
                 // ある (`freshReviewReceipts` の FLOOR 4 つのうちの 1 つ)。前の試行で
                 // 数えた依頼は新しいステージには効かない。
@@ -1747,8 +2784,14 @@ impl IntentExecution {
         Ok(())
     }
 
-    /// 集約不変条件 (Quint の cursor_in_scope / at_most_one_active / no_gate_bypass /
-    /// parked_position)。材料は不変条件名で、文言はアダプタ層の責務。
+    /// 集約不変条件 (Quint の cursor_in_scope / no_gate_bypass / parked_position)。材料は
+    /// 不変条件名で、文言はアダプタ層の責務。
+    ///
+    /// `at_most_one_active` は **降格した** (2026-09-09)。本家 2.7.1 の実観測に反例が 2 つある —
+    /// 明示 direction の直接 execute (`jump-logs` の direction-mismatch: 出発点と到達点の両方が
+    /// `[-]`) と、別 stage への TaskUpdate 同期 (`taskupdate/different-stage`: 旧 stage の
+    /// checkbox を戻さない)。Quint モデル側の暫定規範も同時に外した (裁定 jump-contract Q1 = A、
+    /// task-update-contract Q1 = A)。
     ///
     /// memento 復元経路の撤去 (オーナー裁定 2026-08-30 — 再構成はジャーナル全再生) に伴い、
     /// 復号ガードだった構造検査 (長さ整合・通番 0・範囲外カーソル) は削除した — genesis が
@@ -1759,12 +2802,12 @@ impl IntentExecution {
         {
             return Err("parked_position".to_string());
         }
-        if self.accepts_commands() && !self.in_scope(self.cursor) {
+        if self.accepts_commands()
+            && !self.cursor_synchronized
+            && !self.cursor_foreign_scoped
+            && !self.in_scope(self.cursor)
+        {
             return Err("cursor_in_scope".to_string());
-        }
-        let active = self.slots.filter(|slot| slot.checkbox().is_active()).len();
-        if active > 1 {
-            return Err(format!("at_most_one_active: {active}"));
         }
         let bypassed = self.all_positions().filter(|stage| {
             self.is_gated(stage)
@@ -1876,10 +2919,7 @@ impl IntentExecution {
                 NextDecision::Parked { stage: self.cursor }
             });
         }
-        if request.is_resume() {
-            return Ok(NextDecision::ResumeMenu);
-        }
-        if request.is_free_text() {
+        if request.is_free_text() && !request.is_resume() {
             return Ok(NextDecision::NewWorkRouting);
         }
         if !self.status.is_running() {
@@ -1989,67 +3029,178 @@ impl IntentExecution {
         }
     }
 
-    /// report の判断を、観測値の正規化も含めて単一のイベントとして適用する。
-    ///
-    /// 先行する `GateStartRecovered` は監査上の復旧を表す。状態遷移は続く承認が担う。
+    /// 報告を受理し、遷移と結果を単一の事実として記録する。
     ///
     /// # Errors
-    /// コマンドのガード違反、または対応コマンドが無い遷移列を拒否する。
+    /// 報告の拒否、遷移のガード違反、または通番枯渇を返す。
     pub fn apply_report(
         &mut self,
+        report_id: crate::orchestration::ReportId,
+        intent: &Intent,
+        request: &ReportRequest,
+        policy: Option<&ReviewPolicy>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, ReportCommitError> {
+        if !self.matches(intent) {
+            return Err(ReportCommitError::Transition {
+                step: TransitionStep::Advance,
+                error: CommandError::IntentMismatch,
+            });
+        }
+        let decision = self
+            .report_dispatch(intent, request)
+            .map_err(ReportCommitError::Refused)?;
+        let result = match decision {
+            ReportDecision::NoOp { scope, no_op } => {
+                crate::orchestration::ReportResult::NoOp { scope, no_op }
+            }
+            ReportDecision::Commit {
+                stage,
+                scope,
+                steps,
+            } => {
+                let transition = self.report_transition(intent, request, &steps, policy)?;
+                crate::orchestration::ReportResult::Committed {
+                    stage,
+                    scope,
+                    steps,
+                    transition,
+                }
+            }
+        };
+        // 実際に開始する次工程だけへソース観測を束縛する。no-opや最終完了に
+        // 別工程の基準を保存せず、楽観再試行でも対象を再解釈しない。
+        let source_baseline = match &result {
+            crate::orchestration::ReportResult::Committed {
+                stage,
+                transition:
+                    crate::orchestration::ReportTransition::GateApproved { .. }
+                    | crate::orchestration::ReportTransition::StageSkipped { .. },
+                ..
+            } => self
+                .slots
+                .position_of(stage)
+                .and_then(|index| self.next_in_scope(index))
+                .and_then(|index| self.key_at(index))
+                .and_then(|key| request.source_for(key.slug()))
+                .cloned(),
+            _ => None,
+        };
+        self.commit(
+            IntentExecutionEvent::Reported(
+                crate::orchestration::Reported::new(
+                    Self::next_event_id(),
+                    self.id.clone(),
+                    report_id,
+                    result,
+                    request.validation().cloned(),
+                    source_baseline,
+                )
+                .map_err(ReportCommitError::InvalidResult)?,
+            ),
+            occurred_at,
+        )
+        .map_err(|error| ReportCommitError::Transition {
+            step: TransitionStep::Advance,
+            error,
+        })
+    }
+
+    fn report_transition(
+        &self,
         intent: &Intent,
         request: &ReportRequest,
         steps: &TransitionSteps,
         policy: Option<&ReviewPolicy>,
-        occurred_at: DateTime<Utc>,
-    ) -> Result<IntentExecutionEvent, ReportCommitError> {
-        // 段の同定は名前付きクエリで行う (スライスの形合わせをやめる — BR5.5)。
-        let (step, outcome) = if steps.is_single(TransitionStep::GateStart) {
-            (
-                TransitionStep::GateStart,
-                self.open_gate(intent, ArtifactPaths::empty(), occurred_at),
-            )
-        } else if steps.is_single(TransitionStep::Reject) {
-            (
-                TransitionStep::Reject,
-                self.reject_gate(intent, request.feedback().map(str::to_string), occurred_at),
-            )
-        } else if steps.is_single(TransitionStep::Revise) {
-            (
-                TransitionStep::Revise,
-                self.revise_stage(intent, occurred_at),
-            )
-        } else if steps.is_single(TransitionStep::Skip) {
-            (
-                TransitionStep::Skip,
-                self.skip_stage(
-                    intent,
-                    request.reason().unwrap_or_default().trim().to_string(),
-                    occurred_at,
-                ),
-            )
-        } else if steps.is_single(TransitionStep::Approve)
-            || steps.is_pair(TransitionStep::GateStartRecovered, TransitionStep::Approve)
-        {
-            (
-                TransitionStep::Approve,
-                // upstream の truthy 判定: 空文字は除外するが空白は逐語保持する。
-                self.approve_gate(
-                    intent,
-                    policy,
-                    request
+    ) -> Result<crate::orchestration::ReportTransition, ReportCommitError> {
+        use crate::orchestration::ReportTransition;
+        let step = if steps.contains(TransitionStep::Approve) {
+            TransitionStep::Approve
+        } else {
+            steps.at(0).unwrap_or(TransitionStep::Advance)
+        };
+        let refused = |error| ReportCommitError::Transition { step, error };
+        let stage = self.guard_running_for(intent).map_err(refused)?;
+        let transition = match step {
+            TransitionStep::GateStart if steps.is_single(step) => {
+                self.require_gated(stage).map_err(refused)?;
+                self.require_checkbox(stage, &[CheckboxState::InProgress])
+                    .map_err(refused)?;
+                ReportTransition::GateOpened {
+                    artifacts: ArtifactPaths::empty(),
+                }
+            }
+            TransitionStep::Approve
+                if steps.is_single(step)
+                    || steps.is_pair(TransitionStep::GateStartRecovered, step) =>
+            {
+                self.require_gated(stage).map_err(refused)?;
+                self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)
+                    .map_err(refused)?;
+                self.require_practices_receipt(stage).map_err(refused)?;
+                self.require_review_receipt(stage, policy)
+                    .map_err(refused)?;
+                ReportTransition::GateApproved {
+                    user_input: request
                         .user_input()
                         .filter(|text| !text.is_empty())
                         .map(str::to_string),
-                    occurred_at,
-                ),
-            )
-        } else {
-            return Err(ReportCommitError::Unwired {
-                step: steps.at(0).unwrap_or(TransitionStep::Advance),
-            });
+                }
+            }
+            TransitionStep::Reject if steps.is_single(step) => {
+                self.require_gated(stage).map_err(refused)?;
+                self.require_checkbox(stage, &GATE_ADVANCE_PRECONDITION)
+                    .map_err(refused)?;
+                ReportTransition::GateRejected {
+                    feedback: request.feedback().map(str::to_string),
+                }
+            }
+            TransitionStep::Revise if steps.is_single(step) => {
+                self.require_checkbox(stage, &[CheckboxState::Revising])
+                    .map_err(refused)?;
+                ReportTransition::StageRevised
+            }
+            TransitionStep::Skip if steps.is_single(step) => {
+                self.require_checkbox(stage, &SKIP_PRECONDITION)
+                    .map_err(refused)?;
+                ReportTransition::StageSkipped {
+                    reason: request.reason().unwrap_or_default().trim().to_string(),
+                }
+            }
+            _ => return Err(ReportCommitError::Unwired { step }),
         };
-        outcome.map_err(|error| ReportCommitError::Transition { step, error })
+        Ok(transition)
+    }
+
+    fn apply_reported_transition(
+        &mut self,
+        stage: &StageSlug,
+        transition: &crate::orchestration::ReportTransition,
+        at: DateTime<Utc>,
+    ) -> Result<(), ApplyError> {
+        use crate::orchestration::ReportTransition;
+        let slug = stage;
+        let stage = self.resolve(stage)?;
+        match transition {
+            ReportTransition::GateOpened { .. } | ReportTransition::StageRevised => {
+                self.interactions.clear_question(slug.as_str());
+            }
+            ReportTransition::GateApproved { .. } => {
+                self.record_approval(stage)?;
+
+                self.advance_from(stage)?;
+                self.last_gate_resolution_at = Some(at);
+            }
+            ReportTransition::GateRejected { .. } => {
+                self.reset_attempt(stage)?;
+                self.slots.bump_revision(stage)?;
+                self.last_gate_resolution_at = Some(at);
+            }
+            ReportTransition::StageSkipped { .. } => {
+                self.advance_from(stage)?;
+            }
+        }
+        Ok(())
     }
 
     /// 作用対象を決める — 明示 `--stage` が勝ち、無ければカーソル (段 7、ピン `:5556-5570`)。
@@ -2322,8 +3473,8 @@ impl IntentExecution {
 
     /// 実行状態の束縛ダイジェスト (`h`) — 「この state はまだ動いていないか」の照合子。
     ///
-    /// 束縛の対象は「どの実行の・何番目まで進んだ歴史か」(`id` / `seq_nr`) で、どちらも
-    /// この集約が持つ。状態が 1 イベントでも進めば `seq_nr` が進み、値が変わる。素材は
+    /// 束縛の対象は実行IDと本流の進行を最後に変えた通番である。対話・受領だけでは
+    /// 配信中の進行状態を無効化しない。公開本文の実測SHAは入力境界が別に照合する。素材は
     /// 名前付き構造の canon_json 手組み (`Debug` 表現依存・区切り文字連結の欠陥を避ける —
     /// オーナー裁定 2026-08-30)、族は CompactRaw (`hash_compact`)。
     #[must_use]
@@ -2333,7 +3484,7 @@ impl IntentExecution {
         material.insert(
             "seq_nr",
             JsonValue::Number(Number::PosInt(
-                u64::try_from(self.seq_nr).unwrap_or(u64::MAX),
+                u64::try_from(self.progress_seq_nr).unwrap_or(u64::MAX),
             )),
         );
         StateBinding::new(hash_compact(&JsonValue::Object(material)).rendered())
@@ -2372,25 +3523,7 @@ impl From<(Started, DateTime<Utc>)> for IntentExecution {
     )]
     fn from((started, occurred_at): (Started, DateTime<Utc>)) -> IntentExecution {
         let plan = started.stages();
-        let mut slots = StageSlots::genesis(plan);
-        // in-scope の initialization は誕生の時点で完了している (issue #76)。
-        let initialization = plan
-            .fold_left(
-                (0usize, StageIndexSet::empty()),
-                |(position, found), entry| {
-                    let stage = StageIndex::new(position);
-                    let completed = entry.phase() == PhaseId::Initialization
-                        && entry.plan_action() == PlanAction::Execute;
-                    let found = if completed {
-                        found.combine(&StageIndexSet::singleton(stage))
-                    } else {
-                        found
-                    };
-                    (position.saturating_add(1), found)
-                },
-            )
-            .1;
-        slots.mark_all(&initialization, CheckboxState::Completed);
+        let slots = StageSlots::from_started(&started);
         // カーソルは最初の in-scope 実ステージ (RMU の誕生投影 `first_gated_in_scope` と同じ導出)。
         let first_effective = plan
             .fold_left((0usize, None), |(position, found), entry| {
@@ -2401,21 +3534,38 @@ impl From<(Started, DateTime<Utc>)> for IntentExecution {
                 (position.saturating_add(1), found)
             })
             .1;
-        if let Some(first) = first_effective {
-            slots.mark_all(&StageIndexSet::singleton(first), CheckboxState::InProgress);
-        }
         let cursor = first_effective.map_or(0, StageIndex::to_usize);
+        let mut run_floor = super::CodeGenerationRunFloor::default();
+        run_floor
+            .record(super::RunBoundaryKind::WorkflowStarted, occurred_at)
+            .expect("genesis run boundary");
+        if first_effective
+            .and_then(|first| slots.at(first))
+            .is_some_and(|slot| slot.key().slug().as_str() == "code-generation")
+        {
+            run_floor
+                .record(super::RunBoundaryKind::StageStarted, occurred_at)
+                .expect("genesis stage boundary");
+        }
         IntentExecution::new(
+            crate::orchestration::PipelineHistory::started(occurred_at),
+            crate::orchestration::PlanAppliedOperations::default(),
+            Some(run_floor),
+            None,
+            crate::orchestration::InteractionState::default(),
             started.aggregate_id().clone(),
             started.intent_id().clone(),
             slots,
             cursor,
+            false,
+            false,
             Status::Running,
             None,
             AutonomyMode::Gated,
             None,
             // genesis はまだ 1 度もゲートを解決していない。
             None,
+            1,
             1,
             occurred_at,
         )
@@ -2605,7 +3755,37 @@ mod tests {
             target: StageIndex,
             occurred_at: DateTime<Utc>,
         ) -> Result<IntentExecutionEvent, CommandError> {
-            self.execution.jump(&self.intent, target, occurred_at)
+            self.execution.jump(
+                &self.intent,
+                target,
+                IntentExecutionEventId::generate(),
+                crate::orchestration::JumpDirection::of(
+                    self.execution.cursor().to_usize(),
+                    (target).to_usize(),
+                ),
+                None,
+                None,
+                occurred_at,
+            )
+        }
+
+        /// 別 scope を名指した直接 execute (方向は明示)。
+        fn jump_with_scope(
+            &mut self,
+            target: StageIndex,
+            direction: crate::orchestration::JumpDirection,
+            scope: crate::orchestration::JumpScope,
+            occurred_at: DateTime<Utc>,
+        ) -> Result<IntentExecutionEvent, CommandError> {
+            self.execution.jump(
+                &self.intent,
+                target,
+                IntentExecutionEventId::generate(),
+                direction,
+                None,
+                Some(scope),
+                occurred_at,
+            )
         }
 
         fn park(
@@ -2700,17 +3880,24 @@ mod tests {
             let event = run
                 .execution
                 .apply_report(
+                    crate::orchestration::ReportId::generate(),
                     &run.intent,
                     &request,
-                    &TransitionSteps::recovered_approval(),
                     None,
                     occurred(),
                 )
                 .unwrap();
-            let IntentExecutionEvent::GateApproved(approved) = event else {
+            let IntentExecutionEvent::Reported(reported) = event else {
+                panic!("Reported expected")
+            };
+            let crate::orchestration::ReportResult::Committed {
+                transition: crate::orchestration::ReportTransition::GateApproved { user_input },
+                ..
+            } = reported.result()
+            else {
                 panic!("approval expected")
             };
-            assert_eq!(approved.user_input(), expected);
+            assert_eq!(user_input.as_deref(), expected);
             assert_eq!(run.seq_nr(), 2);
             assert_eq!(run.cursor(), StageIndex::new(2));
         }
@@ -2724,9 +3911,9 @@ mod tests {
         let refusal = run
             .execution
             .apply_report(
+                crate::orchestration::ReportId::generate(),
                 &run.intent,
                 &request(Verdict::AwaitingApproval),
-                &TransitionSteps::single(TransitionStep::GateStart),
                 None,
                 occurred(),
             )
@@ -2743,16 +3930,15 @@ mod tests {
 
     #[test]
     fn an_incomplete_recovery_sequence_is_refused_without_emitting_a_gate_event() {
-        let mut run = all_exec(3);
+        let run = all_exec(3);
         let before = run.execution.clone();
         let refusal = run
             .execution
-            .apply_report(
+            .report_transition(
                 &run.intent,
                 &request(Verdict::Forward),
                 &TransitionSteps::single(TransitionStep::GateStartRecovered),
                 None,
-                occurred(),
             )
             .unwrap_err();
         assert_eq!(
@@ -2809,6 +3995,9 @@ mod tests {
     #[test]
     fn a_named_single_run_resolves_the_plan_and_preserves_the_main_flow() {
         let mut run = all_exec(3);
+        run.execution
+            .begin_single_stage_run(&run.intent, &slug(2), occurred())
+            .unwrap();
         let event = run
             .execution
             .record_single_stage_run(&run.intent, &slug(2), occurred())
@@ -2877,6 +4066,7 @@ mod tests {
                         0,
                         ReviewAttempt::default(),
                         false,
+                        false,
                     )
                 })
                 .collect(),
@@ -2922,21 +4112,30 @@ mod tests {
                     0,
                     ReviewAttempt::default(),
                     false,
+                    false,
                 ));
                 slots
             },
         ))
         .unwrap();
         let execution = IntentExecution::new(
+            crate::orchestration::PipelineHistory::default(),
+            crate::orchestration::PlanAppliedOperations::default(),
+            None,
+            None,
+            crate::orchestration::InteractionState::default(),
             execution_id(),
             intent_id(),
             slots,
             cursor,
+            false,
+            false,
             status,
             None,
             autonomy,
             None,
             None,
+            1,
             1,
             occurred(),
         )
@@ -3329,6 +4528,11 @@ mod tests {
             keys
         });
         let refused = IntentExecution::new(
+            crate::orchestration::PipelineHistory::default(),
+            crate::orchestration::PlanAppliedOperations::default(),
+            None,
+            None,
+            crate::orchestration::InteractionState::default(),
             execution_id(),
             intent_id(),
             slots_of(
@@ -3339,11 +4543,14 @@ mod tests {
             )
             .unwrap(),
             1,
+            false,
+            false,
             Status::Running,
             None,
             AutonomyMode::Gated,
             None,
             None,
+            1,
             1,
             occurred(),
         );
@@ -3976,7 +5183,20 @@ mod tests {
         );
         let target = at(&w, 1);
         assert_eq!(
-            w.execution.jump(&foreign, target, at0).unwrap_err(),
+            w.execution
+                .jump(
+                    &foreign,
+                    target,
+                    IntentExecutionEventId::generate(),
+                    crate::orchestration::JumpDirection::of(
+                        w.execution.cursor().to_usize(),
+                        (target).to_usize()
+                    ),
+                    None,
+                    None,
+                    at0
+                )
+                .unwrap_err(),
             CommandError::IntentMismatch
         );
     }
@@ -3999,11 +5219,53 @@ mod tests {
     }
 
     #[test]
-    fn an_isolated_run_records_the_stage_without_moving_the_workflow() {
-        // I10 の実体 — `SingleStageRunCommitted` の適用は**フレーム空**である。
-        // `commit` は通番と発生時刻だけを動かすので、発生時刻を現在値と同じにし通番を
-        // 戻せば、集約は適用前と `==` になる (これがフレーム空の定義そのものである)。
+    fn recording_a_command_failure_preserves_authority_and_replays_one_fact() {
         let mut w = all_exec(3);
+        let before = w.execution.clone();
+        let failure = super::super::CommandFailure::new(
+            "aidlc-log".into(),
+            "aidlc-log review".into(),
+            "Missing --stage <slug>".into(),
+        );
+        let event = w
+            .execution
+            .record_command_failure(failure.clone(), occurred())
+            .unwrap();
+        let IntentExecutionEvent::CommandFailed(recorded) = &event else {
+            panic!("CommandFailed")
+        };
+        assert_eq!(recorded.failure(), &failure);
+        assert_eq!(recorded.aggregate_id(), before.id());
+        assert!(!event.affects_progress());
+        assert_eq!(w.execution.clone().with_seq_nr(before.seq_nr()), before);
+        let replayed = IntentExecution::replay(before, [(w.seq_nr(), occurred(), event)]);
+        assert_eq!(replayed, w.execution);
+    }
+
+    #[test]
+    fn failure_recording_refuses_sequence_exhaustion_without_changing_state() {
+        let mut execution = all_exec(3).execution.with_seq_nr(usize::MAX);
+        let before = execution.clone();
+        let failure = super::super::CommandFailure::new(
+            "aidlc-log".into(),
+            "aidlc-log review".into(),
+            "Missing --stage <slug>".into(),
+        );
+        assert_eq!(
+            execution.record_command_failure(failure, occurred()),
+            Err(CommandError::SequenceExhausted)
+        );
+        assert_eq!(execution, before);
+    }
+
+    #[test]
+    fn an_isolated_run_records_the_stage_without_moving_the_workflow() {
+        // I10: 本流の位置・進捗・承認は動かさない。pipelineの独立試行境界だけを
+        // 明示的な期待へ追加し、通番を揃えた集約全体を比較する。新しい履歴を無視しない。
+        let mut w = all_exec(3);
+        w.execution
+            .begin_single_stage_run(&w.intent, &slug(2), occurred())
+            .unwrap();
         let before = w.execution.clone();
         let at_now = *before.last_updated_at();
 
@@ -4018,10 +5280,24 @@ mod tests {
         assert_eq!(committed.stage(), &slug(2));
         assert_eq!(committed.aggregate_id(), before.id());
         assert_eq!(w.seq_nr(), before.seq_nr() + 1, "歴史は 1 件伸びる");
+        let mut expected = before.clone();
+        expected.pipeline_history = crate::orchestration::PipelineHistory::new(vec![
+            crate::orchestration::PipelineRecord::Boundary {
+                stage: None,
+                single: false,
+                at: at_now,
+            },
+            crate::orchestration::PipelineRecord::Boundary {
+                stage: Some(slug(2).as_str().to_string()),
+                single: true,
+                at: at_now,
+            },
+            crate::orchestration::PipelineRecord::Closed(slug(2).as_str().into()),
+        ]);
         assert_eq!(
             w.execution.clone().with_seq_nr(before.seq_nr()),
-            before,
-            "通番以外は 1 つも動かない (フレーム空)"
+            expected,
+            "独立試行の履歴だけを追加し、本流の全状態は保持する"
         );
     }
 
@@ -4032,6 +5308,10 @@ mod tests {
         let mut completed = all_exec(2);
         completed.approve_gate(None, occurred()).unwrap();
         assert_eq!(completed.status(), Status::Completed);
+        completed
+            .execution
+            .begin_single_stage_run(&completed.intent, &slug(1), occurred())
+            .unwrap();
         assert!(
             completed
                 .execution
@@ -4042,6 +5322,10 @@ mod tests {
         let mut parked = all_exec(3);
         parked.park(occurred()).unwrap();
         assert!(parked.parked_active());
+        parked
+            .execution
+            .begin_single_stage_run(&parked.intent, &slug(2), occurred())
+            .unwrap();
         assert!(
             parked
                 .execution
@@ -4052,6 +5336,10 @@ mod tests {
         let mut autonomous = all_exec(3);
         autonomous
             .switch_autonomy(AutonomyMode::Autonomous, occurred())
+            .unwrap();
+        autonomous
+            .execution
+            .begin_single_stage_run(&autonomous.intent, &slug(2), occurred())
             .unwrap();
         assert!(
             autonomous
@@ -4386,18 +5674,51 @@ mod tests {
         assert_eq!(w.approved(at(&w, 1)), Some(false));
     }
 
+    /// resolve は initialization を導かないが、直接 execute は本家どおり受理する
+    /// (`initialization-target` 観測 — 裁定 jump-contract Q1 = A)。
     #[test]
-    fn jump_to_an_initialization_stage_is_refused() {
+    fn a_direct_execute_reaches_an_initialization_stage_while_resolve_refuses_it() {
         let mut w = all_exec(3);
         let target = at(&w, 0);
-        assert_eq!(
-            w.jump(target, occurred()),
-            Err(CommandError::InvalidTarget(target))
-        );
         assert_eq!(
             w.jump_resolve(target),
             Err(CommandError::InvalidTarget(target))
         );
+        let source = w.cursor();
+        w.jump(target, occurred()).unwrap();
+        assert_eq!(w.cursor(), target);
+        assert_eq!(w.checkbox(target), Some(InProgress));
+        // 下流の着手済み (出発点) は pending へ戻り、承認も残らない。
+        assert_eq!(w.checkbox(source), Some(Pending));
+        assert_eq!(w.approved(source), Some(false));
+    }
+
+    /// `--scope` を名指した直接 execute は、その scope の静的な列で到達可否と読み飛ばしを導く
+    /// (`foreign-scope` 観測 — 裁定 jump-contract Q1 = A)。自 scope で SKIP の到達点も、
+    /// 別 scope が EXECUTE と言えば届き、介在の pending はその scope の EXECUTE だけ `[S]` になる。
+    #[test]
+    fn a_foreign_scope_execute_uses_that_scopes_plan_for_reachability_and_skips() {
+        use crate::orchestration::{JumpDirection, JumpScope, StageSlugSet};
+        let mut w = start_with(1, &[Execute, Execute, Skip, Skip, Execute], &[false; 5]);
+        let target = at(&w, 3);
+        // 自 scope の実効計画では索引 3 は SKIP なので、素の execute は届かない。
+        assert_eq!(
+            w.jump(target, occurred()),
+            Err(CommandError::InvalidTarget(target))
+        );
+        let classic = JumpScope::new(
+            "classic".to_string(),
+            StageSlugSet::new([stage_slug(&w, 0), stage_slug(&w, 2), stage_slug(&w, 3)]),
+        );
+        w.jump_with_scope(target, JumpDirection::Forward, classic, occurred())
+            .unwrap();
+        assert_eq!(w.cursor(), target);
+        assert_eq!(w.checkbox(target), Some(InProgress));
+        // 出発点 (索引 1、着手済み) と、別 scope で EXECUTE の介在 pending (索引 2) は読み飛ばす。
+        assert_eq!(w.checkbox(at(&w, 1)), Some(Skipped));
+        assert_eq!(w.checkbox(at(&w, 2)), Some(Skipped));
+        // 別 scope で SKIP の索引 4 は触らない。
+        assert_eq!(w.checkbox(at(&w, 4)), Some(Pending));
     }
 
     #[test]
@@ -4904,15 +6225,23 @@ mod tests {
         checkbox[0] = Completed;
         checkbox[1] = Completed;
         let error = IntentExecution::new(
+            crate::orchestration::PipelineHistory::default(),
+            crate::orchestration::PlanAppliedOperations::default(),
+            None,
+            None,
+            crate::orchestration::InteractionState::default(),
             born.id().clone(),
             born.intent_id().clone(),
             slots_of(keys_of(&born.execution), &[Execute; 3], &checkbox, &[]).unwrap(),
             1,
+            false,
+            false,
             Status::Running,
             None,
             AutonomyMode::Gated,
             None,
             None,
+            1,
             1,
             occurred(),
         )
@@ -4966,6 +6295,8 @@ mod tests {
             execution_event_id(),
             execution_id(),
             slug(3),
+            crate::orchestration::JumpDirection::Forward,
+            None,
         ));
         w.apply_event(w.seq_nr() + 1, occurred(), &event);
         assert_eq!(
@@ -4986,6 +6317,8 @@ mod tests {
             execution_event_id(),
             execution_id(),
             slug(3),
+            crate::orchestration::JumpDirection::Forward,
+            None,
         ));
         w.apply_event(w.seq_nr() + 1, occurred(), &event);
         assert_eq!(w.checkbox(at(&w, 1)), Some(Skipped), "出発点 (稼働中)");
@@ -5008,6 +6341,8 @@ mod tests {
             execution_event_id(),
             execution_id(),
             slug(2),
+            crate::orchestration::JumpDirection::Redo,
+            None,
         ));
         w.apply_event(w.seq_nr() + 1, occurred(), &event);
         assert_eq!(w.cursor(), at(&w, 2));
@@ -5024,6 +6359,8 @@ mod tests {
             execution_event_id(),
             execution_id(),
             unknown,
+            crate::orchestration::JumpDirection::Forward,
+            None,
         ));
         w.apply_event(2, occurred(), &event);
     }
@@ -5094,15 +6431,23 @@ mod tests {
         let _ = w.approve_gate(None, occurred()).unwrap();
         let source = &w.execution;
         let rebuilt = IntentExecution::new(
+            source.pipeline_history().clone(),
+            source.approval_publications().clone(),
+            source.code_generation_run_floor().cloned(),
+            source.active_directive().cloned(),
+            source.interactions().clone(),
             source.id().clone(),
             source.intent_id().clone(),
             source.slots().clone(),
             source.cursor().to_usize(),
+            source.cursor_synchronized(),
+            source.cursor_foreign_scoped(),
             source.status(),
             source.parked_at().map(StageIndex::to_usize),
             source.autonomy(),
             None,
             source.last_gate_resolution_at(),
+            source.progress_seq_nr(),
             source.seq_nr(),
             *source.last_updated_at(),
         )
@@ -5150,15 +6495,23 @@ mod tests {
         );
         let build = |slots: StageSlots, cursor: usize, parked: Option<usize>, seq_nr: usize| {
             IntentExecution::new(
+                crate::orchestration::PipelineHistory::default(),
+                crate::orchestration::PlanAppliedOperations::default(),
+                None,
+                None,
+                crate::orchestration::InteractionState::default(),
                 source.id().clone(),
                 source.intent_id().clone(),
                 slots,
                 cursor,
+                source.cursor_synchronized(),
+                source.cursor_foreign_scoped(),
                 source.status(),
                 parked,
                 source.autonomy(),
                 None,
                 None,
+                seq_nr,
                 seq_nr,
                 *source.last_updated_at(),
             )
@@ -5208,7 +6561,7 @@ mod tests {
     fn every_initialization_stage_is_non_gated_and_the_rest_are_gated() {
         // 誕生は initialization 3 段を completed にし、カーソルを最初の実ステージ (索引 3)
         // へ立てる (b34)。ゲート判定は計画から決まるので、誕生状態のまま全段を問える。
-        let mut w = start_with(3, &[Execute; 6], &[false; 6]);
+        let w = start_with(3, &[Execute; 6], &[false; 6]);
         for i in 0..3 {
             assert_eq!(w.gated(at(&w, i)), Some(false), "stage {i}");
             assert_eq!(w.checkbox(at(&w, i)), Some(Completed), "stage {i}");
@@ -5221,11 +6574,13 @@ mod tests {
         for i in 3..6 {
             assert_eq!(w.gated(at(&w, i)), Some(true), "stage {i}");
         }
-        // カーソルは最初のゲート付きステージ。initialization へは跳べない。
+        // カーソルは最初のゲート付きステージ。resolve は initialization を導かない
+        // (直接 execute が受理するのは `a_direct_execute_reaches_an_initialization_stage…` —
+        // 裁定 jump-contract Q1 = A)。
         assert_eq!(w.cursor(), at(&w, 3));
         let init_target = at(&w, 1);
         assert_eq!(
-            w.jump(init_target, occurred()),
+            w.jump_resolve(init_target),
             Err(CommandError::InvalidTarget(init_target))
         );
     }
@@ -5293,7 +6648,10 @@ mod tests {
         // (2) resume
         assert_eq!(
             w.next_decision(&NextRequest::new(true, false, false)),
-            NextDecision::ResumeMenu
+            NextDecision::RunStage {
+                stage: first,
+                gate: GateDecision::Gated
+            }
         );
         // (3) 自由記述
         assert_eq!(
@@ -5325,15 +6683,23 @@ mod tests {
         let source = &w.execution;
         let rebuild = |checkbox: Vec<CheckboxState>, cursor: usize, approved: Vec<bool>| {
             IntentExecution::new(
+                crate::orchestration::PipelineHistory::default(),
+                crate::orchestration::PlanAppliedOperations::default(),
+                None,
+                None,
+                crate::orchestration::InteractionState::default(),
                 source.id().clone(),
                 source.intent_id().clone(),
                 slots_of(keys_of(source), &[Execute; 3], &checkbox, &approved).unwrap(),
                 cursor,
+                false,
+                false,
                 Status::Running,
                 None,
                 source.autonomy(),
                 None,
                 None,
+                1,
                 1,
                 *source.last_updated_at(),
             )
@@ -5455,7 +6821,7 @@ mod tests {
     }
 
     #[test]
-    fn the_state_binding_moves_with_every_event_and_only_with_events() {
+    fn the_state_binding_moves_with_progress_events_and_retains_execution_identity() {
         let mut w = all_exec(3);
         let birth = w.state_binding();
         assert_eq!(w.state_binding(), birth, "同じ状態からは同じ束縛");
@@ -5520,6 +6886,7 @@ mod tests {
             "r",
             iteration,
             false,
+            &crate::orchestration::review_test_fixture::documents("r", iteration, None),
             occurred(),
         )
     }
@@ -5545,6 +6912,7 @@ mod tests {
             "r",
             iteration,
             verdict,
+            &crate::orchestration::review_test_fixture::documents("r", iteration, Some(verdict)),
             occurred(),
         )
     }
@@ -5595,7 +6963,8 @@ mod tests {
                     "r",
                     1,
                     false,
-                    occurred()
+                    &crate::orchestration::review_test_fixture::documents("r", 1, None),
+                    occurred(),
                 )
                 .unwrap_err(),
             CommandError::IntentMismatch
@@ -5611,7 +6980,8 @@ mod tests {
                     "r",
                     1,
                     false,
-                    occurred()
+                    &crate::orchestration::review_test_fixture::documents("r", 1, None),
+                    occurred(),
                 )
                 .unwrap_err(),
             CommandError::UnknownStage("nowhere".to_string())
@@ -5619,7 +6989,16 @@ mod tests {
         // 2. レビュアー宣言なし。
         assert_eq!(
             run.execution
-                .request_review(&intent, &known, None, "r", 1, false, occurred())
+                .request_review(
+                    &intent,
+                    &known,
+                    None,
+                    "r",
+                    1,
+                    false,
+                    &crate::orchestration::review_test_fixture::documents("r", 1, None),
+                    occurred(),
+                )
                 .unwrap_err(),
             CommandError::NoDeclaredReviewer(StageIndex::new(1))
         );
@@ -5633,7 +7012,8 @@ mod tests {
                     "someone-else",
                     1,
                     false,
-                    occurred()
+                    &crate::orchestration::review_test_fixture::documents("someone-else", 1, None),
+                    occurred(),
                 )
                 .unwrap_err(),
             CommandError::ReviewerMismatch {
@@ -5651,7 +7031,8 @@ mod tests {
                     "r",
                     1,
                     true,
-                    occurred()
+                    &crate::orchestration::review_test_fixture::documents("r", 1, None),
+                    occurred(),
                 )
                 .unwrap_err(),
             CommandError::NoPendingReview {
@@ -5679,6 +7060,18 @@ mod tests {
         );
         // どの拒否も何もコミットしていない。
         assert_eq!(attempt_of(&run, 1), ReviewAttempt::default());
+    }
+
+    #[test]
+    fn a_pending_review_blocks_the_next_iteration_without_consuming_it() {
+        let mut run = at_gate_with(InProgress);
+        let policy = adversarial();
+        request_at(&mut run, 1, &policy, 1).unwrap();
+        let before = run.execution.clone();
+        assert!(request_at(&mut run, 1, &policy, 2).is_err());
+        assert_eq!(run.execution, before);
+        verdict_at(&mut run, 1, &policy, 1, ReviewVerdict::NotReady).unwrap();
+        assert!(request_at(&mut run, 1, &policy, 2).is_ok());
     }
 
     /// 予算 0 (実効 none) では 1 回目の依頼も通らない — 次に来る番号が予算を超える形。
@@ -5745,18 +7138,55 @@ mod tests {
         let intent = run.intent.clone();
         let event = run
             .execution
-            .request_review(&intent, &slug, Some(&adversarial), "r", 1, true, occurred())
+            .request_review(
+                &intent,
+                &slug,
+                Some(&adversarial),
+                "r",
+                1,
+                true,
+                &crate::orchestration::review_test_fixture::documents("r", 1, None),
+                occurred(),
+            )
             .expect("判定待ちの呼び直しは通る");
         assert!(matches!(
             &event,
             IntentExecutionEvent::ReviewRequested(requested) if requested.is_retry()
         ));
-        // 通番と発生時刻以外は `==` のまま — 呼び直しは依頼に数えない。
-        assert_eq!(
-            run.execution.clone().with_seq_nr(before.seq_nr()),
-            before,
-            "呼び直しの適用はフレーム空である"
-        );
+        // 要求数・pending・判定は保持し、再試行したという証拠だけを履歴へ加える。
+        let mut expected = before.clone();
+        let slots = (0..expected.slots.len())
+            .map(|index| {
+                let slot = expected.slots.at(StageIndex::new(index)).unwrap();
+                if index != 1 {
+                    return slot.clone();
+                }
+                let attempt = slot.review_attempt();
+                let mut records: Vec<_> = attempt.history().iter().cloned().collect();
+                records.push(crate::orchestration::ReviewRecord::Requested {
+                    iteration: 1,
+                    binding: attempt.history().request(1).unwrap().clone(),
+                    retry: true,
+                });
+                super::StageSlot::new(
+                    slot.key().clone(),
+                    slot.plan_action(),
+                    slot.checkbox(),
+                    slot.approved(),
+                    slot.revision_count(),
+                    ReviewAttempt::restored(
+                        attempt.request_count(),
+                        attempt.pending_iterations(),
+                        attempt.closed().clone(),
+                        crate::orchestration::ReviewHistory::new(records),
+                    ),
+                    slot.practices_affirmed(),
+                    slot.memory_empty_reported(),
+                )
+            })
+            .collect();
+        expected.slots = super::StageSlots::new(slots).unwrap();
+        assert_eq!(run.execution.clone().with_seq_nr(before.seq_nr()), expected);
     }
 
     /// 判定は開いている依頼にだけ対応する。
@@ -5810,7 +7240,12 @@ mod tests {
                     "r",
                     1,
                     ReviewVerdict::Ready,
-                    occurred()
+                    &crate::orchestration::review_test_fixture::documents(
+                        "r",
+                        1,
+                        Some(ReviewVerdict::Ready)
+                    ),
+                    occurred(),
                 )
                 .unwrap_err(),
             CommandError::IntentMismatch
@@ -5824,7 +7259,12 @@ mod tests {
                     "r",
                     1,
                     ReviewVerdict::Ready,
-                    occurred()
+                    &crate::orchestration::review_test_fixture::documents(
+                        "r",
+                        1,
+                        Some(ReviewVerdict::Ready)
+                    ),
+                    occurred(),
                 )
                 .unwrap_err(),
             CommandError::NoDeclaredReviewer(StageIndex::new(1))
@@ -5838,7 +7278,12 @@ mod tests {
                     "other",
                     1,
                     ReviewVerdict::Ready,
-                    occurred()
+                    &crate::orchestration::review_test_fixture::documents(
+                        "other",
+                        1,
+                        Some(ReviewVerdict::Ready)
+                    ),
+                    occurred(),
                 )
                 .unwrap_err(),
             CommandError::ReviewerMismatch {
@@ -6053,7 +7498,18 @@ mod tests {
             request_at(&mut run, 2, &adversarial, 1).expect("依頼は通る");
             let intent = run.intent.clone();
             run.execution
-                .jump(&intent, StageIndex::new(target), occurred())
+                .jump(
+                    &intent,
+                    StageIndex::new(target),
+                    IntentExecutionEventId::generate(),
+                    crate::orchestration::JumpDirection::of(
+                        run.execution.cursor().to_usize(),
+                        (StageIndex::new(target)).to_usize(),
+                    ),
+                    None,
+                    None,
+                    occurred(),
+                )
                 .expect("跳べる");
             for stage in 0..run.stage_count() {
                 assert_eq!(
@@ -6074,6 +7530,9 @@ mod tests {
         let before = attempt_of(&run, 1);
 
         let intent = run.intent.clone();
+        run.execution
+            .begin_single_stage_run(&intent, &slug(2), occurred())
+            .unwrap();
         run.execution
             .record_single_stage_run(&intent, &slug(2), occurred())
             .expect("隔離実行は記録できる");
@@ -6099,15 +7558,23 @@ mod tests {
 
         let source = run.execution.clone();
         let rebuilt = IntentExecution::new(
+            crate::orchestration::PipelineHistory::default(),
+            crate::orchestration::PlanAppliedOperations::default(),
+            None,
+            None,
+            crate::orchestration::InteractionState::default(),
             source.id().clone(),
             source.intent_id().clone(),
             source.slots().clone(),
             source.cursor().to_usize(),
+            source.cursor_synchronized(),
+            source.cursor_foreign_scoped(),
             source.status(),
             source.parked_at().map(StageIndex::to_usize),
             source.autonomy(),
             source.skeleton_stance(),
             None,
+            source.progress_seq_nr(),
             source.seq_nr(),
             *source.last_updated_at(),
         )
@@ -6121,15 +7588,23 @@ mod tests {
     fn a_review_attempt_vector_of_the_wrong_length_is_refused() {
         let source = at_gate_with(InProgress).execution;
         let error = IntentExecution::new(
+            crate::orchestration::PipelineHistory::default(),
+            crate::orchestration::PlanAppliedOperations::default(),
+            None,
+            None,
+            crate::orchestration::InteractionState::default(),
             source.id().clone(),
             source.intent_id().clone(),
             source.slots().clone(),
             9,
+            false,
+            false,
             Status::Running,
             None,
             AutonomyMode::Gated,
             None,
             None,
+            1,
             1,
             occurred(),
         )
@@ -6213,6 +7688,50 @@ mod tests {
             })
     }
 
+    #[test]
+    fn code_generation_boundaries_follow_events_instead_of_audit_text() {
+        let mut run = start_synthetic(vec![
+            StageEntry::new(
+                StageSlug::parse("before").unwrap(),
+                PhaseId::Inception,
+                Execute,
+                false,
+                display("2.1"),
+            ),
+            StageEntry::new(
+                StageSlug::parse("code-generation").unwrap(),
+                PhaseId::Construction,
+                Execute,
+                false,
+                display("3.5"),
+            ),
+            StageEntry::new(
+                StageSlug::parse("after").unwrap(),
+                PhaseId::Operation,
+                Execute,
+                false,
+                display("4.1"),
+            ),
+        ]);
+        let floor = |run: &Run| {
+            run.code_generation_run_floor()
+                .map(super::super::CodeGenerationRunFloor::rendered)
+        };
+        assert_eq!(floor(&run), Some(format!("WORKFLOW_STARTED:{AT_TEXT}#1")));
+        run.open_gate(ArtifactPaths::empty(), occurred()).unwrap();
+        run.approve_gate(Some("Approve".to_string()), occurred())
+            .unwrap();
+        assert_eq!(floor(&run), Some(format!("STAGE_STARTED:{AT_TEXT}#1")));
+        run.open_gate(ArtifactPaths::empty(), occurred()).unwrap();
+        run.reject_gate(Some("change".to_string()), occurred())
+            .unwrap();
+        assert_eq!(floor(&run), Some(format!("GATE_REJECTED:{AT_TEXT}#1")));
+        run.jump(StageIndex::new(2), occurred()).unwrap();
+        assert_eq!(floor(&run), Some(format!("STAGE_JUMPED:{AT_TEXT}#1")));
+        run.jump(StageIndex::new(1), occurred()).unwrap();
+        assert_eq!(floor(&run), Some(format!("STAGE_STARTED:{AT_TEXT}#2")));
+    }
+
     fn start_synthetic(stages: Vec<StageEntry>) -> Run {
         Run::start(Intent::from((
             Created::new(
@@ -6274,27 +7793,23 @@ mod tests {
 
     fn assert_quint_invariants(w: &Run) {
         let count = w.stage_count();
-        // cursor_in_scope: コマンドを受理できる間、カーソルは実効 EXECUTE 上にある。
-        if w.accepts_commands() {
+        // cursor_in_scope: コマンドを受理できる間、エンジン遷移が置いたカーソルは実効
+        // EXECUTE 上にある (TaskUpdate 同期が置いた位置は対象外)。
+        if w.accepts_commands() && !w.cursor_synchronized() {
             assert_eq!(
                 w.effective_plan(w.cursor()),
                 Some(Execute),
                 "cursor_in_scope"
             );
         }
-        let mut active = 0_usize;
         for value in 0..count {
             let stage = w.stage_index(value).unwrap();
             let marker = w.checkbox(stage).unwrap();
-            if marker.is_active() {
-                active += 1;
-            }
             // no_gate_bypass: ゲート付きステージの completed は必ず承認履歴を伴う。
             if w.gated(stage) == Some(true) && marker == Completed {
                 assert_eq!(w.approved(stage), Some(true), "no_gate_bypass at {value}");
             }
         }
-        assert!(active <= 1, "at_most_one_active: {active}");
         // parked_position: park マーカーが活性ならカーソル位置と一致する。
         if w.parked_active() {
             assert_eq!(w.parked_at(), Some(w.cursor()), "parked_position");
@@ -6722,6 +8237,9 @@ mod tests {
         let mut run = practices_run(3);
         run.affirm_practices(&promotion(), occurred()).unwrap();
         run.execution
+            .begin_single_stage_run(&run.intent, &slug(2), occurred())
+            .unwrap();
+        run.execution
             .record_single_stage_run(&run.intent, &slug(2), occurred())
             .unwrap();
         run.park(occurred()).unwrap();
@@ -6741,15 +8259,23 @@ mod tests {
         run.affirm_practices(&promotion(), occurred()).unwrap();
         let source = run.execution.clone();
         let rebuilt = IntentExecution::new(
+            source.pipeline_history().clone(),
+            source.approval_publications().clone(),
+            source.code_generation_run_floor().cloned(),
+            source.active_directive().cloned(),
+            source.interactions().clone(),
             source.id().clone(),
             source.intent_id().clone(),
             source.slots().clone(),
             source.cursor().to_usize(),
+            source.cursor_synchronized(),
+            source.cursor_foreign_scoped(),
             source.status(),
             source.parked_at().map(StageIndex::to_usize),
             source.autonomy(),
             source.skeleton_stance(),
             None,
+            source.progress_seq_nr(),
             source.seq_nr(),
             *source.last_updated_at(),
         )
@@ -6758,15 +8284,23 @@ mod tests {
 
         // 受領証が位置と食い違う復元は構成不能 — 残る検査は通番である。
         let error = IntentExecution::new(
+            crate::orchestration::PipelineHistory::default(),
+            crate::orchestration::PlanAppliedOperations::default(),
+            None,
+            None,
+            crate::orchestration::InteractionState::default(),
             source.id().clone(),
             source.intent_id().clone(),
             source.slots().clone(),
             source.cursor().to_usize(),
+            false,
+            false,
             Status::Running,
             None,
             AutonomyMode::Gated,
             None,
             None,
+            0,
             0,
             occurred(),
         )
@@ -6852,19 +8386,39 @@ mod tests {
 
     /// 報告の適用は遷移列のコレクションを受け取る (スライスの照合をやめる)。
     #[test]
-    fn applying_a_report_takes_the_transition_steps_as_a_collection() {
+    fn applying_a_report_records_the_callers_identity_and_transition() {
         let mut run = all_exec(3);
         let event = run
             .execution
             .apply_report(
+                crate::orchestration::ReportId::generate(),
                 &run.intent,
                 &request(Verdict::AwaitingApproval),
-                &TransitionSteps::single(TransitionStep::GateStart),
                 None,
                 occurred(),
             )
             .unwrap();
-        assert!(matches!(event, IntentExecutionEvent::GateOpened(_)));
+        assert!(matches!(event, IntentExecutionEvent::Reported(_)));
+    }
+
+    #[test]
+    fn a_no_op_report_refuses_a_foreign_intent_without_recording_it() {
+        let mut run = all_exec(3);
+        run.open_gate(ArtifactPaths::empty(), occurred()).unwrap();
+        let foreign = plan(1, &[Execute, Execute], &[false, false]);
+        let before = run.execution.clone();
+        let refused = run.execution.apply_report(
+            crate::orchestration::ReportId::generate(),
+            &foreign,
+            &request(Verdict::AwaitingApproval),
+            None,
+            occurred(),
+        );
+        assert!(
+            refused.is_err(),
+            "no-opでも他の依頼に属する結果は記録しない"
+        );
+        assert_eq!(run.execution, before);
     }
 
     /// レビュー会計の閉じた依頼はコレクションで答える。
@@ -6876,6 +8430,715 @@ mod tests {
                 .review_attempt(at(&run, 1))
                 .map(ReviewAttempt::closed),
             Some(&ReviewClosures::empty())
+        );
+    }
+    #[test]
+    fn publication_operations_remain_known_after_a_later_directive_replaces_the_marker() {
+        use crate::orchestration::{
+            DirectivePublication, PlanApprovalOperationId, PublishedDirective,
+        };
+        let mut run = all_exec(2);
+        let id = PlanApprovalOperationId::generate();
+        let later = PlanApprovalOperationId::generate();
+        let unknown = PlanApprovalOperationId::generate();
+        let base = run.execution.clone();
+        let publication = |operation| {
+            DirectivePublication::new(
+                "a".repeat(64),
+                "b".repeat(64),
+                PublishedDirective::RunStage {
+                    stage: slug(0),
+                    unit: None,
+                },
+            )
+            .with_approval_operation(Some(operation))
+        };
+        assert!(!run.execution.has_approval_publication(&id));
+        let first = run
+            .execution
+            .issue_directive(&publication(id.clone()), occurred())
+            .unwrap();
+        assert!(run.execution.has_approval_publication(&id));
+        let second = run
+            .execution
+            .issue_directive(&publication(later.clone()), occurred())
+            .unwrap();
+        assert!(
+            run.execution.has_approval_publication(&id),
+            "最新markerだけを見て、既に保存した発行を未発行にしない"
+        );
+        assert!(run.execution.has_approval_publication(&later));
+        assert!(!run.execution.has_approval_publication(&unknown));
+        assert_eq!(
+            IntentExecution::replay(base, [(2, occurred(), first), (3, occurred(), second)]),
+            run.execution
+        );
+    }
+    #[test]
+    fn pending_invalidation_is_resolved_from_its_original_execution_fact() {
+        use crate::orchestration::{
+            DirectivePublication, PlanApprovalOperationId, PlanApprovalRuntime, PlanInvalidation,
+            PublishedDirective,
+        };
+        use crate::workspace::SpaceName;
+        let mut source = all_exec(2);
+        let id = PlanApprovalOperationId::generate();
+        let (mut approval, _) = PlanApprovalRuntime::create(occurred());
+        approval
+            .prepare_invalidation(
+                PlanInvalidation::new(
+                    id.clone(),
+                    SpaceName::default(),
+                    source.execution.id().clone(),
+                ),
+                occurred(),
+            )
+            .unwrap();
+        let before = approval.clone();
+        let other = IntentExecution::start(
+            IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0001").unwrap(),
+            &source.intent,
+            occurred(),
+        )
+        .0;
+        assert!(
+            approval
+                .resolve_for_publication(&id, &SpaceName::default(), &other, occurred())
+                .is_err()
+        );
+        assert!(
+            approval
+                .resolve_for_publication(
+                    &id,
+                    &SpaceName::parse("other").unwrap(),
+                    &source.execution,
+                    occurred()
+                )
+                .is_err()
+        );
+        assert_eq!(approval, before);
+        let publication = DirectivePublication::new(
+            "a".repeat(64),
+            "b".repeat(64),
+            PublishedDirective::RunStage {
+                stage: slug(0),
+                unit: None,
+            },
+        )
+        .with_approval_operation(Some(id.clone()));
+        source
+            .execution
+            .issue_directive(&publication, occurred())
+            .unwrap();
+        let preserved = source.execution.clone();
+        approval
+            .resolve_for_publication(&id, &SpaceName::default(), &source.execution, occurred())
+            .unwrap();
+        assert!(approval.invalidations().is_empty());
+        assert!(approval.applied_operations().contains(&id));
+        assert_eq!(
+            source.execution, preserved,
+            "照合対象の実行を共有側が変更しない"
+        );
+    }
+
+    // ---- review-freeze: 終端受領証とゲートの間の書込み凍結 ----
+
+    /// レビュアー・成果物・反復軸を名乗るノード。
+    fn freeze_node(
+        name: &str,
+        number: &str,
+        phase: PhaseId,
+        produces: &[&str],
+        reviewer: bool,
+        per_unit: bool,
+    ) -> StageNode {
+        let mut builder = StageNodeBuilder::new(
+            StageSlug::parse(name).unwrap(),
+            StageNumber::parse(number).unwrap(),
+            name.to_string(),
+            phase,
+            ExecutionKind::Always,
+            StageMode::Inline,
+        )
+        .scopes(vec!["classic".to_string()])
+        .produces(produces.iter().map(|name| (*name).to_string()).collect());
+        if reviewer {
+            builder = builder
+                .reviewer("r".to_string())
+                .review_class(crate::workflow_definition::ReviewClass::Adversarial)
+                .reviewer_max_iterations(2);
+        }
+        if per_unit {
+            builder = builder.for_each("unit-of-work".to_string());
+        }
+        builder.build()
+    }
+
+    /// 索引 1 = レビュー付きのステージ水準、索引 2 = レビュー付きの per-unit、
+    /// 索引 3 = レビュアー宣言なし。
+    fn freeze_definition() -> WorkflowDefinition {
+        let graph = StageGraph::new(vec![
+            freeze_node(
+                "state-init",
+                "0.1",
+                PhaseId::Initialization,
+                &[],
+                false,
+                false,
+            ),
+            freeze_node(
+                "requirements-analysis",
+                "2.1",
+                PhaseId::Inception,
+                &["requirements", "requirements-analysis-questions"],
+                true,
+                false,
+            ),
+            freeze_node(
+                "code-generation",
+                "3.1",
+                PhaseId::Construction,
+                &["code-generation-plan", "traceability"],
+                true,
+                true,
+            ),
+            freeze_node(
+                "build-and-test",
+                "3.2",
+                PhaseId::Construction,
+                &["build-test-results"],
+                false,
+                false,
+            ),
+        ])
+        .unwrap();
+        let column: BTreeMap<StageSlug, PlanAction> = [
+            (StageSlug::parse("state-init").unwrap(), Execute),
+            (StageSlug::parse("requirements-analysis").unwrap(), Execute),
+            (StageSlug::parse("code-generation").unwrap(), Execute),
+            (StageSlug::parse("build-and-test").unwrap(), Execute),
+        ]
+        .into_iter()
+        .collect();
+        let grid = ScopeGrid::new([("classic".to_string(), column)].into_iter().collect());
+        let scopes: BTreeMap<String, ScopeMetadata> = [(
+            "classic".to_string(),
+            ScopeMetadata::new("classic").unwrap(),
+        )]
+        .into_iter()
+        .collect();
+        WorkflowDefinition::define(
+            def_id("claude"),
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                graph,
+                grid,
+                scopes,
+            )
+            .0,
+            occurred(),
+        )
+        .unwrap()
+        .0
+    }
+
+    fn freeze_run() -> (Run, WorkflowDefinition) {
+        let definition = freeze_definition();
+        let (run, _) = start_from_definition(&definition, start_request());
+        (run, definition)
+    }
+
+    fn targets(paths: &[&str]) -> crate::orchestration::WriteTargets {
+        crate::orchestration::WriteTargets::new(
+            paths
+                .iter()
+                .map(|path| crate::orchestration::WriteTarget::parse(path).unwrap())
+                .collect(),
+        )
+    }
+
+    const REQUIREMENTS: &str =
+        "/w/aidlc/spaces/default/intents/x/inception/requirements-analysis/requirements.md";
+
+    /// 終端の受領証がある間、そのステージの宣言成果物への書込みは拒否される。
+    #[test]
+    fn a_declared_artifact_write_is_frozen_while_the_terminal_receipt_stands() {
+        let (mut run, definition) = freeze_run();
+        record_terminal_receipt(&mut run, 1, &adversarial());
+        let verdict =
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS]));
+        let block = verdict.block().expect("凍結する");
+        assert_eq!(block.target().as_str(), REQUIREMENTS);
+        assert_eq!(block.stage().as_str(), "requirements-analysis");
+        assert_eq!(block.unit(), None);
+    }
+
+    /// 宣言成果物でない書込み (日誌・質問ファイル・別ステージ) は凍結しない。
+    #[test]
+    fn a_write_outside_the_declared_artifacts_is_never_frozen() {
+        let (mut run, definition) = freeze_run();
+        record_terminal_receipt(&mut run, 1, &adversarial());
+        for path in [
+            "/w/aidlc/spaces/default/intents/x/inception/requirements-analysis/memory.md",
+            "/w/aidlc/spaces/default/intents/x/inception/contract-design/contract-summary.md",
+            "/w/src/main.rs",
+        ] {
+            assert_eq!(
+                run.execution
+                    .judge_review_freeze(&run.intent, &definition, &targets(&[path])),
+                crate::orchestration::ReviewFreezeVerdict::Allowed,
+                "{path} は宣言成果物ではない"
+            );
+        }
+    }
+
+    /// 終端でない判定 (上限未満の NOT-READY) と、判定前の依頼だけでは凍結しない。
+    #[test]
+    fn a_stage_without_a_terminal_receipt_does_not_freeze_its_artifact() {
+        let (mut run, definition) = freeze_run();
+        let adversarial = adversarial();
+        request_at(&mut run, 1, &adversarial, 1).expect("1 回目の依頼は通る");
+        assert_eq!(
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS])),
+            crate::orchestration::ReviewFreezeVerdict::Allowed,
+            "判定が返る前は受領証が無い"
+        );
+        verdict_at(&mut run, 1, &adversarial, 1, ReviewVerdict::NotReady).expect("判定は通る");
+        assert_eq!(
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS])),
+            crate::orchestration::ReviewFreezeVerdict::Allowed,
+            "上限未満の NOT-READY は終端ではない — 修復ループは編集できる"
+        );
+    }
+
+    /// 完了したステージの成果物は恒久記録であり、凍結の対象から外れる。
+    #[test]
+    fn a_completed_stage_no_longer_freezes_its_artifact() {
+        let (mut run, definition) = freeze_run();
+        run.jump(StageIndex::new(1), occurred())
+            .expect("対象ステージへ移る");
+        record_terminal_receipt(&mut run, 1, &adversarial());
+        assert!(
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS]))
+                .is_blocked()
+        );
+        run.open_gate(ArtifactPaths::empty(), occurred())
+            .expect("ゲートを開く");
+        let intent = run.intent.clone();
+        run.execution
+            .approve_gate(&intent, Some(&adversarial()), None, occurred())
+            .expect("終端受領証があるので承認できる");
+        assert_eq!(run.execution.checkbox(StageIndex::new(1)), Some(Completed));
+        assert_eq!(
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS])),
+            crate::orchestration::ReviewFreezeVerdict::Allowed,
+            "完了したステージの成果物は恒久記録である"
+        );
+    }
+
+    /// 差し戻しは試行を空へ戻す — 差し戻し後の改訂は凍結されない。
+    #[test]
+    fn a_rejected_gate_releases_the_freeze() {
+        let (mut run, definition) = freeze_run();
+        run.jump(StageIndex::new(1), occurred())
+            .expect("対象ステージへ移る");
+        record_terminal_receipt(&mut run, 1, &adversarial());
+        assert!(
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS]))
+                .is_blocked()
+        );
+        run.open_gate(ArtifactPaths::empty(), occurred())
+            .expect("ゲートを開く");
+        run.reject_gate(Some("直せ".to_string()), occurred())
+            .expect("差し戻せる");
+        assert_eq!(
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS])),
+            crate::orchestration::ReviewFreezeVerdict::Allowed,
+            "差し戻しはフロアを戻す"
+        );
+    }
+
+    /// レビュアーを宣言しないステージの成果物は凍結の対象ではない。
+    #[test]
+    fn a_stage_without_a_declared_reviewer_never_freezes() {
+        let (mut run, definition) = freeze_run();
+        record_terminal_receipt(&mut run, 1, &adversarial());
+        assert_eq!(
+            run.execution.judge_review_freeze(
+                &run.intent,
+                &definition,
+                &targets(&["/w/x/construction/build-and-test/test-results.md"])
+            ),
+            crate::orchestration::ReviewFreezeVerdict::Allowed,
+            "build-and-test はレビュアーを宣言しない"
+        );
+    }
+
+    /// per-unit ステージの Unit 配下の書込みは、その Unit 名を拒否行へ載せる。
+    #[test]
+    fn the_block_names_the_first_declared_target_and_its_unit() {
+        let (mut run, definition) = freeze_run();
+        record_terminal_receipt(&mut run, 2, &adversarial());
+        let unit_path =
+            "/w/x/construction/u2-workflow-authority/code-generation/code-generation-plan.md";
+        let verdict = run.execution.judge_review_freeze(
+            &run.intent,
+            &definition,
+            &targets(&["/w/x/README.md", unit_path]),
+        );
+        let block = verdict.block().expect("凍結する");
+        assert_eq!(block.target().as_str(), unit_path);
+        assert_eq!(block.stage().as_str(), "code-generation");
+        assert_eq!(
+            block.unit().map(crate::orchestration::UnitName::as_str),
+            Some("u2-workflow-authority")
+        );
+    }
+
+    /// per-unit ステージのステージ水準の書込みは、ステージの受領証では凍結しない。
+    ///
+    /// upstream `judgeFreeze` の `for_each === "unit-of-work"` 枝は、Unit 名の取れない宛先に
+    /// 対して `unitVerdicts` / `unitPending` **だけ**を見る — `stageVerdict` は読まない
+    /// (`hooks/aidlc-review-freeze.ts:145-193`)。`units-generation` を読み飛ばす scope
+    /// (`bugfix` / `express` / `poc` / `refactor` / `security-patch`) では per-unit ステージの
+    /// 成果物がそもそもステージ直下に置かれるので、これが通常経路である。
+    #[test]
+    fn a_stage_level_write_on_a_per_unit_stage_is_not_frozen_by_the_stage_receipt() {
+        let (mut run, definition) = freeze_run();
+        record_terminal_receipt(&mut run, 2, &adversarial());
+        for path in [
+            "/w/x/construction/code-generation/code-generation-plan.md",
+            "/w/x/construction/code-generation/traceability.json",
+        ] {
+            assert_eq!(
+                run.execution
+                    .judge_review_freeze(&run.intent, &definition, &targets(&[path])),
+                crate::orchestration::ReviewFreezeVerdict::Allowed,
+                "{path} は Unit を名指さない — per-unit ステージの受領証は Unit ごとである"
+            );
+        }
+        // 反復軸を持たないステージの凍結は変わらない (この配線は per-unit だけを緩める)。
+        record_terminal_receipt(&mut run, 1, &adversarial());
+        assert!(
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS]))
+                .is_blocked(),
+            "ステージ水準の受領証はステージ水準の成果物を覆う"
+        );
+    }
+
+    /// ステージ水準の宛先が先に並んでいても、同じ呼出しの Unit 宛先は凍結する。
+    ///
+    /// upstream は宛先を 1 つずつ判定し、**最初に拒否へ倒れた**ものを拒否行に載せる。
+    /// 「最初の宣言成果物」で切り上げると、この呼出しは丸ごと素通ししてしまう。
+    #[test]
+    fn a_unit_target_behind_a_stage_level_target_is_still_frozen() {
+        let (mut run, definition) = freeze_run();
+        record_terminal_receipt(&mut run, 2, &adversarial());
+        let stage_path = "/w/x/construction/code-generation/traceability.json";
+        let unit_path =
+            "/w/x/construction/u2-workflow-authority/code-generation/code-generation-plan.md";
+        let verdict = run.execution.judge_review_freeze(
+            &run.intent,
+            &definition,
+            &targets(&[stage_path, unit_path]),
+        );
+        let block = verdict.block().expect("後ろに並んだ Unit 宛先で凍結する");
+        assert_eq!(block.target().as_str(), unit_path);
+        assert_eq!(
+            block.unit().map(crate::orchestration::UnitName::as_str),
+            Some("u2-workflow-authority")
+        );
+    }
+
+    /// 実効クラス `none` の実行に終端受領証は生まれない — 凍結もしない。
+    #[test]
+    fn an_effective_none_class_never_freezes() {
+        let (mut run, definition) = freeze_run();
+        let none = policy(ReviewCapValue::None, 2);
+        request_at(&mut run, 1, &none, 1).expect_err("実効 none は依頼を通さない");
+        record_terminal_receipt(&mut run, 1, &adversarial());
+        assert!(
+            run.execution
+                .judge_review_freeze(&run.intent, &definition, &targets(&[REQUIREMENTS]))
+                .is_blocked(),
+            "adversarial の READY は終端である"
+        );
+        assert_eq!(
+            run.execution.judge_review_freeze(
+                &run.intent,
+                &freeze_definition_with_cap(ReviewCapValue::None),
+                &targets(&[REQUIREMENTS])
+            ),
+            crate::orchestration::ReviewFreezeVerdict::Allowed,
+            "scope の上限が none なら受領証を要求せず凍結もしない"
+        );
+    }
+
+    /// scope の `review_cap` だけを差し替えた同一グラフの定義。
+    fn freeze_definition_with_cap(cap: ReviewCapValue) -> WorkflowDefinition {
+        let base = freeze_definition();
+        let graph = base.graph().clone();
+        let grid = base.grid().clone();
+        let scopes: BTreeMap<String, ScopeMetadata> = [(
+            "classic".to_string(),
+            ScopeMetadata::new("classic").unwrap().with_review_cap(cap),
+        )]
+        .into_iter()
+        .collect();
+        WorkflowDefinition::define(
+            def_id("claude"),
+            &CompiledDefinition::compile(
+                CompiledDefinitionId::parse("claude").unwrap(),
+                graph,
+                grid,
+                scopes,
+            )
+            .0,
+            occurred(),
+        )
+        .unwrap()
+        .0
+    }
+
+    // ---------------------------------------------------------------------
+    // 学びの記録 — 重複抑止の材料はディスクの実測、計画の照合だけが集約の仕事
+    // ---------------------------------------------------------------------
+
+    fn pinned_provenance() -> crate::orchestration::LearningProvenance {
+        crate::orchestration::LearningProvenance::new(
+            crate::workspace::SpaceName::default(),
+            crate::workspace::IntentDirName::parse("260908-learnings").unwrap(),
+        )
+    }
+
+    fn selected(
+        text: &str,
+        in_audit: bool,
+        in_file: bool,
+    ) -> crate::orchestration::LearningObservation {
+        crate::orchestration::LearningObservation::new(
+            crate::orchestration::Learning::new(
+                crate::orchestration::LearningCandidateId::parse("c1").unwrap(),
+                crate::orchestration::LearningScope::Project,
+                crate::orchestration::PracticeHeading::corrections(),
+                text,
+                crate::orchestration::LearningSource::Orchestrator,
+            ),
+            in_audit,
+            in_file,
+        )
+    }
+
+    fn captured_of(event: &IntentExecutionEvent) -> crate::orchestration::CapturedLearnings {
+        let IntentExecutionEvent::LearningsCaptured(captured) = event else {
+            panic!("LearningsCaptured を期待した");
+        };
+        captured.learnings().clone()
+    }
+
+    #[test]
+    fn a_capture_carries_the_selected_learnings_and_their_pinned_provenance() {
+        let mut run = all_exec(3);
+        let event = run
+            .execution
+            .capture_learnings(
+                &slug(1),
+                pinned_provenance(),
+                &crate::orchestration::LearningObservations::new(vec![selected(
+                    "学び", false, false,
+                )]),
+                occurred(),
+            )
+            .unwrap();
+        let IntentExecutionEvent::LearningsCaptured(payload) = &event else {
+            panic!("LearningsCaptured を期待した");
+        };
+        assert_eq!(payload.stage(), &slug(1));
+        assert_eq!(payload.provenance(), &pinned_provenance());
+        assert_eq!(captured_of(&event).audit_rows(), 1);
+    }
+
+    /// 何も選ばれなかった回も 1 コマンド 1 イベントである（書く学びが 0 件になるだけ）。
+    #[test]
+    fn nothing_selected_still_commits_one_event_with_no_learning() {
+        let mut run = all_exec(3);
+        let event = run
+            .execution
+            .capture_learnings(
+                &slug(1),
+                pinned_provenance(),
+                &crate::orchestration::LearningObservations::empty(),
+                occurred(),
+            )
+            .unwrap();
+        assert!(captured_of(&event).is_empty());
+        assert_eq!(captured_of(&event).audit_rows(), 0);
+    }
+
+    /// 計画が知らない位置への記録は拒否する（監査へ辿れない行を作らない）。
+    #[test]
+    fn a_stage_the_plan_does_not_know_is_refused() {
+        let mut run = all_exec(3);
+        assert_eq!(
+            run.execution.capture_learnings(
+                &StageSlug::parse("no-such-stage").unwrap(),
+                pinned_provenance(),
+                &crate::orchestration::LearningObservations::empty(),
+                occurred(),
+            ),
+            Err(CommandError::UnknownStage("no-such-stage".to_string()))
+        );
+    }
+
+    /// 学びは進行を変えない — カーソルも checkbox も動かない。
+    #[test]
+    fn capturing_a_learning_never_moves_the_workflow() {
+        let mut run = all_exec(3);
+        let before = run.execution.clone();
+        run.execution
+            .capture_learnings(
+                &slug(1),
+                pinned_provenance(),
+                &crate::orchestration::LearningObservations::new(vec![selected(
+                    "学び", false, false,
+                )]),
+                occurred(),
+            )
+            .unwrap();
+        assert_eq!(run.execution.cursor(), before.cursor());
+        assert_eq!(run.execution.slots(), before.slots());
+    }
+
+    // ---------------------------------------------------------------------
+    // 日誌観測 — `MEMORY_EMPTY` の判定は集約が持つ (compile の再発火で重複しない)
+    // ---------------------------------------------------------------------
+
+    /// 位置 1 つぶんの空の日誌観測。
+    fn empty_journal_survey(index: usize) -> crate::orchestration::MemoryJournalSurvey {
+        crate::orchestration::MemoryJournalSurvey::new(vec![
+            crate::orchestration::StageMemoryJournal::new(
+                slug(index),
+                crate::orchestration::MemoryJournal::new(0, 0, 0, 0),
+            ),
+        ])
+    }
+
+    /// 観測イベントが名指した位置 (それ以外の変種は失敗させる)。
+    fn observed_empty_stages(event: &IntentExecutionEvent) -> Vec<String> {
+        let IntentExecutionEvent::MemoryJournalsObserved(observed) = event else {
+            panic!("MemoryJournalsObserved を期待した");
+        };
+        observed
+            .empty_stages()
+            .fold_left(Vec::new(), |mut names, slug| {
+                names.push(slug.as_str().to_string());
+                names
+            })
+    }
+
+    #[test]
+    fn an_empty_journal_is_named_only_once_per_approval() {
+        // 位置 0 は initialization (誕生時から `[x]`)、位置 1 を承認する。
+        let mut run = all_exec(3);
+        run.approve_gate(None, occurred()).unwrap();
+
+        let first = run
+            .execution
+            .observe_memory_journals(empty_journal_survey(1), occurred())
+            .unwrap();
+        assert_eq!(observed_empty_stages(&first), vec!["stage-1".to_string()]);
+
+        let second = run
+            .execution
+            .observe_memory_journals(empty_journal_survey(1), occurred())
+            .unwrap();
+        assert!(
+            observed_empty_stages(&second).is_empty(),
+            "同じ承認について 2 度目は名指さない"
+        );
+    }
+
+    #[test]
+    fn a_journal_with_entries_and_an_unapproved_stage_are_never_named() {
+        let mut run = all_exec(3);
+        let filled = crate::orchestration::MemoryJournalSurvey::new(vec![
+            crate::orchestration::StageMemoryJournal::new(
+                slug(1),
+                crate::orchestration::MemoryJournal::new(1, 0, 0, 0),
+            ),
+        ]);
+        run.approve_gate(None, occurred()).unwrap();
+        let event = run
+            .execution
+            .observe_memory_journals(filled, occurred())
+            .unwrap();
+        assert!(observed_empty_stages(&event).is_empty(), "記録がある日誌");
+
+        // 位置 2 はまだ進行中なので、日誌が空でも名指さない。
+        let running = run
+            .execution
+            .observe_memory_journals(empty_journal_survey(2), occurred())
+            .unwrap();
+        assert!(observed_empty_stages(&running).is_empty(), "進行中の位置");
+    }
+
+    /// TaskUpdate による現在位置の同期は、記録済みの印を落とさない。
+    ///
+    /// 本家の compile は監査の対 (`STAGE_STARTED` / `STAGE_COMPLETED`) だけを見るので、
+    /// 同期そのものは `completed_at` を動かさず、抑止も解けない。
+    #[test]
+    fn a_task_update_sync_does_not_reopen_the_record() {
+        let mut run = all_exec(3);
+        run.approve_gate(None, occurred()).unwrap();
+        let first = run
+            .execution
+            .observe_memory_journals(empty_journal_survey(1), occurred())
+            .unwrap();
+        assert_eq!(observed_empty_stages(&first), vec!["stage-1".to_string()]);
+
+        run.execution
+            .synchronize_task(&slug(1), occurred())
+            .unwrap();
+        let after = run
+            .execution
+            .observe_memory_journals(empty_journal_survey(1), occurred())
+            .unwrap();
+        assert!(
+            observed_empty_stages(&after).is_empty(),
+            "同期は新しい承認ではない"
+        );
+    }
+
+    #[test]
+    fn a_stage_that_leaves_and_re_enters_approval_is_named_again() {
+        let mut run = all_exec(3);
+        run.approve_gate(None, occurred()).unwrap();
+        let first = run
+            .execution
+            .observe_memory_journals(empty_journal_survey(1), occurred())
+            .unwrap();
+        assert_eq!(observed_empty_stages(&first), vec!["stage-1".to_string()]);
+
+        // 巻き戻して承認し直すと、別の承認になるので改めて名指す。
+        run.jump(StageIndex::new(1), occurred()).unwrap();
+        run.approve_gate(None, occurred()).unwrap();
+        let again = run
+            .execution
+            .observe_memory_journals(empty_journal_survey(1), occurred())
+            .unwrap();
+        assert_eq!(
+            observed_empty_stages(&again),
+            vec!["stage-1".to_string()],
+            "再承認は新しい承認である"
         );
     }
 }

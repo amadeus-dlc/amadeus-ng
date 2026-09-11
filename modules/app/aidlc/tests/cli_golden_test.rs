@@ -1,42 +1,15 @@
-//! CLI ゴールデン — 採取済みの `next` / `continue` の実行出力と突き合わせる。
+//! CLIの固定本家2.7.1比較。原本の期待バイトは変更しない。
 //!
-//! 入力は `tests/golden/upstream-3c3146cf/cli/{next,continue,park}/` — ピン留めコミット
-//! `3c3146cf` (v2.6.40) の配布シェルを bun で実行して採った stdout である
-//! (`scripts/goldens/recapture-cli.sh`)。ゴールデンの更新は**upstream ピン更新の intent で
-//! のみ**行う (BR2.5) ので、ここは読むだけである。
+//! `tests/golden/upstream-a277af21/cli/` を読み、採取元SHAも検査する。
+//! 不正continueとparkは同じ入力条件で公開JSON全文を比較する。
+//! load-steering/run-stageは合成グラフを使うため、キー集合の検査に限定される。
+//! personaの本文は本家採取と同じ配布内容を置き、全文を比較する。
+//! narration/conductor_personaの欠落を許す例外は設けない。
 //!
-//! # 何をバイトで固定できるか
-//!
-//! | ケース | 突き合わせ | 理由 |
-//! | --- | --- | --- |
-//! | `continue/invalid-token` | **stdout をバイト一致**で固定 | 逐語文言だけの directive で、フィクスチャにも配置にも依らない |
-//! | `next/start` (`load-steering`) | **キー集合**を固定 | 中身 (`rules_content` / `bundle`) は採取時のワークスペースの memory 層に依存する |
-//! | `continue/load-steering` (終端 `run-stage`) | **キー集合**を固定 | 同上 (パスは配置に依存する) |
-//! | `park/park` | `kind` / `reason` / `stage` を**バイト一致**、残りはキー集合 | 採取時のカーソルと合成グラフのカーソルがどちらも `domain-design` なので値まで比べられる |
-//! | `report/{approved,awaiting-approval,awaiting-approval-repeat,rejected,revised}` | **バイト一致**（ステージ slug だけ読み替え） | 逐語は 1 行 JSON で、可変なのは slug と scope だけ。scope はどちらも `classic` なので slug の置換だけで比べられる |
-//!
-//! # 駆動できないケース (黙って飛ばさない)
-//!
-//! - **`next/stage-jump-print`** — **逸脱台帳 #1**。upstream は
-//!   `bun .claude/tools/aidlc-jump.ts execute --target <slug> --direction forward --scope <scope>`
-//!   を名指すが、こちらはマルチコール正準形 (`aidlc-jump resolve --stage <slug>`) を名指す。
-//!   バイト一致は設計上ありえない。
-//! - **`report/completed-ungated`** — 非ゲートステージへの前進報告は、誕生 = 初期化完了済み
-//!   (issue #76 / b34) 以降**構成できない**。詳細は
-//!   [`the_report_directives_match_the_recorded_cases_after_the_slug_substitution`] の doc。
-//! - **`report/approved-across-phases`** — 合成グラフにフェーズをまたぐ位置が無い (同上)。
-//! - **`next/after-approval`** — 採取時のワークスペース (upstream 配布の 11 個の scope identity
-//!   ファイルとその metadata) が vendored されていないため、同じ計画を再現できない。
-//!   `stage-graph.json` / `scope-grid.json` / `harness.json` は在るが、有効 scope の権威は
-//!   `.claude/scopes/aidlc-<name>.md` であり (12 §4 #6)、それが無い。
-//!
-//! # 既知の欠落 (キー集合の差はここで固定する)
-//!
-//! upstream の `run-stage` は `conductor_persona` と `narration` を載せるが、こちらは
-//! どちらも載せない (b44 以前からの欠落 — `RunStageDirective` は `narration` の欄を持つが
-//! 設定する経路が無く、`conductor_persona` は欄すら無い)。`parked` も同じく `narration` を
-//! 載せない (`Directive::Parked` に欄が無い — b45 の対象外)。**差を明示的に固定**しておく
-//! ことで、別のキーが黙って落ちたらここが赤くなる。
+//! reportの既存比較はpractices-discoveryをdomain-designへ読み替える限定検査である。
+//! 同一の開始状態・全公開ファイル比較の代わりにはしない。承認待ちの再報告は
+//! 本家2.7.1でgate evidenceの再検証へ変わっており、現在の単純no-opとは一致しない。
+//! 非ゲート報告、フェーズをまたぐ報告、次工程の全配布入力の再現は別途必要である。
 #![allow(clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeSet;
@@ -49,7 +22,20 @@ use core_infrastructure::canon_json::{JsonValue, parse};
 fn golden_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
-        .join("tests/golden/upstream-3c3146cf/cli")
+        .join("tests/golden/upstream-a277af21/cli")
+}
+
+#[test]
+fn the_cli_corpus_uses_the_approved_upstream_revision() {
+    let metadata = fs::read_to_string(golden_dir().join("cases-missing.json")).expect("採取元情報");
+    let source: serde_json::Value = serde_json::from_str(&metadata).expect("JSON");
+    assert_eq!(
+        source
+            .get("upstream_commit")
+            .and_then(serde_json::Value::as_str)
+            .expect("採取元SHA"),
+        "a277af218f0df7f325d3b8be7b6d90fce2c5bd40"
+    );
 }
 
 /// 採取済みケースの stdout (1 行 JSON) をそのまま読む。
@@ -83,8 +69,7 @@ fn keys(line: &str) -> BTreeSet<String> {
 /// 定義 3 入力と memory 層を書いた fresh なワークスペース。
 ///
 /// キー集合の比較は計画の大きさに依らないので、採取時の 33 ノードのグラフではなく最小の
-/// 合成グラフでよい (upstream 配布の scope identity ファイルは vendored されていない —
-/// モジュール doc の「駆動できないケース」を参照)。
+/// 合成グラフを使う。この検査だけでは配布グラフ全体の実行を証明しない。
 struct Workspace {
     root: tempfile::TempDir,
 }
@@ -95,6 +80,13 @@ impl Workspace {
             root: tempfile::tempdir().expect("一時ディレクトリ"),
         };
         workspace.write_definition();
+        let common = workspace.path(".claude/aidlc-common");
+        fs::create_dir_all(&common).expect("配布共通ファイル");
+        fs::write(
+            common.join("conductor.md"),
+            string_of(&recorded("continue/load-steering"), "conductor_persona"),
+        )
+        .expect("固定本家のpersona本文");
         let memory = workspace.path("aidlc/spaces/default/memory");
         fs::create_dir_all(&memory).expect("memory");
         fs::write(
@@ -112,6 +104,13 @@ impl Workspace {
 
     fn project_dir(&self) -> &Path {
         self.root.path()
+    }
+
+    /// 鋳造した intent の記録ディレクトリ (`active-intent` カーソルの指す先)。
+    fn record_dir(&self) -> PathBuf {
+        let intents = self.path("aidlc/spaces/default/intents");
+        let name = fs::read_to_string(intents.join("active-intent")).expect("active-intent");
+        intents.join(name.trim())
     }
 
     fn write_definition(&self) {
@@ -135,7 +134,7 @@ impl Workspace {
         };
         let reviewed = r#","support_agents":["aidlc-quality-agent"],
              "reviewer":"aidlc-architecture-reviewer-agent","review_class":"advisory",
-             "reviewer_max_iterations":2,"produces":["design.md"]"#;
+             "reviewer_max_iterations":2,"produces":["design"],"review_artifact":"design""#;
         fs::write(
             data.join("stage-graph.json"),
             format!(
@@ -227,12 +226,12 @@ async fn the_load_steering_keys_match_the_recorded_case() {
     );
 }
 
-/// 終端 `run-stage` のキー集合 — 欠落は既知の 2 つ (`conductor_persona` / `narration`) だけ。
+/// 終端 `run-stage` のキー集合と、同じ配布本文から読むpersona。
 ///
 /// 採取済みの `continue/load-steering` は「最後の部まで配り終えた継続」なので、返るのは
 /// 続きの部ではなく台帳付きの `run-stage` である。こちらも同じ形で終端に着く。
 #[tokio::test]
-async fn the_terminal_run_stage_keys_match_the_recorded_case_except_the_known_gap() {
+async fn the_terminal_run_stage_keys_and_persona_match_the_recorded_case() {
     let workspace = Workspace::create();
     workspace.mint().await;
 
@@ -252,10 +251,13 @@ async fn the_terminal_run_stage_keys_match_the_recorded_case_except_the_known_ga
     let emitted = keys(&line(&completion));
     let expected = keys(&recorded("continue/load-steering"));
     let missing: Vec<&String> = expected.difference(&emitted).collect();
+    assert!(
+        missing.is_empty(),
+        "本家の必須キーが欠けている: {missing:?}"
+    );
     assert_eq!(
-        missing,
-        vec![&"conductor_persona".to_string(), &"narration".to_string()],
-        "採取済みケースが載せるキーのうち、こちらが載せないのは既知の 2 つだけである"
+        string_of(&line(&completion), "conductor_persona"),
+        string_of(&recorded("continue/load-steering"), "conductor_persona")
     );
     // 採取済みのステージ (`practices-discovery`) はレビュアを宣言しないので、任意の 3 キーが
     // 現れない。こちらのフィクスチャは宣言するので現れる — その 3 つ以外は増やさない。
@@ -271,40 +273,21 @@ async fn the_terminal_run_stage_keys_match_the_recorded_case_except_the_known_ga
     );
 }
 
-/// `parked` directive — 値 3 つはバイト一致、欠落は既知の `narration` だけ。
+/// `parked` directive — 説明文を含む公開JSON全文。
 ///
 /// 採取済みの `cli/park/park` は 33 ノードのグラフの `domain-design` で止まっている。こちらの
 /// 合成グラフでも誕生のカーソルは `domain-design`（最初のゲート付き in-scope ステージ）なので、
-/// `kind` / `reason` / `stage` の 3 値は 1 バイトも違わないところまで突き合わせられる。
+/// すべての項目を1バイトも違わないところまで突き合わせられる。
 #[tokio::test]
-async fn the_parked_directive_matches_the_recorded_case_except_the_known_gap() {
+async fn the_parked_directive_is_byte_identical_to_the_recorded_case() {
     let workspace = Workspace::create();
     workspace.mint().await;
-
     let completion = workspace.invoke("aidlc-orchestrate", &["park"]).await;
-
     assert_eq!(completion.code(), 0, "{completion:?}");
-    let emitted = line(&completion);
-    let expected = recorded("park/park");
-    for key in ["kind", "reason", "stage"] {
-        assert_eq!(
-            string_of(&emitted, key),
-            string_of(&expected, key),
-            "{key} は採取済みケースとバイト一致する"
-        );
-    }
-    let missing: Vec<String> = keys(&expected)
-        .difference(&keys(&emitted))
-        .cloned()
-        .collect();
     assert_eq!(
-        missing,
-        vec!["narration".to_string()],
-        "採取済みケースが載せるキーのうち、こちらが載せないのは既知の 1 つだけである"
-    );
-    assert!(
-        keys(&emitted).difference(&keys(&expected)).next().is_none(),
-        "採取済みケースに無いキーは足さない"
+        line(&completion),
+        recorded("park/park"),
+        "同じstageでparkした公開JSON全文"
     );
 }
 
@@ -322,7 +305,12 @@ fn recorded_for_synthetic_graph(case: &str) -> String {
 }
 
 /// advisory 1 パスの受領証（依頼 → READY 判定）を積む（b48 の段 11 を通すため）。
+///
+/// 依頼の受領証は宣言された `produces` の実バイトに束縛されるので、先に成果物を置く。
 async fn record_advisory_receipt(workspace: &Workspace, stage: &str) {
+    let artifact_dir = workspace.record_dir().join("inception").join(stage);
+    fs::create_dir_all(&artifact_dir).expect("成果物ディレクトリ");
+    fs::write(artifact_dir.join("design.md"), "# Design\n\n設計。\n").expect("成果物");
     for extra in [Vec::new(), vec!["--verdict", "READY"]] {
         let mut argv = vec![
             "review",
@@ -336,6 +324,14 @@ async fn record_advisory_receipt(workspace: &Workspace, stage: &str) {
         argv.extend_from_slice(&extra);
         let completion = workspace.invoke("aidlc-log", &argv).await;
         assert_eq!(completion.code(), 0, "受領証は積める: {completion:?}");
+        // 判定は、依頼時のバイトに `## Review` 付録だけが追記された成果物へ束縛される。
+        if extra.is_empty() {
+            let mut body = fs::read(artifact_dir.join("design.md")).expect("成果物");
+            body.extend_from_slice(
+                b"\n## Review\n\n**Verdict:** READY\n**Reviewer:** aidlc-architecture-reviewer-agent\n**Iteration:** 1\n",
+            );
+            fs::write(artifact_dir.join("design.md"), body).expect("付録");
+        }
     }
 }
 
@@ -348,48 +344,42 @@ async fn report_line(workspace: &Workspace, args: &[&str]) -> String {
     line(&completion)
 }
 
-/// `report` の 5 ケース — slug を読み替えたうえで**バイト一致**する。
-///
-/// # 駆動できないケース（黙って飛ばさない）
-///
-/// - **`report/completed-ungated`** — 採取済みの本文は
-///   `Committed advance for "workspace-scaffold" (scope: classic).` である。誕生 = 初期化
-///   完了済み（issue #76 / b34）以降、初期化ステージは誕生の時点で `[x]` になりカーソルは
-///   最初のゲート付きステージに立つので、**非ゲートステージへの前進報告そのものが構成
-///   不能**である（#85 = A で非ゲート完了のコマンドも撤去済み）。
-/// - **`report/approved-across-phases`** — 採取時のワークスペースはフェーズをまたぐ 33
-///   ノードの計画で、合成グラフ（initialization 1 + inception 2）には対応する位置が無い。
-///   逐語そのものは `report/approved` と同型なので、こちらで固定した文型が両方を覆う。
+/// ケースを分け、先の失敗が後の比較を隠さないようにする。
 #[tokio::test]
-async fn the_report_directives_match_the_recorded_cases_after_the_slug_substitution() {
-    // ゲート開放 — `[-]` の in-progress からゲートを開く。
+async fn opening_a_gate_matches_the_recorded_reply_after_slug_substitution() {
     let workspace = Workspace::create();
     workspace.mint().await;
     assert_eq!(
         report_line(&workspace, &["--result", "awaiting-approval"]).await,
         recorded_for_synthetic_graph("report/awaiting-approval")
     );
+}
 
-    // 再報告 — 既に開いているゲートは何もコミットしない。
+#[tokio::test]
+async fn reopening_an_awaiting_gate_matches_the_revalidated_reply_after_slug_substitution() {
+    let workspace = Workspace::create();
+    workspace.mint().await;
+    report_line(&workspace, &["--result", "awaiting-approval"]).await;
     assert_eq!(
         report_line(&workspace, &["--result", "awaiting-approval"]).await,
         recorded_for_synthetic_graph("report/awaiting-approval-repeat")
     );
+}
 
-    // 承認の前に受領証を積む — 合成グラフの `domain-design` は
-    // `reviewer: aidlc-architecture-reviewer-agent` / `review_class: advisory` を宣言するので、
-    // b48 以降は現在の試行の終端受領証が無ければ approve が段 11 で拒まれる。advisory は
-    // 1 パスで終端なので、依頼 1 回 + 判定 1 回で足りる。
+#[tokio::test]
+async fn approving_a_gate_matches_the_recorded_reply_after_slug_substitution() {
+    let workspace = Workspace::create();
+    workspace.mint().await;
+    report_line(&workspace, &["--result", "awaiting-approval"]).await;
     record_advisory_receipt(&workspace, SYNTHETIC_SLUG).await;
-
-    // 承認 — 採取時と同じく `[?]` からの承認なので、コミットする段は `approve` 1 つである。
     assert_eq!(
         report_line(&workspace, &["--result", "approved", "--user-input", "A"]).await,
         recorded_for_synthetic_graph("report/approved")
     );
+}
 
-    // 差戻し — `[-]` の in-progress からでも受理される（前提集合は in-progress と
-    // awaiting-approval の 2 つ）。カーソルは次のステージへ進んでいる。
+#[tokio::test]
+async fn rejecting_a_gate_matches_the_recorded_reply_after_slug_substitution() {
     let workspace = Workspace::create();
     workspace.mint().await;
     assert_eq!(
@@ -405,8 +395,22 @@ async fn the_report_directives_match_the_recorded_cases_after_the_slug_substitut
         .await,
         recorded_for_synthetic_graph("report/rejected")
     );
+}
 
-    // 改訂 — 差戻し後の `[R]` からゲートへ再入する。
+#[tokio::test]
+async fn revising_a_gate_matches_the_recorded_reply_after_slug_substitution() {
+    let workspace = Workspace::create();
+    workspace.mint().await;
+    report_line(
+        &workspace,
+        &[
+            "--result",
+            "rejected",
+            "--reason",
+            "Sharpen the testing posture.",
+        ],
+    )
+    .await;
     assert_eq!(
         report_line(
             &workspace,

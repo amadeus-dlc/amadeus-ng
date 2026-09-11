@@ -31,6 +31,10 @@ const fn plan_suffix(action: PlanAction) -> &'static str {
 pub struct Checkboxes(Vec<CheckboxEntry>);
 
 impl Checkboxes {
+    const fn of_items(items: Vec<CheckboxEntry>) -> Self {
+        Self(items)
+    }
+
     /// Stage Progress 行のパース。文法に一致しない行は黙って無視する
     /// (upstream 同等の寛容パース)。filter/mapはパース済みの列から新しい列を作る。
     #[must_use]
@@ -41,7 +45,7 @@ impl Checkboxes {
                 out.push(entry);
             }
         }
-        Checkboxes(out)
+        Checkboxes::of_items(out)
     }
 
     /// 読み取れた行を先頭から辿る。
@@ -52,7 +56,7 @@ impl Checkboxes {
     /// 条件に一致する行を、元の順序で保持する。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(&CheckboxEntry) -> bool) -> Self {
-        Self(
+        Checkboxes::of_items(
             self.0
                 .iter()
                 .filter(|entry| predicate(entry))
@@ -64,7 +68,7 @@ impl Checkboxes {
     /// 各行を変換し、同じ順序のチェックボックス列を返す。
     #[must_use]
     pub fn map(&self, transform: impl FnMut(&CheckboxEntry) -> CheckboxEntry) -> Self {
-        Self(self.0.iter().map(transform).collect())
+        Checkboxes::of_items(self.0.iter().map(transform).collect())
     }
 
     /// 行順に左から畳み込む。空なら初期値を返す。

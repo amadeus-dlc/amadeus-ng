@@ -125,13 +125,13 @@ fn created() -> Created {
 ///
 /// 書く側 (command interface-adapter の `IntentEventDto`) と同じバイトであることは
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
-const INTENT_ROW: &str = r#"{"Created":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001","aggregate_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}}"#;
+const INTENT_ROW: &str = r#"{"Created":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001","aggregate_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}}"#;
 
 /// `Started` 行の逐語 — genesis の材料 3 点 (実行 id・intent id・解決済み計画)。
 ///
 /// 書く側 (command interface-adapter の `StartedDto`) と**同一の文字列**であることは
 /// 横断適合テスト (`journal_protocol_conformance`) が固定する。
-const STARTED_ROW: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
+const STARTED_ROW: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
 /// 全 16 変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
@@ -194,8 +194,10 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 event_id(),
                 execution_id(),
                 slug("intent-capture"),
+                core_command_domain::orchestration::JumpDirection::Forward,
+                None,
             )),
-            r#"{"Jumped":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","target":"intent-capture"}}"#,
+            r#"{"Jumped":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","target":"intent-capture","direction":"forward","observation":null,"scope":null}}"#,
         ),
         (
             IntentExecutionEvent::SingleStageRunCommitted(SingleStageRunCommitted::new(
@@ -221,8 +223,9 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 "aidlc-product-lead-agent",
                 2,
                 true,
+                crate::review_test_fixture::binding(),
             )),
-            r#"{"ReviewRequested":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"retry":true}}"#,
+            r#"{"ReviewRequested":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"retry":true,"evidence":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null}}}"#,
         ),
         (
             IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
@@ -232,8 +235,9 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 "aidlc-product-lead-agent",
                 2,
                 ReviewVerdict::NotReady,
+                crate::review_test_fixture::completion(),
             )),
-            r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady"}}"#,
+            r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady","evidence":{"request":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null},"fingerprint":"sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0"}}}"#,
         ),
         (
             IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
@@ -359,6 +363,7 @@ fn the_review_verdict_spelling_is_the_row_vocabulary_not_the_domain_one() {
             "aidlc-product-lead-agent",
             1,
             verdict,
+            crate::review_test_fixture::completion(),
         ));
         let json = serde_json::to_string(&IntentExecutionEventDto::of(&event))
             .expect("DTO は直列化できる");
@@ -372,7 +377,7 @@ fn the_review_verdict_spelling_is_the_row_vocabulary_not_the_domain_one() {
     }
 
     // 監査行の綴り (`READY`) は行の面では読めない — 面が違う。
-    let tampered = r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":1,"verdict":"READY"}}"#;
+    let tampered = r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":1,"verdict":"READY","evidence":{"request":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null},"fingerprint":"sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0"}}}"#;
     let decoded: IntentExecutionEventDto =
         serde_json::from_str(tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "閉集合の外は拒む");
@@ -597,7 +602,7 @@ fn a_started_row_whose_plan_breaks_its_invariants_is_refused() {
     };
     let entry = |slug: &str, phase: &str, plan_action: &str, number: &str| {
         format!(
-            r#"{{"slug":"{slug}","phase":"{phase}","plan_action":"{plan_action}","conditional":false,"display":{{"number":"{number}","name":"Stage","lead_agent":"orchestrator"}}}}"#
+            r#"{{"slug":"{slug}","phase":"{phase}","plan_action":"{plan_action}","conditional":false,"greenfield_adjusted":false,"display":{{"number":"{number}","name":"Stage","lead_agent":"orchestrator"}}}}"#
         )
     };
     let init = entry("state-init", "Initialization", "Execute", "0.1");

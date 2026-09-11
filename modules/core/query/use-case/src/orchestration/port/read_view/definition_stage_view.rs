@@ -13,16 +13,28 @@
 pub struct DefinitionStageView {
     stage_slug: String,
     support_agents: String,
+    name: String,
 }
 
 impl DefinitionStageView {
     /// 2 列をそのまま束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub const fn new(stage_slug: String, support_agents: String) -> DefinitionStageView {
+    pub const fn new(
+        stage_slug: String,
+        support_agents: String,
+        name: String,
+    ) -> DefinitionStageView {
         DefinitionStageView {
             stage_slug,
             support_agents,
+            name,
         }
+    }
+
+    /// 配布定義に記録された表示名。
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// ステージの slug。

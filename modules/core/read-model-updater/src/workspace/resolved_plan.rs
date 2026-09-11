@@ -34,6 +34,7 @@ pub use planned_stage::PlannedStage;
 /// してよいものではない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedPlan {
+    source_baseline: Option<core_command_domain::orchestration::SourceBaseline>,
     stages: Vec<PlannedStage>,
     scan: WorkspaceScan,
     scope: String,
@@ -45,6 +46,7 @@ impl ResolvedPlan {
     #[must_use]
     pub fn of(intent: &Intent) -> ResolvedPlan {
         ResolvedPlan {
+            source_baseline: intent.source_baseline().cloned(),
             stages: intent.stages().fold_left(Vec::new(), |mut stages, entry| {
                 stages.push(PlannedStage::from_stage_entry(entry));
                 stages
@@ -53,6 +55,13 @@ impl ResolvedPlan {
             scope: intent.scope().to_string(),
             request: intent.request().to_string(),
         }
+    }
+
+    /// 開始時に確定したソース比較基準。
+    pub(crate) const fn source_baseline(
+        &self,
+    ) -> Option<&core_command_domain::orchestration::SourceBaseline> {
+        self.source_baseline.as_ref()
     }
 
     /// 文書順の全ステージ。
@@ -73,10 +82,24 @@ impl ResolvedPlan {
         &self.scope
     }
 
-    /// 人間の要求（`**Request**:` 行の材料）。
+    /// 人間の要求の逐語（`--arguments` そのもの — `**Request**:` 行の材料）。
     #[must_use]
     pub fn request(&self) -> &str {
         &self.request
+    }
+
+    /// `**Request**:` 行の値 — upstream `intent-create` は `WORKFLOW_STARTED` /
+    /// `WORKSPACE_SCAFFOLDED` / `WORKSPACE_INITIALISED` の 3 行に
+    /// `` `/aidlc ${flags.arguments || scope}` `` を書く（`aidlc-utility.ts:5550,5625,5683,5971`
+    /// @a277af21）。要求が空なら scope 名が入る（JavaScript の `||`）。
+    #[must_use]
+    pub fn request_line(&self) -> String {
+        let described = if self.request.is_empty() {
+            self.scope.as_str()
+        } else {
+            self.request.as_str()
+        };
+        format!("/aidlc {described}")
     }
 
     /// slug から計画上のステージを引く。
@@ -192,7 +215,7 @@ mod tests {
                 IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
                 WorkflowDefinitionId::parse("claude").expect("定義 id"),
                 DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
-                StartRequest::new("classic", "/aidlc Build a small ordering service"),
+                StartRequest::new("classic", "Build a small ordering service"),
                 StageEntries::new(vec![
                     entry(
                         "state-init",
@@ -245,8 +268,45 @@ mod tests {
         let plan = plan();
         assert_eq!(plan.stages().len(), 6);
         assert_eq!(plan.scope(), "classic");
-        assert_eq!(plan.request(), "/aidlc Build a small ordering service");
+        assert_eq!(plan.request(), "Build a small ordering service");
+        assert_eq!(
+            plan.request_line(),
+            "/aidlc Build a small ordering service",
+            "監査の Request 欄は upstream の `/aidlc <arguments>`"
+        );
         assert_eq!(plan.scan().project_type(), "Greenfield");
+    }
+
+    /// 要求文が空なら upstream の `flags.arguments || scope` どおり scope 名が入る。
+    #[test]
+    fn an_empty_request_falls_back_to_the_scope_on_the_request_line() {
+        let intent = Intent::from((
+            Created::new(
+                intent_event_id(),
+                IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b6").expect("UUIDv7"),
+                WorkflowDefinitionId::parse("claude").expect("定義 id"),
+                DefinitionRevision::parse(&format!("sha256:{}", "0".repeat(64))).expect("revision"),
+                StartRequest::new("classic", ""),
+                StageEntries::new(vec![entry(
+                    "state-init",
+                    "0.3",
+                    PhaseId::Initialization,
+                    PlanAction::Execute,
+                )])
+                .expect("フィクスチャの計画は不変条件を満たす"),
+                WorkspaceScan::new(
+                    BrownfieldGreenfield::Greenfield,
+                    "Unknown",
+                    "Unknown",
+                    "Unknown",
+                )
+                .expect("単一行"),
+            ),
+            chrono::DateTime::parse_from_rfc3339("2026-08-23T00:00:00Z")
+                .expect("固定時刻")
+                .with_timezone(&chrono::Utc),
+        ));
+        assert_eq!(ResolvedPlan::of(&intent).request_line(), "/aidlc classic");
     }
 
     #[test]

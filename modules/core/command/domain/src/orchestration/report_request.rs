@@ -13,6 +13,11 @@ use crate::workflow_definition::StageSlug;
 /// 6 値をそのまま持つ) が、`report_dispatch` は `Resume` を**拒否として**扱う。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportRequest {
+    source_baseline: Option<super::SourceBaseline>,
+    workspace_stages: super::StageSlugSet,
+    validation: Option<super::StageValidation>,
+    pipeline_handoff: Option<super::PipelineHandoff>,
+    pipeline_disabled: bool,
     verdict: Verdict,
     stage: Option<StageSlug>,
     user_input: Option<String>,
@@ -21,6 +26,60 @@ pub struct ReportRequest {
 }
 
 impl ReportRequest {
+    /// 採取時のソースと、配布定義がソースを必要とする工程の観測を伴う要求。
+    #[must_use]
+    pub fn with_source_baseline(
+        mut self,
+        baseline: Option<super::SourceBaseline>,
+        stages: super::StageSlugSet,
+    ) -> Self {
+        self.source_baseline = baseline;
+        self.workspace_stages = stages;
+        self
+    }
+    pub(super) fn source_for(&self, stage: &StageSlug) -> Option<&super::SourceBaseline> {
+        self.workspace_stages
+            .contains(stage)
+            .then_some(self.source_baseline.as_ref())
+            .flatten()
+    }
+
+    /// 報告時に採取した検証根拠を伴う要求。
+    #[must_use]
+    pub fn with_validation(mut self, validation: Option<super::StageValidation>) -> Self {
+        self.validation = validation;
+        self
+    }
+    pub(super) const fn validation(&self) -> Option<&super::StageValidation> {
+        self.validation.as_ref()
+    }
+
+    /// 呼出境界で得た現在のhandoffと、明示された回復switchを伴う要求を作る。
+    #[must_use]
+    pub fn with_pipeline_observation(
+        mut self,
+        handoff: Option<super::PipelineHandoff>,
+        disabled: bool,
+    ) -> Self {
+        self.pipeline_handoff = handoff;
+        self.pipeline_disabled = disabled;
+        self
+    }
+    /// 段階の完了根拠が必要な報告か。
+    #[must_use]
+    pub const fn requires_completion_evidence(&self) -> bool {
+        matches!(
+            self.verdict,
+            Verdict::Forward | Verdict::AwaitingApproval | Verdict::Revised
+        )
+    }
+    pub(super) const fn pipeline_handoff(&self) -> Option<&super::PipelineHandoff> {
+        self.pipeline_handoff.as_ref()
+    }
+    pub(super) const fn pipeline_disabled(&self) -> bool {
+        self.pipeline_disabled
+    }
+
     /// 5 観測を束ねる (**この型の唯一の構築経路**)。
     ///
     /// `stage` は明示された `--stage` (空白のみは合成ルートが `None` に畳む)、`user_input` は
@@ -35,6 +94,11 @@ impl ReportRequest {
         human_presence_guard: bool,
     ) -> ReportRequest {
         ReportRequest {
+            source_baseline: None,
+            workspace_stages: super::StageSlugSet::empty(),
+            validation: None,
+            pipeline_handoff: None,
+            pipeline_disabled: false,
             verdict,
             stage,
             user_input,
@@ -53,6 +117,9 @@ impl ReportRequest {
             self.reason.clone(),
             self.human_presence_guard,
         )
+        .with_pipeline_observation(self.pipeline_handoff.clone(), self.pipeline_disabled)
+        .with_validation(self.validation.clone())
+        .with_source_baseline(self.source_baseline.clone(), self.workspace_stages.clone())
     }
 
     /// 報告された結末の分類。

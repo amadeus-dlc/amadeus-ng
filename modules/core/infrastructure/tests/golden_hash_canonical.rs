@@ -1,6 +1,6 @@
 //! hash-canonical 受入表の全行比較 (FR7.3 の合格判定、BR2.3)。
 //!
-//! `tests/golden/upstream-3c3146cf/hash-canonical/cases.json` は upstream ピン `3c3146cf` の
+//! `tests/golden/upstream-a277af21/hash-canonical/cases.json` は本家2.7.1の固定コミットの
 //! `canonicalize` / `sha256` / `hashObject` を **実行して** 採った正解データである。
 //! **1 行でも不一致なら FR7.3 は不合格**であり、直すのは実装であってゴールデンではない
 //! (BR2.5 — ゴールデンの更新は upstream ピン更新の intent でのみ)。
@@ -21,7 +21,7 @@ use serde_json::Value;
 
 const CORPUS_DIR: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../../tests/golden/upstream-3c3146cf"
+    "/../../../tests/golden/upstream-a277af21"
 );
 
 /// BR2.3 が要求する入力クラス。1 つでも欠けたら受入表として不完全。
@@ -218,7 +218,7 @@ fn the_corpus_carries_its_provenance() {
 
     assert_eq!(
         provenance["upstream_commit"].as_str(),
-        Some("3c3146cfd7cef33020d48e8d48d4e80d0f8c2820")
+        Some("a277af218f0df7f325d3b8be7b6d90fce2c5bd40")
     );
     for field in ["source_url", "captured_at", "command", "bun_version"] {
         assert!(
@@ -240,9 +240,10 @@ fn the_corpus_carries_its_provenance() {
         "来歴のケース数と受入表の行数が食い違う"
     );
     for case in cases(&corpus) {
-        assert!(
-            case["provenance"]["commit"].as_str().is_some(),
-            "{}: ケース単位の provenance が無い",
+        assert_eq!(
+            case["provenance"]["commit"].as_str(),
+            Some("a277af218f0df7f325d3b8be7b6d90fce2c5bd40"),
+            "{}: ケース単位の採取元が2.7.1の固定コミットと異なる",
             case_id(case)
         );
     }

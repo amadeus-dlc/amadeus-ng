@@ -1,7 +1,8 @@
 //! `DefinitionScopeRow` — `read_definition_scope` の 1 行 (スコープ 1 件のメタデータと費用)。
 
 use core_command_domain::workflow_definition::{
-    ReviewCapValue, ScopeCost, ScopeMetadata, SkeletonDefault, WorkflowDefinition,
+    BrownfieldGreenfield, ReviewCapValue, ScopeCost, ScopeMetadata, SkeletonDefault,
+    WorkflowDefinition,
 };
 
 use super::json_column;
@@ -13,7 +14,9 @@ use super::row_id;
 ///
 /// 費用 4 列は [`WorkflowDefinition::scope_cost`] の答えである。グリッド列を持たない
 /// 有効スコープでは答えが `None` になるので、4 列とも NULL になる (`has_grid_column` が
-/// その理由を語る)。
+/// その理由を語る)。`greenfield_cost_*` の 4 列は同じ問いを greenfield のワークスペース向け
+/// (`reverse-engineering` を畳んだ実効値 — upstream `effectiveScopeCostSummary`) に答えた
+/// もので、読み手は観測したプロジェクト種別でどちらの列を読むかを選ぶだけである。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionScopeRow {
     id: String,
@@ -29,6 +32,10 @@ pub struct DefinitionScopeRow {
     cost_execute: Option<usize>,
     cost_gates: Option<usize>,
     cost_per_unit_stages: Option<usize>,
+    greenfield_cost_total: Option<usize>,
+    greenfield_cost_execute: Option<usize>,
+    greenfield_cost_gates: Option<usize>,
+    greenfield_cost_per_unit_stages: Option<usize>,
 }
 
 impl DefinitionScopeRow {
@@ -39,7 +46,8 @@ impl DefinitionScopeRow {
         scope: &str,
         metadata: &ScopeMetadata,
     ) -> DefinitionScopeRow {
-        let cost = definition.scope_cost(scope);
+        let cost = definition.scope_cost(scope, BrownfieldGreenfield::Brownfield);
+        let greenfield_cost = definition.scope_cost(scope, BrownfieldGreenfield::Greenfield);
         DefinitionScopeRow {
             id: row_id::definition_scope(definition.id().as_str(), scope),
             definition_id: definition.id().as_str().to_string(),
@@ -60,6 +68,12 @@ impl DefinitionScopeRow {
             cost_execute: cost.as_ref().map(ScopeCost::execute),
             cost_gates: cost.as_ref().map(ScopeCost::gates),
             cost_per_unit_stages: cost.as_ref().map(ScopeCost::per_unit_stages),
+            greenfield_cost_total: greenfield_cost.as_ref().map(ScopeCost::total),
+            greenfield_cost_execute: greenfield_cost.as_ref().map(ScopeCost::execute),
+            greenfield_cost_gates: greenfield_cost.as_ref().map(ScopeCost::gates),
+            greenfield_cost_per_unit_stages: greenfield_cost
+                .as_ref()
+                .map(ScopeCost::per_unit_stages),
         }
     }
 
@@ -139,5 +153,29 @@ impl DefinitionScopeRow {
     #[must_use]
     pub const fn cost_per_unit_stages(&self) -> Option<usize> {
         self.cost_per_unit_stages
+    }
+
+    /// greenfield 向けの実効費用 — 列に載っているステージ総数 (名目値と同じ)。
+    #[must_use]
+    pub const fn greenfield_cost_total(&self) -> Option<usize> {
+        self.greenfield_cost_total
+    }
+
+    /// greenfield 向けの実効費用 — EXECUTE のステージ数。
+    #[must_use]
+    pub const fn greenfield_cost_execute(&self) -> Option<usize> {
+        self.greenfield_cost_execute
+    }
+
+    /// greenfield 向けの実効費用 — 承認ゲートの数。
+    #[must_use]
+    pub const fn greenfield_cost_gates(&self) -> Option<usize> {
+        self.greenfield_cost_gates
+    }
+
+    /// greenfield 向けの実効費用 — unit 反復するステージの数。
+    #[must_use]
+    pub const fn greenfield_cost_per_unit_stages(&self) -> Option<usize> {
+        self.greenfield_cost_per_unit_stages
     }
 }

@@ -16,6 +16,7 @@
 //! 投影核（`workspace::project`）はこの層を知らない。知っているのは片方向である。
 
 use core_command_domain::orchestration::IntentExecutionEvent;
+use core_command_domain::workspace::EventType;
 
 use crate::read_tables::{ReadTables, SteeringTables};
 use crate::workspace::{ReadModel, ResolvedPlan};
@@ -32,6 +33,7 @@ use super::{PublicationBatch, PublicationFile};
 /// ReadModelUpdater — チェックポイント以降のイベントをリードモデルへ流し込む差分関数。
 #[derive(Debug)]
 pub struct ReadModelUpdater<R> {
+    pipeline_handoff: Option<Option<core_command_domain::orchestration::PipelineHandoff>>,
     journal_reader: R,
     projection: ProjectionName,
     targets: ProjectionTargets,
@@ -39,9 +41,44 @@ pub struct ReadModelUpdater<R> {
     steering: SteeringSource,
     /// 解決済み計画の控え。`Started` は 1 度しか書かれないので、一度引けば以後は使い回す。
     plan: Option<ResolvedPlan>,
+    execution_id: Option<core_command_domain::orchestration::IntentExecutionId>,
 }
 
 impl<R: JournalReader> ReadModelUpdater<R> {
+    /// 現在のhandoffを参照入力として受け取り、イベントなしの変更も再投影する。
+    #[must_use]
+    pub fn with_pipeline_handoff(
+        mut self,
+        handoff: Option<core_command_domain::orchestration::PipelineHandoff>,
+    ) -> Self {
+        self.pipeline_handoff = Some(handoff);
+        self
+    }
+    async fn catch_up_pipeline(&mut self) -> Result<(), CatchUpError> {
+        if let (Some(current), Some(id)) = (&self.pipeline_handoff, &self.execution_id) {
+            let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
+            let tables =
+                crate::read_tables::PipelineTables::project(&history, id, current.as_ref())?;
+            self.journal_reader.replace_pipeline(&tables).await?;
+        }
+        Ok(())
+    }
+    /// 旧共有投影が既に公開されていれば、別名での再生を止める。
+    ///
+    /// # Errors
+    /// チェックポイントを読めない場合、または旧投影が公開済みの場合。
+    pub async fn require_unpublished(
+        journal_reader: &R,
+        legacy_projection: &ProjectionName,
+    ) -> Result<(), CatchUpError> {
+        if journal_reader.checkpoint(legacy_projection).await? != GlobalSeqNr::ZERO {
+            return Err(CatchUpError::LegacyProjection {
+                projection: legacy_projection.as_str().to_string(),
+            });
+        }
+        Ok(())
+    }
+
     /// 読み手・投影名・書込先・参照入力の読取先から組む。
     pub const fn new(
         journal_reader: R,
@@ -50,12 +87,25 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         steering: SteeringSource,
     ) -> ReadModelUpdater<R> {
         ReadModelUpdater {
+            pipeline_handoff: None,
             journal_reader,
             projection,
             targets,
             steering,
             plan: None,
+            execution_id: None,
         }
+    }
+
+    /// 状態・監査へ反映する実行を明示する。構造化面は引き続き全履歴から投影する。
+    #[must_use]
+    pub fn for_execution(
+        mut self,
+        id: core_command_domain::orchestration::IntentExecutionId,
+    ) -> Self {
+        self.execution_id = Some(id);
+        self.plan = None;
+        self
     }
 
     /// 書込先の場所。
@@ -162,6 +212,7 @@ impl<R: JournalReader> ReadModelUpdater<R> {
             // 下の通常処理で別の計画として公開してから呼出元へ戻る。
         }
         self.catch_up_steering().await?;
+        self.catch_up_pipeline().await?;
 
         let checkpoint = self.journal_reader.checkpoint(&self.projection).await?;
         // 差分読取は「進む先があるか」の**探り**にだけ使う。ここで得た行を描く材料に
@@ -189,16 +240,126 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         // 無い — それでもチェックポイントは走査済み位置まで進める（intent 行を毎回
         // 再走査しない。issue #56 申し送りの解消）。行は global 通番の昇順なので、
         // 境界は二分探索で 1 か所に定まる。
-        let executions = history.executions();
+        let executions: Vec<_> = history
+            .executions()
+            .iter()
+            .filter(|entry| {
+                self.execution_id
+                    .as_ref()
+                    .is_none_or(|id| entry.execution_id() == id)
+            })
+            .cloned()
+            .collect();
         let unprojected = executions
             .split_at(executions.partition_point(|entry| entry.global_seq() <= checkpoint))
             .1;
         let mut files = Vec::new();
+        // 監査シャードへ追記する値は、投影の行もフックの直接行も同じ規則で project dir を
+        // 伏せる (upstream `renderAuditBlock` — 描画の出口で 1 度だけ掛ける)。
+        let redaction = self.targets.audit_redaction();
+        if let Some(prompt) = unprojected
+            .iter()
+            .rev()
+            .find(|entry| matches!(entry.event(), IntentExecutionEvent::PromptObserved(_)))
+        {
+            let path = self.targets.human_turn_file();
+            let after = prompt
+                .occurred_at()
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                + "\n";
+            let file = match std::fs::read_to_string(path) {
+                Ok(before) => PublicationFile::replacement(path, &before, &after),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    PublicationFile::creation(path, &after)
+                }
+                Err(error) => {
+                    return Err(CatchUpError::PublicationIo {
+                        path: path.to_path_buf(),
+                        kind: error.kind(),
+                    });
+                }
+            };
+            files.push(file);
+        }
+        for entry in unprojected {
+            let baseline = match entry.event() {
+                IntentExecutionEvent::Jumped(jump) => jump.baseline(),
+                IntentExecutionEvent::Reported(report) => report.source_baseline(),
+                _ => None,
+            };
+            if let Some(baseline) = baseline
+                && let (Some(name), Some(listing)) = (baseline.snapshot_name(), baseline.listing())
+            {
+                files.push(PublicationFile::creation(
+                    &self.targets.source_baseline_file(&name),
+                    listing,
+                ));
+            }
+        }
         if !unprojected.is_empty() {
             let plan = self.resolve_plan(&history)?;
-            let state = crate::workspace::read_state_file(self.targets.state_file())
-                .map_err(CatchUpError::StateFileRead)?;
-            let before_state = state.clone();
+            let genesis = unprojected.first().and_then(|entry| match entry.event() {
+                IntentExecutionEvent::Started(started) => Some((entry, started)),
+                _ => None,
+            });
+            let missing_state = !self.targets.state_file().try_exists().map_err(|error| {
+                CatchUpError::StateFileRead(crate::workspace::StateFileReadError::new(
+                    error.to_string(),
+                ))
+            })?;
+            let before_state = if missing_state && genesis.is_some() {
+                String::new()
+            } else {
+                crate::workspace::read_state_file(self.targets.state_file())
+                    .map_err(CatchUpError::StateFileRead)?
+            };
+            let mut state = before_state.clone();
+            if let Some((entry, started)) = genesis {
+                let intent = history
+                    .intents()
+                    .iter()
+                    .find(|intent| intent.id() == started.intent_id())
+                    .ok_or(CatchUpError::PlanUnavailable)?;
+                if let Some(baseline) = intent.source_baseline()
+                    && let (Some(name), Some(listing)) =
+                        (baseline.snapshot_name(), baseline.listing())
+                {
+                    files.push(PublicationFile::creation(
+                        &self.targets.source_baseline_file(&name),
+                        listing,
+                    ));
+                }
+                if missing_state {
+                    state = crate::workspace::initial_state::compose(
+                        intent,
+                        ".",
+                        &entry
+                            .occurred_at()
+                            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    );
+                }
+                let description = core_infrastructure::canon_json::serialize(
+                    &core_infrastructure::canon_json::JsonValue::String(
+                        intent.request().to_string(),
+                    ),
+                    core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+                ) + "\n";
+                if !self
+                    .targets
+                    .description_file()
+                    .try_exists()
+                    .map_err(|error| {
+                        CatchUpError::StateFileRead(crate::workspace::StateFileReadError::new(
+                            error.to_string(),
+                        ))
+                    })?
+                {
+                    files.push(PublicationFile::creation(
+                        self.targets.description_file(),
+                        &description,
+                    ));
+                }
+            }
             let mut read_model = ReadModel::new(state);
             // メモリ層は**在るとは限らない面**である（b49）。2 本とも在るときだけ載せる —
             // 片方だけ在るのは載せない（存在の検査の正本は動詞側にある）。
@@ -207,6 +368,22 @@ impl<R: JournalReader> ReadModelUpdater<R> {
                 read_model = read_model.with_memory(team.clone(), project.clone());
             }
             crate::workspace::project(unprojected, &plan, &mut read_model)?;
+            if let Some(after) = read_model.active_directive() {
+                let path = self.targets.active_directive_file();
+                let file = match std::fs::read_to_string(path) {
+                    Ok(before) => PublicationFile::replacement(path, &before, after),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        PublicationFile::creation(path, after)
+                    }
+                    Err(error) => {
+                        return Err(CatchUpError::PublicationIo {
+                            path: path.to_path_buf(),
+                            kind: error.kind(),
+                        });
+                    }
+                };
+                files.push(file);
+            }
 
             // 書く順は upstream の Step 5〜7 の写しである: project.md → team.md →
             // 状態ファイル → 監査シャード。project.md が先なのは、そちらの書込が失敗しても
@@ -227,27 +404,141 @@ impl<R: JournalReader> ReadModelUpdater<R> {
                     memory.team(),
                 ));
             }
-            files.push(PublicationFile::replacement(
-                self.targets.state_file(),
-                &before_state,
-                read_model.state(),
-            ));
+            files.push(if missing_state {
+                PublicationFile::creation(self.targets.state_file(), read_model.state())
+            } else {
+                PublicationFile::replacement(
+                    self.targets.state_file(),
+                    &before_state,
+                    read_model.state(),
+                )
+            });
             if !read_model.appended_audit().is_empty() {
                 files.push(PublicationFile::audit(
                     self.targets.audit_shard(),
-                    read_model.appended_audit(),
+                    &redaction.redact(read_model.appended_audit()),
+                )?);
+            }
+        }
+
+        // ArtifactSavedも同じ履歴断面から同じPublicationBatchへ積む。
+        if let Some(target) = self.targets.audit_target() {
+            let mut blocks = String::new();
+            for entry in history
+                .artifacts()
+                .iter()
+                .filter(|entry| entry.global_seq() > checkpoint)
+            {
+                let observation = entry.event().observation();
+                if observation.target().relative_directory() != target {
+                    continue;
+                }
+                let kind = if observation.created() {
+                    EventType::ArtifactCreated
+                } else {
+                    EventType::ArtifactUpdated
+                };
+                let mut fields = core_command_domain::workspace::AuditFields::new();
+                for (key, value) in [
+                    ("Tool", observation.tool()),
+                    ("File", observation.file()),
+                    ("Context", observation.context()),
+                ] {
+                    let key = core_command_domain::workspace::AuditFieldKey::parse(key)
+                        .map_err(|_| CatchUpError::PlanUnavailable)?;
+                    fields = fields.with(key, value);
+                }
+                blocks.push_str(&crate::workspace::render_audit_block(
+                    kind,
+                    entry.occurred_at(),
+                    &fields,
+                ));
+            }
+            if !blocks.is_empty() {
+                files.push(PublicationFile::audit(
+                    self.targets.audit_shard(),
+                    &redaction.redact(&blocks),
+                )?);
+            }
+        }
+
+        if let Some(target) = self.targets.audit_target() {
+            let mut blocks = String::new();
+            for entry in history
+                .sessions()
+                .iter()
+                .filter(|entry| entry.global_seq() > checkpoint)
+            {
+                let event = entry.event();
+                if event.target().relative_directory() == target {
+                    blocks.push_str(&crate::workspace::render_audit_block(
+                        event.record().kind(),
+                        entry.occurred_at(),
+                        event.record().fields(),
+                    ));
+                }
+            }
+            if !blocks.is_empty() {
+                files.push(PublicationFile::audit(
+                    self.targets.audit_shard(),
+                    &redaction.redact(&blocks),
                 )?);
             }
         }
 
         // 構造化面は差分投影ではなく全再計算である（同じ履歴から作る）。
-        let tables = ReadTables::project(&history)?;
+        let audit_only = (!history.artifacts().is_empty() || !history.sessions().is_empty())
+            && history.definitions().is_empty()
+            && history.intents().is_empty()
+            && history.executions().is_empty();
+        let tables = if audit_only {
+            ReadTables::project_audit_only(&history)?
+        } else {
+            ReadTables::project(&history)?
+        };
+        if let Some(registry) =
+            super::intent_registry::publication(&history, &tables, self.targets.registry_file())?
+        {
+            files.push(registry);
+        }
 
         let batch = PublicationBatch::new(checkpoint, last, files).for_targets(&self.targets)?;
         self.journal_reader
             .publish(&self.projection, &batch, &tables)
             .await?;
         Ok(last)
+    }
+
+    /// 計画指紋の参照面を現在の入力から再投影する。
+    /// # Errors
+    /// 履歴の再構成または参照面の書込みに失敗した場合。
+    pub async fn catch_up_plan_fingerprint(
+        reader: &mut R,
+        execution_id: &core_command_domain::orchestration::IntentExecutionId,
+        input: &core_command_domain::orchestration::PlanApprovalInput,
+    ) -> Result<(), CatchUpError> {
+        reader.prepare_read_model()?;
+        let history = reader.events_after(GlobalSeqNr::ZERO).await?;
+        let row = crate::read_tables::PlanFingerprintRow::project(&history, execution_id, input)?;
+        reader.replace_plan_fingerprint(&row).await?;
+        Ok(())
+    }
+
+    /// テスト契約の参照面を最新化する。純粋な表示や承認の入力確認から呼ぶ。
+    /// # Errors
+    /// 履歴、規則、参照面の読書きに失敗した場合。
+    pub async fn catch_up_testing(
+        reader: &mut R,
+        source: &SteeringSource,
+    ) -> Result<(), CatchUpError> {
+        reader.prepare_read_model()?;
+        let history = reader.events_after(GlobalSeqNr::ZERO).await?;
+        let sections = source.read_testing_sections()?;
+        let tables = crate::read_tables::TestingTables::project(&history, &sections);
+        if reader.testing_source_digest().await?.as_deref() != Some(tables.source_digest()) {
+            reader.replace_testing(&tables).await?;
+        }
+        Ok(())
     }
 
     /// メモリ層 2 本の本文（**両方在るときだけ**）。
@@ -301,6 +592,11 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         let mut started_ids = history
             .executions()
             .iter()
+            .filter(|entry| {
+                self.execution_id
+                    .as_ref()
+                    .is_none_or(|id| entry.execution_id() == id)
+            })
             .filter_map(|entry| match entry.event() {
                 IntentExecutionEvent::Started(started) => Some(started.intent_id().clone()),
                 _ => None,

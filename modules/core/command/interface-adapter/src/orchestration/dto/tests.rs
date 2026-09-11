@@ -119,6 +119,7 @@ fn synthetic_slots(source: &IntentExecution, attempts: &[ReviewAttempt; 3]) -> S
                 0,
                 attempts[index].clone(),
                 false,
+                false,
             ));
             slots
         });
@@ -153,9 +154,9 @@ fn intent() -> Intent {
 /// genesis の材料 3 点 (実行 id・intent id・解決済み計画) を運ぶ。計画の写しを載せるのは
 /// 実行の歴史が**自ストリームだけ**で再生できるための条件であり、1 要素の綴りは
 /// intent 面 (`INTENT_BODY` の `stages`) と同一である。
-const STARTED_BODY: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
+const STARTED_BODY: &str = r#"{"Started":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}]}}"#;
 
-/// 全 16 変種を、逐語で固定した綴りと組で並べる。
+/// 全変種を、逐語で固定した綴りと組で並べる。
 fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
     vec![
         (
@@ -216,8 +217,10 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 execution_event_id(),
                 IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
                 slug("intent-capture"),
+                core_command_domain::orchestration::JumpDirection::Forward,
+                None,
             )),
-            r#"{"Jumped":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","target":"intent-capture"}}"#,
+            r#"{"Jumped":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","target":"intent-capture","direction":"forward","observation":null,"scope":null}}"#,
         ),
         (
             IntentExecutionEvent::Parked(Parked::new(
@@ -275,8 +278,9 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 "aidlc-product-lead-agent",
                 2,
                 true,
+                review_test_fixture::binding(),
             )),
-            r#"{"ReviewRequested":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"retry":true}}"#,
+            r#"{"ReviewRequested":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"retry":true,"evidence":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null}}}"#,
         ),
         (
             IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
@@ -286,8 +290,9 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 "aidlc-product-lead-agent",
                 2,
                 ReviewVerdict::NotReady,
+                review_test_fixture::completion(),
             )),
-            r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady"}}"#,
+            r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady","evidence":{"request":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null},"fingerprint":"sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0"}}}"#,
         ),
         (
             IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
@@ -305,15 +310,47 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
             )),
             r#"{"PracticesAffirmed":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"practices-discovery","affirming_user":"owner","sections":[{"heading":"Way of Working","body":"trunk-based.\n"}],"mandated":["ALWAYS review. (affirmed 2026-09-05)"],"forbidden":["NEVER force-push. (affirmed 2026-09-05)"]}}"#,
         ),
+        (
+            IntentExecutionEvent::LearningsCaptured(Box::new(
+                core_command_domain::orchestration::LearningsCaptured::new(
+                    execution_event_id(),
+                    IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
+                    slug("requirements-analysis"),
+                    core_command_domain::orchestration::LearningProvenance::new(
+                        core_command_domain::workspace::SpaceName::default(),
+                        core_command_domain::workspace::IntentDirName::parse("260908-learnings")
+                            .expect("記録名"),
+                    ),
+                    core_command_domain::orchestration::CapturedLearnings::new(vec![
+                        core_command_domain::orchestration::CapturedLearning::new(
+                            core_command_domain::orchestration::Learning::new(
+                                core_command_domain::orchestration::LearningCandidateId::parse(
+                                    "c1",
+                                )
+                                .expect("候補番号"),
+                                core_command_domain::orchestration::LearningScope::Project,
+                                core_command_domain::orchestration::PracticeHeading::from_routed(
+                                    "Corrections",
+                                ),
+                                "ALWAYS record the evidence",
+                                core_command_domain::orchestration::LearningSource::UserAddition,
+                            ),
+                            core_command_domain::orchestration::LearningDisposition::Fresh,
+                        ),
+                    ]),
+                ),
+            )),
+            r###"{"LearningsCaptured":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"requirements-analysis","space":"default","intent":"260908-learnings","learnings":[{"candidate_id":"c1","scope":"project","heading":"## Corrections","text":"ALWAYS record the evidence","source":"user_addition","disposition":"fresh"}]}}"###,
+        ),
     ]
 }
 
 /// スナップショット行の逐語形 (genesis 直後)。
 ///
 /// 誕生 = 初期化完了済み (issue #76) により、`checkbox` の先頭は `Completed`、`cursor` は
-/// 最初のゲート付きステージ (索引 1) である。**ワイヤの形** (項目名・並び) は変わって
-/// いない — 変わったのは誕生時の状態そのものである。
-const GENESIS_SNAPSHOT: &str = r#"{"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]}],"practices_affirmed":[false,false,false],"approved":[false,false,false],"revision_count":[0,0,0],"last_gate_resolution_at":null,"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
+/// 最初のゲート付きステージ (索引 1) である。U2の対話受領状態と進行通番を含む
+/// 現在のワイヤ形式を、項目名・順序も含めて固定する。
+const GENESIS_SNAPSHOT: &str = r#"{"pipeline_history":[{"Boundary":{"stage":null,"single":false,"at":"2026-08-23T00:00:00Z"}}],"code_generation_run_floor":{"workflow_started":1,"stage_started":0,"stage_jumped":0,"gate_rejected":0,"latest":{"kind":"WORKFLOW_STARTED","at":"2026-08-23T00:00:00Z"}},"active_directive":null,"interactions":{"summary_prompts":[],"latest_human":null,"consumed_human":null,"pending":[]},"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"cursor_synchronized":false,"cursor_foreign_scoped":false,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":0,"pending":[],"closed":[]}],"practices_affirmed":[false,false,false],"memory_empty_reported":[false,false,false],"approved":[false,false,false],"revision_count":[0,0,0],"last_gate_resolution_at":null,"progress_seq_nr":1,"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
 
 #[expect(
     clippy::disallowed_methods,
@@ -541,7 +578,8 @@ fn a_malformed_stage_reference_in_any_variant_is_refused() {
             .replace(r#""intent-capture""#, r#""Not A Slug""#)
             .replace(r#""state-init""#, r#""Not A Slug""#)
             .replace(r#""practices-discovery""#, r#""Not A Slug""#)
-            .replace(r#""scope-definition""#, r#""Not A Slug""#);
+            .replace(r#""scope-definition""#, r#""Not A Slug""#)
+            .replace(r#""requirements-analysis""#, r#""Not A Slug""#);
         let decoded: IntentExecutionEventDto =
             serde_json::from_str(&tampered).expect("JSON としては読める");
         assert!(decoded.to_domain().is_err(), "拒むべき行: {tampered}");
@@ -564,6 +602,11 @@ fn a_recorded_skeleton_stance_round_trips_through_the_snapshot() {
     // フィクスチャの計画に Construction は無いので、集約のコマンドは通らない。行の形だけを
     // 見たいので、記録済みの状態は完全コンストラクタから直に組む。
     aggregate = IntentExecution::new(
+        core_command_domain::orchestration::PipelineHistory::default(),
+        core_command_domain::orchestration::PlanAppliedOperations::default(),
+        None,
+        None,
+        core_command_domain::orchestration::InteractionState::default(),
         aggregate.id().clone(),
         aggregate.intent_id().clone(),
         synthetic_slots(
@@ -575,11 +618,14 @@ fn a_recorded_skeleton_stance_round_trips_through_the_snapshot() {
             ],
         ),
         1,
+        false,
+        false,
         core_command_domain::orchestration::Status::Running,
         None,
         AutonomyMode::Gated,
         Some(SkeletonStance::Off),
         None,
+        1,
         1,
         at(),
     )
@@ -619,8 +665,14 @@ fn the_review_attempts_round_trip_through_the_snapshot() {
         ReviewClosures::new(vec![
             core_command_domain::orchestration::ReviewClosure::new(2, ReviewVerdict::NotReady),
         ]),
+        core_command_domain::orchestration::ReviewHistory::default(),
     );
     let aggregate = IntentExecution::new(
+        core_command_domain::orchestration::PipelineHistory::default(),
+        core_command_domain::orchestration::PlanAppliedOperations::default(),
+        None,
+        None,
+        core_command_domain::orchestration::InteractionState::default(),
         aggregate.id().clone(),
         aggregate.intent_id().clone(),
         synthetic_slots(
@@ -632,11 +684,14 @@ fn the_review_attempts_round_trip_through_the_snapshot() {
             ],
         ),
         1,
+        false,
+        false,
         core_command_domain::orchestration::Status::Running,
         None,
         AutonomyMode::Gated,
         None,
         None,
+        1,
         1,
         at(),
     )
@@ -645,7 +700,7 @@ fn the_review_attempts_round_trip_through_the_snapshot() {
     let json =
         serde_json::to_string(&IntentExecutionDto::of(&aggregate)).expect("DTO は直列化できる");
     assert!(
-        json.contains(r#""review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":2,"pending":[1],"closed":[{"iteration":2,"verdict":"NotReady"}]},{"requests":0,"pending":[],"closed":[]}]"#),
+        json.contains(r#""review_attempts":[{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":2,"pending":[1],"closed":[{"iteration":2,"verdict":"NotReady"}]},{"history":[],"requests":0,"pending":[],"closed":[]}]"#),
         "試行のワイヤ形式が変わった: {json}"
     );
 
@@ -664,7 +719,7 @@ fn the_review_attempts_round_trip_through_the_snapshot() {
 fn a_snapshot_row_without_the_review_attempts_field_reads_as_never_requested() {
     // 「欄が無い = まだ 1 度も依頼していない」という正規の意味である (b48 設計 §5)。
     let without = GENESIS_SNAPSHOT.replace(
-        r#""review_attempts":[{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]},{"requests":0,"pending":[],"closed":[]}],"#,
+        r#""review_attempts":[{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":0,"pending":[],"closed":[]}],"#,
         "",
     );
     assert_ne!(without, GENESIS_SNAPSHOT, "欄を落とせている");
@@ -689,6 +744,17 @@ fn a_snapshot_row_without_the_gate_resolution_field_reads_as_never_resolved() {
     let decoded: IntentExecutionDto = serde_json::from_str(&without).expect("欄が無くても読める");
     let rebuilt = decoded.to_domain().expect("ドメインへ戻せる");
     assert_eq!(rebuilt.last_gate_resolution_at(), None);
+}
+
+#[test]
+fn a_snapshot_row_without_the_cursor_foreign_scoped_field_reads_as_not_foreign_scoped() {
+    // 「欄が無い = 別 scope を名指した直接 execute で自計画外へ立っていない」という正規の
+    // 意味である (裁定 2026-09-10: jump-contract Q1 = A) — 後方互換の緩和ではない。
+    let without = GENESIS_SNAPSHOT.replace(r#""cursor_foreign_scoped":false,"#, "");
+    assert_ne!(without, GENESIS_SNAPSHOT, "欄を落とせている");
+    let decoded: IntentExecutionDto = serde_json::from_str(&without).expect("欄が無くても読める");
+    let rebuilt = decoded.to_domain().expect("ドメインへ戻せる");
+    assert!(!rebuilt.cursor_foreign_scoped());
 }
 
 #[expect(
@@ -877,11 +943,11 @@ fn a_malformed_stage_reference_in_a_list_variant_is_refused() {
 // ---------------------------------------------------------------------------
 
 /// intent スナップショット行のバイト形 (集約の全状態 — `id` は**集約の**識別子)。
-const INTENT_SNAPSHOT: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
+const INTENT_SNAPSHOT: &str = r#"{"id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
 
 /// `Created` ペイロードのバイト形 (ジャーナル面 — `id` は**イベント自身の**識別子で、
 /// 集約の識別子は `aggregate_id` が運ぶ。内容部分はスナップショット面と同じ綴りである)。
-const CREATED_BODY: &str = r#"{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001","aggregate_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
+const CREATED_BODY: &str = r#"{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0001","aggregate_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","definition_id":"claude","definition_revision":"sha256:0000000000000000000000000000000000000000000000000000000000000000","start_request":{"scope":"classic","request":"contract","depth":"standard","test_strategy":null,"review":"adversarial"},"stages":[{"slug":"state-init","phase":"Initialization","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"0.1","name":"State Init","lead_agent":"orchestrator"}},{"slug":"intent-capture","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.1","name":"Intent Capture","lead_agent":"orchestrator"}},{"slug":"scope-definition","phase":"Ideation","plan_action":"Execute","conditional":false,"greenfield_adjusted":false,"display":{"number":"1.4","name":"Scope Definition","lead_agent":"orchestrator"}}],"scan":{"project_type":"greenfield","languages":"Unknown","frameworks":"Unknown","build_system":"Unknown"},"created_at":"2026-08-23T00:00:00Z"}"#;
 
 /// intent の誕生イベント (ジャーナル面の材料 — `intent()` と同じ材料から組む)。
 fn created_event() -> IntentEvent {
@@ -970,7 +1036,7 @@ fn a_started_row_whose_plan_breaks_its_invariants_is_refused() {
     };
     let entry = |slug: &str, phase: &str, plan_action: &str, number: &str| {
         format!(
-            r#"{{"slug":"{slug}","phase":"{phase}","plan_action":"{plan_action}","conditional":false,"display":{{"number":"{number}","name":"Stage","lead_agent":"orchestrator"}}}}"#
+            r#"{{"slug":"{slug}","phase":"{phase}","plan_action":"{plan_action}","conditional":false,"greenfield_adjusted":false,"display":{{"number":"{number}","name":"Stage","lead_agent":"orchestrator"}}}}"#
         )
     };
     let init = entry("state-init", "Initialization", "Execute", "0.1");
@@ -1034,3 +1100,25 @@ fn an_intent_journal_row_whose_plan_breaks_its_invariants_is_refused() {
     let decoded: IntentEventDto = serde_json::from_str(&tampered).expect("JSON としては読める");
     assert_eq!(decoded.to_domain(), Err(DtoDecodeError::InvariantViolation));
 }
+
+#[test]
+fn the_run_floor_survives_the_execution_snapshot() {
+    let (aggregate, _) = IntentExecution::start(
+        IntentExecutionId::parse(EXECUTION).unwrap(),
+        &intent(),
+        at(),
+    );
+    let restored = IntentExecutionDto::of(&aggregate).to_domain().unwrap();
+    assert_eq!(
+        restored.code_generation_run_floor(),
+        aggregate.code_generation_run_floor()
+    );
+    assert!(restored.code_generation_run_floor().is_some());
+}
+
+#[cfg(test)]
+#[path = "../../../../../../../tests/support/review_fixture.rs"]
+mod review_test_fixture;
+
+#[path = "decode_contract_tests.rs"]
+mod decode_contract_tests;

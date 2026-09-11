@@ -15,19 +15,27 @@
 pub struct PartIndex(u32);
 
 impl PartIndex {
+    const fn of_index(raw: u32) -> Self {
+        Self(raw)
+    }
+
     /// 第 1 部。
-    pub const FIRST: PartIndex = PartIndex(1);
+    pub const FIRST: PartIndex = Self::of_index(1);
 
     /// 次の部。
     #[must_use]
     pub const fn next(self) -> PartIndex {
-        PartIndex(self.0.saturating_add(1))
+        Self::of_index(self.0.saturating_add(1))
     }
 
     /// ワイヤ生値から復元する (0 は索引として不正 — 1 始まり)。
     #[must_use]
     pub const fn from_raw(raw: u32) -> Option<PartIndex> {
-        if raw == 0 { None } else { Some(PartIndex(raw)) }
+        if raw == 0 {
+            None
+        } else {
+            Some(Self::of_index(raw))
+        }
     }
 
     /// ワイヤ・表示用の生値。

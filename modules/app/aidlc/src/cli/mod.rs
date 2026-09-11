@@ -16,10 +16,12 @@
 //! | `aidlc-log` | 対話イベントの記録 | `review`（b48 の範囲） |
 //! | `aidlc-state` | 状態ファイルの書込 | `practices-promote`（b49 の範囲） |
 //! | `aidlc-bolt` | Construction の Bolt | `set-autonomy`（b50 の範囲） |
+//! | `aidlc-learnings` | §13 の学びの儀式 | `surface` / `persist` |
 //! | `aidlc` | トップ | 上の 4 動詞をそのまま通す（top-passthrough） |
 //!
 //! **ディスパッチャの noun 形（`aidlc <noun> <verb>` の 30 経路）は実装していない。**
-//! 逐語の写しが手元に無く、推測で綴りを作ると逸脱台帳 #1 の写像表と食い違うためである。
+//! 逐語の写しが手元に無く、推測で綴りを作ると本家 `aidlc-orchestrate.ts` の ROUTES 表と
+//! 食い違うためである。
 //!
 //! # ファイル構成
 //!
@@ -45,3 +47,12 @@ pub use report_args::ReportArgs;
 pub use request::{Request, parse};
 pub use review_args::ReviewArgs;
 pub use set_autonomy_args::SetAutonomyArgs;
+
+mod interaction_args;
+pub use interaction_args::InteractionArgs;
+
+mod link_args;
+pub use link_args::LinkArgs;
+
+mod learnings_args;
+pub use learnings_args::{LearningsArgs, parse_learnings};

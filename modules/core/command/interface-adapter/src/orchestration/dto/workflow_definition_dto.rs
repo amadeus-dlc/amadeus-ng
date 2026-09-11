@@ -96,6 +96,8 @@ struct StageNodeDto {
     sensors: Vec<String>,
     scopes: Vec<String>,
     reviewer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    review_artifact: Option<String>,
     reviewer_max_iterations: Option<u32>,
     review_class: Option<String>,
     summary_confirmation: Option<String>,
@@ -129,6 +131,12 @@ struct SensorRefDto {
     id: String,
     path: String,
     matches: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fire_on: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    default_severity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
 }
 
 /// スコープメタデータ 1 件の行の形。
@@ -290,6 +298,7 @@ impl StageNodeDto {
             sensors: node.sensors().to_vec(),
             scopes: node.scopes().to_vec(),
             reviewer: node.reviewer().map(str::to_string),
+            review_artifact: node.review_artifact().map(str::to_string),
             reviewer_max_iterations: node.reviewer_max_iterations(),
             review_class: node
                 .review_class()
@@ -365,6 +374,9 @@ impl StageNodeDto {
         if let Some(value) = &self.reviewer {
             builder = builder.reviewer(value.clone());
         }
+        if let Some(value) = &self.review_artifact {
+            builder = builder.review_artifact(value.clone());
+        }
         if let Some(value) = self.reviewer_max_iterations {
             builder = builder.reviewer_max_iterations(value);
         }
@@ -430,11 +442,21 @@ impl SensorRefDto {
             id: sensor.id().to_string(),
             path: sensor.path().to_string(),
             matches: sensor.matches().map(str::to_string),
+            fire_on: sensor.fire_on().map(str::to_string),
+            default_severity: sensor.default_severity().map(str::to_string),
+            category: sensor.category().map(str::to_string),
         }
     }
 
     fn to_domain(&self) -> SensorRef {
-        SensorRef::new(self.id.clone(), self.path.clone(), self.matches.clone())
+        SensorRef::new(
+            self.id.clone(),
+            self.path.clone(),
+            self.matches.clone(),
+            self.fire_on.clone(),
+            self.default_severity.clone(),
+            self.category.clone(),
+        )
     }
 }
 
@@ -529,6 +551,7 @@ mod tests {
         .sensors(vec!["linter".to_string()])
         .scopes(vec!["feature".to_string()])
         .reviewer("architecture-reviewer".to_string())
+        .review_artifact("code-summary".to_string())
         .reviewer_max_iterations(2)
         .review_class(ReviewClass::Adversarial)
         .summary_confirmation("required".to_string())
@@ -541,6 +564,9 @@ mod tests {
             "linter",
             "sensors/linter.md",
             Some("*.rs".to_string()),
+            Some("gate".to_string()),
+            Some("blocking".to_string()),
+            Some("quality".to_string()),
         )])
         .build()
     }

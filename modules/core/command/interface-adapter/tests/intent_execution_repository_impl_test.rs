@@ -723,3 +723,171 @@ async fn a_gap_in_the_delta_rows_is_corrupt_not_a_crash() {
         "sequence gap"
     );
 }
+
+#[tokio::test]
+async fn publication_operation_ids_survive_both_snapshot_and_delta_reconstruction() {
+    use core_command_domain::orchestration::{
+        DirectivePublication, PlanApprovalOperationId, PublishedDirective,
+    };
+    use core_command_interface_adapter::orchestration::SnapshotStrategy;
+    for interval in [1, 10] {
+        let fixture = Fixture::new();
+        let mut repository = fixture
+            .repository()
+            .with_snapshot_strategy(SnapshotStrategy::every(
+                std::num::NonZeroUsize::new(interval).unwrap(),
+            ));
+        let mut execution = support::store_genesis(&mut repository).await;
+        let first = PlanApprovalOperationId::generate();
+        let second = PlanApprovalOperationId::generate();
+        for id in [&first, &second] {
+            let publication = DirectivePublication::new(
+                "a".repeat(64),
+                "b".repeat(64),
+                PublishedDirective::RunStage {
+                    stage: StageSlug::parse("stage-1").unwrap(),
+                    unit: None,
+                },
+            )
+            .with_approval_operation(Some(id.clone()));
+            let event = execution.issue_directive(&publication, at()).unwrap();
+            repository.store(&event, &execution).await.unwrap();
+            execution = repository.find_by_id(execution.id()).await.unwrap();
+            assert!(
+                execution.has_approval_publication(id),
+                "interval={interval}"
+            );
+            assert_eq!(
+                execution
+                    .active_directive()
+                    .unwrap()
+                    .approval_operation_id(),
+                Some(id)
+            );
+        }
+        drop(repository);
+        let reopened = fixture
+            .repository()
+            .find_by_id(execution.id())
+            .await
+            .unwrap();
+        assert!(reopened.has_approval_publication(&first));
+        assert!(reopened.has_approval_publication(&second));
+        assert!(!reopened.has_approval_publication(&PlanApprovalOperationId::generate()));
+    }
+}
+
+#[tokio::test]
+async fn recovery_keeps_a_committed_publication_pending_until_shared_invalidation_can_be_saved() {
+    use core_command_domain::orchestration::{
+        DirectivePublication, PlanApprovalOperationId, PlanApprovalRuntime, PlanInvalidation,
+        PublishedDirective,
+    };
+    use core_command_interface_adapter::orchestration::PlanApprovalRuntimeRepositoryImpl;
+    use core_command_use_case::orchestration::{
+        PlanApprovalCommandError, PlanApprovalRuntimeRepository, RecoverPlanInvalidationUseCase,
+    };
+    let fixture = Fixture::new();
+    let mut source_repository = fixture.repository();
+    let mut source = support::store_genesis(&mut source_repository).await;
+    let path = StorePath::for_runtime(&fixture._dir.path().join("aidlc"));
+    let mut root_repository = PlanApprovalRuntimeRepositoryImpl::open(&path).unwrap();
+    let (approval, created) = PlanApprovalRuntime::create(at());
+    root_repository.store(&created, &approval).await.unwrap();
+    let mut approval = root_repository.find_by_id(approval.id()).await.unwrap();
+    let operation = PlanApprovalOperationId::generate();
+    let prepared = approval
+        .prepare_invalidation(
+            PlanInvalidation::new(operation.clone(), SpaceName::default(), source.id().clone()),
+            at(),
+        )
+        .unwrap();
+    root_repository.store(&prepared, &approval).await.unwrap();
+    let publication = DirectivePublication::new(
+        "a".repeat(64),
+        "b".repeat(64),
+        PublishedDirective::RunStage {
+            stage: StageSlug::parse("stage-1").unwrap(),
+            unit: None,
+        },
+    )
+    .with_approval_operation(Some(operation.clone()));
+    let issued = source.issue_directive(&publication, at()).unwrap();
+    source_repository.store(&issued, &source).await.unwrap();
+    let db = Connection::open(path.as_path()).unwrap();
+    db.execute_batch("CREATE TRIGGER fail_shared_invalidation BEFORE INSERT ON journal BEGIN SELECT RAISE(ABORT, 'injected shared store failure'); END;").unwrap();
+    let mut recovery = RecoverPlanInvalidationUseCase::new(root_repository, source_repository);
+    assert!(matches!(
+        recovery
+            .execute(&operation, &SpaceName::default(), source.id(), at())
+            .await,
+        Err(PlanApprovalCommandError::Repository(_))
+    ));
+    let pending = PlanApprovalRuntimeRepositoryImpl::open(&path)
+        .unwrap()
+        .find_by_id(approval.id())
+        .await
+        .unwrap();
+    assert_eq!(
+        pending.invalidations().iter().next().unwrap().id(),
+        &operation
+    );
+    assert!(
+        fixture
+            .repository()
+            .find_by_id(source.id())
+            .await
+            .unwrap()
+            .has_approval_publication(&operation)
+    );
+    db.execute_batch("DROP TRIGGER fail_shared_invalidation")
+        .unwrap();
+    drop(recovery);
+    let mut resumed = RecoverPlanInvalidationUseCase::new(
+        PlanApprovalRuntimeRepositoryImpl::open(&path).unwrap(),
+        fixture.repository(),
+    );
+    let result: Result<(), _> = resumed
+        .execute(&operation, &SpaceName::default(), source.id(), at())
+        .await;
+    result.unwrap();
+    let completed = PlanApprovalRuntimeRepositoryImpl::open(&path)
+        .unwrap()
+        .find_by_id(approval.id())
+        .await
+        .unwrap();
+    assert!(completed.invalidations().is_empty());
+    assert!(completed.applied_operations().contains(&operation));
+    assert_eq!(
+        fixture
+            .raw()
+            .query_row("SELECT count(*) FROM journal", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM journal", [], |row| row
+            .get::<_, i64>(0))
+            .unwrap(),
+        3
+    );
+}
+
+#[tokio::test]
+async fn an_approval_origin_resolves_to_its_execution_and_nothing_else() {
+    use core_command_domain::orchestration::PlanApprovalOrigin;
+    // 承認の出所は実行 ID でしか実行を指さない — 別 space を名乗っても同じ実行が返り、
+    // 存在しない実行は NotFound のまま (捏造しない)。
+    let fixture = Fixture::new();
+    let mut repository = fixture.repository();
+    let expected = seed(&mut repository).await;
+    let origin = PlanApprovalOrigin::new(SpaceName::parse("other").unwrap(), execution_id());
+    let found = repository.find_for_approval_origin(&origin).await.unwrap();
+    assert_eq!(found, expected);
+    let absent = PlanApprovalOrigin::new(SpaceName::default(), absent_execution_id());
+    assert!(matches!(
+        repository.find_for_approval_origin(&absent).await,
+        Err(RepositoryError::NotFound { id }) if id == absent_execution_id()
+    ));
+}

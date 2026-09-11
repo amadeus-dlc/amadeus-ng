@@ -27,27 +27,158 @@ pub struct StageSlot {
     revision_count: u32,
     review_attempt: ReviewAttempt,
     practices_affirmed: bool,
+    memory_empty_reported: bool,
 }
 
 impl StageSlot {
-    /// 誕生時の記録 — 未着手・未承認・差戻し 0 回・空の試行・昇格の受領証なし。
+    /// ジャンプの到達点と、適用前の位置関係から進捗を導く。
+    ///
+    /// `in_plan` はこの位置が跳躍に使う計画 (この実行の実効計画、または `--scope` で名指した
+    /// 別 scope の静的な列) で EXECUTE かどうか — 読み飛ばし・巻き戻しの対象はそれで決まる。
+    pub(super) fn apply_jump(
+        &mut self,
+        event: &super::intent_execution_event::Jumped,
+        position: super::StageIndex,
+        source: super::StageIndex,
+        target: super::StageIndex,
+        in_plan: bool,
+    ) {
+        if self.key.slug() == event.target() {
+            self.checkbox = CheckboxState::InProgress;
+        } else if event.direction() == super::JumpDirection::Forward
+            && ((position > source && position < target)
+                || (position == source && source != target))
+        {
+            let skip_current = position == source && self.checkbox.is_active();
+            let skip_between = position != source && in_plan && self.checkbox.is_in_flight();
+            if skip_current || skip_between {
+                self.checkbox = CheckboxState::Skipped;
+            }
+        } else if event.direction() == super::JumpDirection::Backward
+            && position > target
+            && in_plan
+            && self.checkbox != CheckboxState::Pending
+        {
+            self.checkbox = CheckboxState::Pending;
+        }
+    }
+
+    /// 前段の完了事実により、この位置で次の試行が始まったことを適用する。
+    pub(super) const fn apply_predecessor_completion(
+        &mut self,
+        event: &super::IntentExecutionEvent,
+    ) {
+        if event.advancing_stage().is_some() {
+            self.checkbox = CheckboxState::InProgress;
+        }
+    }
+
+    pub(super) fn apply_progress(&mut self, event: &super::IntentExecutionEvent) {
+        use super::{IntentExecutionEvent, ReportResult, ReportTransition};
+        let progress = match event {
+            IntentExecutionEvent::TaskSynchronized(value) => {
+                Some((value.stage(), CheckboxState::InProgress))
+            }
+            IntentExecutionEvent::GateOpened(value) => {
+                Some((value.stage(), CheckboxState::AwaitingApproval))
+            }
+            IntentExecutionEvent::StageRevised(value) => {
+                Some((value.stage(), CheckboxState::AwaitingApproval))
+            }
+            IntentExecutionEvent::GateApproved(value) => {
+                Some((value.stage(), CheckboxState::Completed))
+            }
+            IntentExecutionEvent::GateRejected(value) => {
+                Some((value.stage(), CheckboxState::Revising))
+            }
+            IntentExecutionEvent::StageSkipped(value) => {
+                Some((value.stage(), CheckboxState::Skipped))
+            }
+            IntentExecutionEvent::Reported(value) => match value.result() {
+                ReportResult::Committed {
+                    stage, transition, ..
+                } => {
+                    let progress = match transition {
+                        ReportTransition::GateOpened { .. } | ReportTransition::StageRevised => {
+                            CheckboxState::AwaitingApproval
+                        }
+                        ReportTransition::GateApproved { .. } => CheckboxState::Completed,
+                        ReportTransition::GateRejected { .. } => CheckboxState::Revising,
+                        ReportTransition::StageSkipped { .. } => CheckboxState::Skipped,
+                    };
+                    Some((stage, progress))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((stage, progress)) = progress
+            && stage == self.key.slug()
+        {
+            self.checkbox = progress;
+            // **新しい承認**は「この承認について記録済み」を落とす。固定本家 2.7.1 は
+            // `MEMORY_EMPTY` を (slug, 承認時刻) ごとに 1 件だけ記録し、再跳躍して承認し直した
+            // 位置には改めて記録する (`aidlc-runtime.ts:786-804`)。承認時刻を持たない本集約では、
+            // 承認へ倒れたこと自体が「別の承認になった」印である。承認以外の進捗では落とさない —
+            // 承認済みでない位置はそもそも記録の対象外なので、落とす意味が無い。
+            // amadeus-lint: allow(checkbox-vocabulary) — 集約が所有する MEMORY_EMPTY 記録の前提
+            if progress == CheckboxState::Completed {
+                self.memory_empty_reported = false;
+            }
+        }
+    }
+
+    /// この承認について `MEMORY_EMPTY` を記録したと印す。
+    pub(super) const fn record_memory_empty(&mut self) {
+        self.memory_empty_reported = true;
+    }
+
+    /// いまの承認について `MEMORY_EMPTY` をまだ記録していない承認済みの位置か。
+    ///
+    /// 「承認済み」は `[x]` そのものである — 固定本家 2.7.1 の compile は
+    /// `entry.completed_at !== null` (いまの対で完了している) で絞るのであって、
+    /// 「一度でも承認した」ではない (`aidlc-runtime.ts:376-401`)。`approved` は再跳躍後も
+    /// 立ったままなので、ここでは使えない。
+    // amadeus-lint: allow(checkbox-vocabulary) — 集約が所有する MEMORY_EMPTY 記録の前提
+    pub(super) const fn awaits_memory_empty(&self) -> bool {
+        matches!(self.checkbox, CheckboxState::Completed) && !self.memory_empty_reported
+    }
+
+    pub(super) fn apply_recomposition(
+        &mut self,
+        event: &super::intent_execution_event::Recomposed,
+    ) {
+        if event.added().contains(self.key.slug()) {
+            self.plan_action = PlanAction::Execute;
+        } else if event.skipped().contains(self.key.slug()) {
+            self.plan_action = PlanAction::Skip;
+        }
+    }
+
+    /// 誕生時の記録 — 未着手・未承認・差戻し 0 回・空の試行・昇格の受領証なし・
+    /// 日誌の空記録なし。
     #[must_use]
     pub fn genesis(key: StageKey, plan_action: PlanAction) -> StageSlot {
-        StageSlot {
+        Self::new(
             key,
             plan_action,
-            checkbox: CheckboxState::Pending,
-            approved: false,
-            revision_count: 0,
-            review_attempt: ReviewAttempt::default(),
-            practices_affirmed: false,
-        }
+            CheckboxState::Pending,
+            false,
+            0,
+            ReviewAttempt::default(),
+            false,
+            false,
+        )
     }
 
     /// 保存された行から記録を組み直す (**永続化境界からの再構成専用**)。
     ///
     /// 通常の構築は [`StageSlot::genesis`] と、集約の適用が呼ぶコマンドである。
     #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "保存された 1 位置ぶんの完全な記録を唯一の再構成口へ渡す"
+    )]
     pub const fn new(
         key: StageKey,
         plan_action: PlanAction,
@@ -56,6 +187,7 @@ impl StageSlot {
         revision_count: u32,
         review_attempt: ReviewAttempt,
         practices_affirmed: bool,
+        memory_empty_reported: bool,
     ) -> StageSlot {
         StageSlot {
             key,
@@ -65,7 +197,14 @@ impl StageSlot {
             revision_count,
             review_attempt,
             practices_affirmed,
+            memory_empty_reported,
         }
+    }
+
+    /// この承認について `MEMORY_EMPTY` を既に記録したか (**永続化境界の読取専用**)。
+    #[must_use]
+    pub const fn memory_empty_reported(&self) -> bool {
+        self.memory_empty_reported
     }
 
     /// イベント適用の添字 (slug + phase)。
@@ -110,11 +249,6 @@ impl StageSlot {
         self.practices_affirmed
     }
 
-    /// 状態マーカーを置き換える。
-    pub const fn mark(&mut self, checkbox: CheckboxState) {
-        self.checkbox = checkbox;
-    }
-
     /// ゲート通過を記録する。
     pub const fn record_approval(&mut self) {
         self.approved = true;
@@ -130,11 +264,6 @@ impl StageSlot {
         self.revision_count = self.revision_count.saturating_add(1);
     }
 
-    /// 実効計画を置き換える (recompose のオーバレイ)。
-    pub const fn override_plan(&mut self, plan_action: PlanAction) {
-        self.plan_action = plan_action;
-    }
-
     /// 現在の試行を空へ戻す (フロア — 開始・差し戻し・ジャンプ)。
     ///
     /// レビューの会計と昇格の受領証は**同じ試行**に属するので一緒に消える。
@@ -144,13 +273,25 @@ impl StageSlot {
     }
 
     /// レビュー依頼を 1 件数える。
-    pub fn record_review_request(&mut self, iteration: u32) {
-        self.review_attempt.record_request(iteration);
+    pub fn record_review_request(
+        &mut self,
+        iteration: u32,
+        binding: super::ReviewBinding,
+        retry: bool,
+    ) {
+        self.review_attempt
+            .record_request(iteration, binding, retry);
     }
 
     /// レビュー判定を 1 件閉じる。
-    pub fn record_review_verdict(&mut self, iteration: u32, verdict: ReviewVerdict) {
-        self.review_attempt.record_verdict(iteration, verdict);
+    pub fn record_review_verdict(
+        &mut self,
+        iteration: u32,
+        verdict: ReviewVerdict,
+        completion: super::ReviewCompletion,
+    ) {
+        self.review_attempt
+            .record_verdict(iteration, verdict, completion);
     }
 
     /// practices の昇格を受領済みにする。
@@ -172,6 +313,20 @@ mod tests {
         StageKey::new(
             StageSlug::parse("intent-capture").unwrap(),
             PhaseId::Ideation,
+        )
+    }
+
+    fn gate_opened() -> crate::orchestration::IntentExecutionEvent {
+        crate::orchestration::IntentExecutionEvent::GateOpened(
+            crate::orchestration::intent_execution_event::GateOpened::new(
+                crate::orchestration::IntentExecutionEventId::generate(),
+                crate::orchestration::IntentExecutionId::parse(
+                    "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+                )
+                .unwrap(),
+                key().slug().clone(),
+                crate::orchestration::ArtifactPaths::empty(),
+            ),
         )
     }
 
@@ -203,9 +358,12 @@ mod tests {
                 1,
                 vec![2],
                 ReviewClosures::new(vec![ReviewClosure::new(1, ReviewVerdict::NotReady)]),
+                crate::orchestration::ReviewHistory::default(),
             ),
             true,
+            true,
         );
+        assert!(slot.memory_empty_reported());
         assert_eq!(slot.plan_action(), PlanAction::Skip);
         assert_eq!(slot.checkbox(), CheckboxState::Revising);
         assert!(slot.approved());
@@ -216,11 +374,50 @@ mod tests {
     }
 
     #[test]
-    fn marking_moves_the_checkbox_and_leaves_the_rest_alone() {
+    fn a_gate_event_changes_only_the_named_stage_progress() {
+        use crate::orchestration::intent_execution_event::GateOpened;
+        use crate::orchestration::{
+            ArtifactPaths, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId,
+        };
+        let execution = IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap();
+        let event = IntentExecutionEvent::GateOpened(GateOpened::new(
+            IntentExecutionEventId::generate(),
+            execution.clone(),
+            key().slug().clone(),
+            ArtifactPaths::empty(),
+        ));
         let mut slot = genesis();
-        slot.mark(CheckboxState::InProgress);
-        assert_eq!(slot.checkbox(), CheckboxState::InProgress);
-        slot.mark(CheckboxState::Completed);
+        slot.apply_progress(&event);
+        assert_eq!(slot.checkbox(), CheckboxState::AwaitingApproval);
+        assert!(!slot.approved());
+        let before = slot.clone();
+        let unrelated = IntentExecutionEvent::GateOpened(GateOpened::new(
+            IntentExecutionEventId::generate(),
+            execution,
+            StageSlug::parse("other-stage").unwrap(),
+            ArtifactPaths::empty(),
+        ));
+        slot.apply_progress(&unrelated);
+        assert_eq!(slot, before);
+    }
+
+    #[test]
+    fn progress_events_move_the_checkbox_and_leave_other_receipts_alone() {
+        let mut slot = genesis();
+        slot.apply_progress(&gate_opened());
+        assert_eq!(slot.checkbox(), CheckboxState::AwaitingApproval);
+        let event = crate::orchestration::IntentExecutionEvent::GateApproved(
+            crate::orchestration::intent_execution_event::GateApproved::new(
+                crate::orchestration::IntentExecutionEventId::generate(),
+                crate::orchestration::IntentExecutionId::parse(
+                    "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+                )
+                .unwrap(),
+                key().slug().clone(),
+                None,
+            ),
+        );
+        slot.apply_progress(&event);
         assert_eq!(slot.checkbox(), CheckboxState::Completed);
         assert!(!slot.approved());
         assert_eq!(slot.revision_count(), 0);
@@ -245,6 +442,7 @@ mod tests {
             u32::MAX,
             ReviewAttempt::default(),
             false,
+            false,
         );
         slot.bump_revision();
         assert_eq!(slot.revision_count(), u32::MAX, "飽和加算で溢れない");
@@ -256,9 +454,52 @@ mod tests {
     }
 
     #[test]
+    fn a_recorded_recomposition_changes_only_its_named_slot() {
+        use crate::orchestration::intent_execution_event::Recomposed;
+        use crate::orchestration::{IntentExecutionEventId, IntentExecutionId, StageSlugSet};
+        let execution = IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000").unwrap();
+        let changed = Recomposed::new(
+            IntentExecutionEventId::generate(),
+            execution.clone(),
+            StageSlugSet::new([key().slug().clone()]),
+            StageSlugSet::empty(),
+        );
+        let mut slot = genesis();
+        slot.apply_recomposition(&changed);
+        assert_eq!(slot.plan_action(), PlanAction::Skip);
+        let unrelated = Recomposed::new(
+            IntentExecutionEventId::generate(),
+            execution.clone(),
+            StageSlugSet::empty(),
+            StageSlugSet::new([StageSlug::parse("other-stage").unwrap()]),
+        );
+        let before = slot.clone();
+        slot.apply_recomposition(&unrelated);
+        assert_eq!(slot, before);
+        let restored = Recomposed::new(
+            IntentExecutionEventId::generate(),
+            execution,
+            StageSlugSet::empty(),
+            StageSlugSet::new([key().slug().clone()]),
+        );
+        slot.apply_recomposition(&restored);
+        assert_eq!(slot, genesis());
+    }
+
+    #[test]
     fn the_effective_plan_can_be_overridden_by_a_recompose() {
         let mut slot = genesis();
-        slot.override_plan(PlanAction::Skip);
+        slot.apply_recomposition(
+            &crate::orchestration::intent_execution_event::Recomposed::new(
+                crate::orchestration::IntentExecutionEventId::generate(),
+                crate::orchestration::IntentExecutionId::parse(
+                    "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000",
+                )
+                .unwrap(),
+                crate::orchestration::StageSlugSet::new([key().slug().clone()]),
+                crate::orchestration::StageSlugSet::empty(),
+            ),
+        );
         assert_eq!(slot.plan_action(), PlanAction::Skip);
         assert_eq!(
             slot.key(),
@@ -270,11 +511,19 @@ mod tests {
     #[test]
     fn review_requests_and_verdicts_are_delegated_to_the_attempt() {
         let mut slot = genesis();
-        slot.record_review_request(1);
+        slot.record_review_request(
+            1,
+            crate::orchestration::review_test_fixture::binding(),
+            false,
+        );
         assert_eq!(slot.review_attempt().request_count(), 1);
         assert!(slot.review_attempt().is_pending(1));
 
-        slot.record_review_verdict(1, ReviewVerdict::Ready);
+        slot.record_review_verdict(
+            1,
+            ReviewVerdict::Ready,
+            crate::orchestration::review_test_fixture::completion(),
+        );
         assert!(!slot.review_attempt().is_pending(1));
         assert_eq!(slot.review_attempt().closed().len(), 1);
     }
@@ -282,8 +531,16 @@ mod tests {
     #[test]
     fn resetting_the_attempt_clears_both_receipts_of_the_current_try() {
         let mut slot = genesis();
-        slot.record_review_request(1);
-        slot.record_review_verdict(1, ReviewVerdict::Ready);
+        slot.record_review_request(
+            1,
+            crate::orchestration::review_test_fixture::binding(),
+            false,
+        );
+        slot.record_review_verdict(
+            1,
+            ReviewVerdict::Ready,
+            crate::orchestration::review_test_fixture::completion(),
+        );
         slot.affirm_practices();
         assert!(slot.practices_affirmed());
 
@@ -299,7 +556,7 @@ mod tests {
     fn two_slots_with_the_same_record_are_the_same_value() {
         assert_eq!(genesis(), genesis());
         let mut moved = genesis();
-        moved.mark(CheckboxState::InProgress);
+        moved.apply_progress(&gate_opened());
         assert_ne!(moved, genesis());
     }
 }

@@ -54,6 +54,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 
+use super::artifact_journal_entry::ArtifactJournalEntry;
 use super::corrupt_cause::CorruptCause;
 use super::definition_entry::DefinitionEntry;
 use super::global_seq_nr::GlobalSeqNr;
@@ -67,6 +68,11 @@ use core_command_domain::orchestration::{
     Intent, IntentExecutionEvent, IntentExecutionId, IntentId,
 };
 use core_command_domain::workflow_definition::{WorkflowDefinitionEvent, WorkflowDefinitionId};
+use core_command_domain::workspace::{
+    ArtifactAuditEvent, ArtifactAuditEventId, ArtifactAuditId, ArtifactSaved,
+    ArtifactWriteObservation, HookHealthTarget,
+};
+use serde::Deserialize;
 
 use super::dto::{
     DtoDecodeError, IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
@@ -225,7 +231,7 @@ impl JournalReaderImpl {
         connection
             .execute_batch(CREATE_CHECKPOINT_TABLE)
             .at_store(path.as_path())?;
-        // 構造化リードモデルの 17 表も我々の表である (本家の DDL とは衝突しない
+        // 構造化リードモデルの 21 表も我々の表である (本家の DDL とは衝突しない
         // `read_` 接頭)。版が一致していれば冪等な `CREATE TABLE IF NOT EXISTS` だけ、
         // 動いていれば落として作り直しジャーナルから描き直す。
         let schema_changed =
@@ -319,6 +325,13 @@ impl JournalReaderImpl {
         let mut files = Vec::new();
         for file in previous.files() {
             if let Some((restored, absent)) = file.restore_missing()? {
+                if targets.owns_source_baseline(file.path(), file.after())
+                    && restored.after() != file.after()
+                {
+                    return Err(super::CatchUpError::PublicationConflict {
+                        path: file.path().to_path_buf(),
+                    });
+                }
                 missing |= absent;
                 files.push(restored);
             }
@@ -376,7 +389,17 @@ impl JournalReaderImpl {
         let files = previous
             .files()
             .iter()
-            .map(super::PublicationFile::rebase)
+            .map(|file| {
+                let rebased = file.rebase()?;
+                if targets.owns_source_baseline(file.path(), file.after())
+                    && rebased.after() != file.after()
+                {
+                    return Err(super::CatchUpError::PublicationConflict {
+                        path: file.path().to_path_buf(),
+                    });
+                }
+                Ok(rebased)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let batch = super::PublicationBatch::rebuild(previous.from(), previous.to(), files)
             .for_targets(targets)?
@@ -398,10 +421,10 @@ impl JournalReaderImpl {
         Ok(true)
     }
 
-    /// 読み面 17 表を**版付きで**用意する (取得ループの入口 = 開く段で 1 度)。
+    /// 読み面 21 表を**版付きで**用意する (取得ループの入口 = 開く段で 1 度)。
     ///
     /// `PRAGMA user_version` に [`READ_SCHEMA_VERSION`] を持ち、保存値が現行と同じなら
-    /// 冪等な `CREATE TABLE IF NOT EXISTS` だけを打つ。違うときは 17 表を落として作り直し、
+    /// 冪等な `CREATE TABLE IF NOT EXISTS` だけを打つ。違うときは 21 表を落として作り直し、
     /// **その場でジャーナル全履歴から描き直す**。
     ///
     /// # なぜ作り直しが要るか
@@ -583,6 +606,8 @@ impl JournalReaderImpl {
         let mut entries = Vec::new();
         let mut intents = Vec::new();
         let mut definitions = Vec::new();
+        let mut artifacts = Vec::new();
+        let mut sessions = Vec::new();
         for row in &rows {
             // 同居する 3 ストリームを判別子で振り分ける (issue #50 / #56、定義は 2026-08-31)。
             if row.manifest == DEFINITION_EVENT_MANIFEST {
@@ -591,11 +616,40 @@ impl JournalReaderImpl {
             }
             if row.manifest == INTENT_EVENT_MANIFEST {
                 intents.push(decode_intent_row(row)?);
+            } else if row.manifest == "session-audit-event/1" {
+                let event = super::session_event_dto::SessionEventDto::decode(
+                    &row.payload,
+                    &row.aggregate_id,
+                )
+                .map_err(|()| {
+                    corrupt_error(&row.aggregate_id, None, CorruptCause::UndecodablePayload)
+                })?;
+                sessions.push(super::SessionJournalEntry::new(
+                    GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?),
+                    usize::try_from(row.seq_nr).map_err(|_| {
+                        corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation)
+                    })?,
+                    occurred_at_of(row.occurred_at),
+                    event,
+                ));
+            } else if row.manifest == ARTIFACT_AUDIT_EVENT_MANIFEST {
+                let event = decode_artifact_event(&row.payload, &row.aggregate_id)?;
+                artifacts.push(ArtifactJournalEntry::new(
+                    GlobalSeqNr::new(to_u64(row.rowid, &row.aggregate_id)?),
+                    usize::try_from(row.seq_nr).map_err(|_| {
+                        corrupt_error(&row.aggregate_id, None, CorruptCause::InvariantViolation)
+                    })?,
+                    occurred_at_of(row.occurred_at),
+                    event,
+                ));
+                continue;
             } else {
                 entries.push(decode_entry(row)?);
             }
         }
-        Ok(JournalBatch::new(entries, intents, definitions, scanned_to))
+        Ok(JournalBatch::new(entries, intents, definitions, scanned_to)
+            .with_artifacts(artifacts)
+            .with_sessions(sessions))
     }
 
     /// 現在のチェックポイント (未登録は `ZERO`)。読取・前進の両方が使う。
@@ -714,6 +768,39 @@ const EVENT_MANIFEST: &str = "intent-execution-event/1";
 ///
 /// [`Intent`]: core_command_domain::orchestration::Intent
 const INTENT_EVENT_MANIFEST: &str = "intent-event/1";
+
+/// ArtifactAudit専用RMUへ渡すストリーム。
+const ARTIFACT_AUDIT_EVENT_MANIFEST: &str = "artifact-audit-event/1";
+#[derive(Deserialize)]
+struct ArtifactWire {
+    id: String,
+    aggregate_id: String,
+    target: String,
+    tool: String,
+    file: String,
+    context: String,
+    created: bool,
+}
+fn decode_artifact_event(bytes: &[u8], aid: &str) -> Result<ArtifactAuditEvent, JournalReadError> {
+    let wire: ArtifactWire = serde_json::from_slice(bytes)
+        .map_err(|_| corrupt_error(aid, None, CorruptCause::UndecodablePayload))?;
+    let id = ArtifactAuditEventId::parse(&wire.id)
+        .map_err(|_| corrupt_error(aid, None, CorruptCause::UndecodablePayload))?;
+    let aggregate = ArtifactAuditId::parse(&wire.aggregate_id)
+        .map_err(|_| corrupt_error(aid, None, CorruptCause::UndecodablePayload))?;
+    let target = HookHealthTarget::parse(&wire.target)
+        .map_err(|_| corrupt_error(aid, None, CorruptCause::UndecodablePayload))?;
+    if aggregate != ArtifactAuditId::for_target(&target) {
+        return Err(corrupt_error(aid, None, CorruptCause::InvariantViolation));
+    }
+    let observation =
+        ArtifactWriteObservation::new(target, wire.tool, wire.file, wire.context, wire.created);
+    Ok(ArtifactAuditEvent::Saved(ArtifactSaved::new(
+        id,
+        aggregate,
+        observation,
+    )))
+}
 
 /// 定義ジャーナル行の型判別子 — 同じストアファイルに同居する**第 3 のストリーム**
 /// (2026-08-31 のオーナー裁定で `WorkflowDefinition` の Repository がイベントストア形に
@@ -983,6 +1070,71 @@ impl JournalReader for JournalReaderImpl {
         transaction.commit().at_store(path.as_path())
     }
 
+    async fn replace_plan_fingerprint(
+        &mut self,
+        row: &crate::read_tables::PlanFingerprintRow,
+    ) -> Result<(), JournalReadError> {
+        let path = self.path.clone();
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .at_store(path.as_path())?;
+        crate::read_tables::replace_plan_fingerprint(&transaction, row).at_store(path.as_path())?;
+        transaction.commit().at_store(path.as_path())
+    }
+
+    async fn replace_pipeline(
+        &mut self,
+        tables: &crate::read_tables::PipelineTables,
+    ) -> Result<(), JournalReadError> {
+        let path = &self.path;
+        let transaction = self.connection.transaction().at_store(path.as_path())?;
+        let prior:Option<(String,i64)>=transaction.query_row("SELECT source_digest,event_position FROM read_pipeline_progress WHERE execution_id=?1 LIMIT 1",[tables.execution_id()],|row|Ok((row.get(0)?,row.get(1)?))).optional().at_store(path.as_path())?;
+        if let Some(first) = tables.rows().first()
+            && prior.as_ref().is_some_and(|(digest, position)| {
+                digest == first.source_digest()
+                    || u64::try_from(*position)
+                        .is_ok_and(|position| position > first.event_position())
+            })
+        {
+            return Ok(());
+        }
+        transaction
+            .execute(
+                "DELETE FROM read_pipeline_progress WHERE execution_id=?1",
+                [tables.execution_id()],
+            )
+            .at_store(path.as_path())?;
+        for row in tables.rows() {
+            transaction.execute("INSERT INTO read_pipeline_progress(id,execution_id,stage,single,completed,source_digest,event_position) VALUES(?1,?2,?3,?4,?5,?6,?7)",rusqlite::params![row.id(),row.execution_id(),row.stage(),row.is_single(),row.completed(),row.source_digest(),to_i64(row.event_position())?]).at_store(path.as_path())?;
+        }
+        transaction.commit().at_store(path.as_path())?;
+        Ok(())
+    }
+
+    async fn testing_source_digest(&self) -> Result<Option<String>, JournalReadError> {
+        self.connection
+            .query_row(
+                "SELECT source_digest FROM read_testing_contract WHERE id='bare-space'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .at_store(self.path.as_path())
+    }
+    async fn replace_testing(
+        &mut self,
+        tables: &crate::read_tables::TestingTables,
+    ) -> Result<(), JournalReadError> {
+        let path = self.path.clone();
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .at_store(path.as_path())?;
+        crate::read_tables::replace_testing(&transaction, tables).at_store(path.as_path())?;
+        transaction.commit().at_store(path.as_path())
+    }
+
     async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError> {
         self.connection
             .query_row(SELECT_STEERING_SOURCE, [], |row| row.get(0))
@@ -1174,7 +1326,7 @@ pub(super) mod tests {
     #[test]
     fn opening_creates_our_tables_next_to_the_upstream_ones() {
         // 同じ DB ファイルに 3 種の表が同居する: 本家の 2 つ (`journal` / `snapshot`)、
-        // 我々のチェックポイント表、そして構造化リードモデルの 17 表 (`read_` 接頭)。
+        // 我々のチェックポイント表、そして構造化リードモデルの 21 表 (`read_` 接頭)。
         // 名前が衝突しないことが同居の前提なので、集合そのものを固定する。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
@@ -1231,8 +1383,8 @@ pub(super) mod tests {
                 .iter()
                 .filter(|name| name.starts_with("read_"))
                 .count(),
-            17,
-            "構造化リードモデルは 17 表 (ジャーナル由来 15 + 参照入力由来 2)"
+            25,
+            "構造化リードモデルは 25 表 (v5: 22 表に answer/jump/report の結果表 3 つを加えた)"
         );
     }
 

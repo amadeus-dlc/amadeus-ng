@@ -18,9 +18,34 @@ pub struct ExecutionView {
     parked_at_slug: Option<String>,
     parked_active: bool,
     state_binding: String,
+    first_substantive_run: bool,
+    continuation_wait: Option<String>,
 }
 
 impl ExecutionView {
+    /// 集約が判定し、投影された人間待ちを伴う。
+    #[must_use]
+    pub fn with_continuation_wait(mut self, reason: Option<String>) -> Self {
+        self.continuation_wait = reason;
+        self
+    }
+    /// 投影済みの待機理由。
+    #[must_use]
+    pub fn continuation_wait(&self) -> Option<&str> {
+        self.continuation_wait.as_deref()
+    }
+    /// 投影された初回判定を伴う。
+    #[must_use]
+    pub const fn with_first_substantive_run(mut self, first: bool) -> Self {
+        self.first_substantive_run = first;
+        self
+    }
+    /// 集約が判定して投影した初回フラグ。
+    #[must_use]
+    pub const fn first_substantive_run(&self) -> bool {
+        self.first_substantive_run
+    }
+
     /// 8 列をそのまま束ねる (**この型の唯一の構築経路**)。
     #[expect(
         clippy::too_many_arguments,
@@ -46,6 +71,8 @@ impl ExecutionView {
             parked_at_slug,
             parked_active,
             state_binding,
+            first_substantive_run: false,
+            continuation_wait: None,
         }
     }
 

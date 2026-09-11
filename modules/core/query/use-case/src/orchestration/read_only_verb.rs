@@ -1,7 +1,7 @@
 //! `ReadOnlyVerb` — 読み取り専用ユーティリティが指す操作の語彙。
 //!
 //! 変種名は操作の意図から取る (状態報告・使い方・健全性診断・版表示)。CLI 綴りへの写しは
-//! [`EngineCommand::cli_spelling`] が 1 点で持つ (逸脱台帳 #1)。
+//! [`EngineCommand::cli_spelling`] が 1 点で持つ。
 //!
 //! [`EngineCommand::cli_spelling`]: super::EngineCommand::cli_spelling
 

@@ -8,22 +8,32 @@ use core_infrastructure::collections::FirstClassCollection;
 /// ままで memory ファイルへ書き足されるので、ドメインは並べ替えも重複除去も行わない。集合
 /// ではないので `combine` / `divide` は持たない
 /// (`coding-rules/first-class-collections.md` — 順序付き列を便宜的な集合として扱わない)。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleLines {
     items: Vec<String>,
 }
 
+impl Default for RuleLines {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl RuleLines {
+    // 検査済みの列・集合とその部分列は、この構築口で全状態を初期化する。
+    const fn of_items(items: Vec<String>) -> Self {
+        Self { items }
+    }
+
     /// 1 行も書き足さない昇格の列。
     #[must_use]
     pub const fn empty() -> RuleLines {
-        RuleLines { items: Vec::new() }
+        RuleLines::of_items(Vec::new())
     }
 
     /// 与えられた順序と重複のまま列にする (**この型の唯一の構築経路**)。
     #[must_use]
     pub const fn new(items: Vec<String>) -> RuleLines {
-        RuleLines { items }
+        RuleLines::of_items(items)
     }
 
     /// 規則行の件数。

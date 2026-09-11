@@ -195,7 +195,14 @@ mod tests {
             r#"[{"artifact":"scan.md","required":true,"conditional_on":"greenfield"}]"#
         );
         assert_eq!(
-            sensors_applicable(&[SensorRef::new("id", "sensors/id.md", None)]),
+            sensors_applicable(&[SensorRef::new(
+                "id",
+                "sensors/id.md",
+                None,
+                None,
+                None,
+                None
+            )]),
             r#"[{"id":"id","path":"sensors/id.md","matches":null}]"#
         );
     }

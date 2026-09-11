@@ -39,17 +39,8 @@ impl PublicationBatch {
             );
             core_infrastructure::canon_json::hash_compact(&material).rendered()
         });
-        PublicationBatch {
-            request_id: uuid::Uuid::now_v7().to_string(),
-            generation: 0,
-            rebuild: false,
-            predecessor: None,
-            target_binding,
-            transform_revision: Self::current_transform_revision(),
-            from,
-            to,
-            files,
-        }
+        Self::restored(from, to, files, uuid::Uuid::now_v7().to_string(), 0, false)
+            .bound(target_binding, Self::current_transform_revision())
     }
 
     /// 同位置を含む明示的な再生成要求を作る。
@@ -166,10 +157,10 @@ impl PublicationBatch {
         targets
             .binding()
             .is_ok_and(|binding| self.target_binding.as_deref() == Some(binding.as_str()))
-            && self
-                .files
-                .iter()
-                .all(|file| targets.owned_paths().contains(&file.path()))
+            && self.files.iter().all(|file| {
+                targets.owned_paths().contains(&file.path())
+                    || targets.owns_source_baseline(file.path(), file.after())
+            })
     }
 
     /// 入力を読み始めた確定位置。

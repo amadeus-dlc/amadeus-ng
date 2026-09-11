@@ -40,6 +40,8 @@ pub struct RunStageView {
     stage_file_rel: String,
     memory_path_rel: String,
     consumes_rel: String,
+    consumes_brownfield_rel: String,
+    consumes_greenfield_rel: String,
     produces_rel: String,
     sensors_applicable: String,
     reviewer: Option<String>,
@@ -52,7 +54,7 @@ pub struct RunStageView {
 }
 
 impl RunStageView {
-    /// 24 列をそのまま束ねる (**この型の唯一の構築経路**)。
+    /// 26 列をそのまま束ねる (**この型の唯一の構築経路**)。
     ///
     /// ビルダーを立てないのは、この型が**行の写し**であり任意フィールドが無いからである
     /// (`StageView` がビルダーを持つのは 28 フィールドの多くが省略可能で既定値を要する
@@ -80,6 +82,8 @@ impl RunStageView {
         stage_file_rel: String,
         memory_path_rel: String,
         consumes_rel: String,
+        consumes_brownfield_rel: String,
+        consumes_greenfield_rel: String,
         produces_rel: String,
         sensors_applicable: String,
         reviewer: Option<String>,
@@ -106,6 +110,8 @@ impl RunStageView {
             stage_file_rel,
             memory_path_rel,
             consumes_rel,
+            consumes_brownfield_rel,
+            consumes_greenfield_rel,
             produces_rel,
             sensors_applicable,
             reviewer,
@@ -209,6 +215,18 @@ impl RunStageView {
     #[must_use]
     pub fn consumes_rel(&self) -> &str {
         &self.consumes_rel
+    }
+
+    /// Brownfield の作業で残る上流成果物 (1 行 JSON 配列)。
+    #[must_use]
+    pub fn consumes_brownfield_rel(&self) -> &str {
+        &self.consumes_brownfield_rel
+    }
+
+    /// Greenfield の作業で残る上流成果物 (1 行 JSON 配列)。
+    #[must_use]
+    pub fn consumes_greenfield_rel(&self) -> &str {
+        &self.consumes_greenfield_rel
     }
 
     /// record からの相対で並ぶ出力成果物の 1 行 JSON 配列。

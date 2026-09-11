@@ -13,6 +13,9 @@ use core_command_domain::orchestration::Intent;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentRow {
     id: String,
+    execute_count: usize,
+    first_stage: Option<String>,
+    first_phase: Option<String>,
     definition_id: String,
     definition_revision: String,
     scope: String,
@@ -33,8 +36,14 @@ impl IntentRow {
     #[must_use]
     pub fn of(intent: &Intent) -> IntentRow {
         let scan = intent.scan();
+        let first = intent.first_post_initialization();
         IntentRow {
             id: intent.id().as_str().to_string(),
+            execute_count: intent.in_scope_count(),
+            first_stage: first.as_ref().map(|entry| entry.slug().to_string()),
+            first_phase: first
+                .as_ref()
+                .map(|entry| entry.phase().as_str().to_uppercase()),
             definition_id: intent.definition_id().as_str().to_string(),
             definition_revision: intent.definition_revision().as_str().to_string(),
             scope: intent.scope().to_string(),
@@ -51,6 +60,22 @@ impl IntentRow {
             frameworks: scan.frameworks().to_string(),
             build_system: scan.build_system().to_string(),
         }
+    }
+
+    /// 解決済みの実行ステージ件数。
+    #[must_use]
+    pub const fn execute_count(&self) -> usize {
+        self.execute_count
+    }
+    /// 初期化後の最初のステージ。
+    #[must_use]
+    pub fn first_stage(&self) -> Option<&str> {
+        self.first_stage.as_deref()
+    }
+    /// 初期化後のフェーズ。
+    #[must_use]
+    pub fn first_phase(&self) -> Option<&str> {
+        self.first_phase.as_deref()
     }
 
     /// 主キー — intent の識別子 (UUIDv7)。

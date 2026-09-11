@@ -13,7 +13,7 @@ use core_command_domain::orchestration::{
     WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
-    DefinitionRevision, StageNumber, StageSlug, WorkflowDefinitionId,
+    DefinitionRevision, PlanAction, StageNumber, StageSlug, WorkflowDefinitionId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -40,11 +40,39 @@ pub struct IntentDto {
 /// 呼出側の要求の行の形。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct StartRequestDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    record_name: Option<RecordNameDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_baseline: Option<SourceBaselineDto>,
     scope: String,
     request: String,
     depth: Option<String>,
     test_strategy: Option<String>,
     review: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RecordNameDto {
+    directory: String,
+    slug: String,
+}
+impl RecordNameDto {
+    fn of(name: &core_command_domain::orchestration::IntentRecordName) -> Self {
+        Self {
+            directory: name.directory().as_str().to_string(),
+            slug: name.slug().to_string(),
+        }
+    }
+    fn to_domain(
+        &self,
+    ) -> Result<core_command_domain::orchestration::IntentRecordName, DtoDecodeError> {
+        use core_command_domain::workspace::IntentDirName;
+        Ok(core_command_domain::orchestration::IntentRecordName::new(
+            IntentDirName::parse(&self.directory)
+                .map_err(|_| DtoDecodeError::malformed("record_name.directory", &self.directory))?,
+            self.slug.clone(),
+        ))
+    }
 }
 
 /// 解決済み計画 1 要素の行の形 (intent 面と `Started` 面が共有する)。
@@ -54,6 +82,7 @@ pub(super) struct StageEntryDto {
     phase: String,
     plan_action: String,
     conditional: bool,
+    greenfield_adjusted: bool,
     display: StageDisplayDto,
 }
 
@@ -85,6 +114,8 @@ impl IntentDto {
             definition_id: intent.definition_id().as_str().to_string(),
             definition_revision: intent.definition_revision().as_str().to_string(),
             start_request: StartRequestDto {
+                record_name: intent.record_name().map(RecordNameDto::of),
+                source_baseline: intent.source_baseline().map(SourceBaselineDto::of),
                 scope: intent.scope().to_string(),
                 request: intent.request().to_string(),
                 depth: intent.depth().map(str::to_string),
@@ -131,6 +162,12 @@ impl IntentDto {
         if let Some(review) = &self.start_request.review {
             request = request.with_review(review.clone());
         }
+        if let Some(name) = &self.start_request.record_name {
+            request = request.with_record_name(name.to_domain()?);
+        }
+        if let Some(baseline) = &self.start_request.source_baseline {
+            request = request.with_source_baseline(baseline.to_domain()?);
+        }
         Ok(Intent::from((
             Created::new(
                 IntentEventId::parse(&self.id)
@@ -164,6 +201,7 @@ impl StageEntryDto {
             phase: phase_spelling(entry.phase()).to_string(),
             plan_action: plan_action_spelling(entry.plan_action()).to_string(),
             conditional: entry.is_conditional(),
+            greenfield_adjusted: entry.is_greenfield_adjusted(),
             display: StageDisplayDto {
                 number: entry.display().number().as_str().to_string(),
                 name: entry.display().name().to_string(),
@@ -178,14 +216,24 @@ impl StageEntryDto {
             .map_err(|_| DtoDecodeError::malformed("number", self.display.number.clone()))?;
         let display = StageDisplay::new(number, &self.display.name, &self.display.lead_agent)
             .map_err(|_| DtoDecodeError::malformed("display", self.display.name.clone()))?;
-        Ok(StageEntry::new(
+        let plan_action = plan_action_of(&self.plan_action, "plan_action")?;
+        let entry = StageEntry::new(
             StageSlug::parse(&self.slug)
                 .map_err(|_| DtoDecodeError::malformed("slug", self.slug.clone()))?,
             phase_of(&self.phase, "phase")?,
-            plan_action_of(&self.plan_action, "plan_action")?,
+            plan_action,
             self.conditional,
             display,
-        ))
+        );
+        if !self.greenfield_adjusted {
+            return Ok(entry);
+        }
+        // greenfield 調整は SKIP に畳んだ事実である — EXECUTE のまま調整済みと名乗る行は
+        // 組み上げると不変条件を破るので、検査付き再構成として拒む。
+        if plan_action != PlanAction::Skip {
+            return Err(DtoDecodeError::InvariantViolation);
+        }
+        Ok(entry.adjusted_for_greenfield())
     }
 }
 
@@ -207,5 +255,23 @@ impl WorkspaceScanDto {
             &self.build_system,
         )
         .map_err(|_| DtoDecodeError::malformed("scan", self.languages.clone()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct SourceBaselineDto {
+    listing: Option<String>,
+}
+impl SourceBaselineDto {
+    fn of(baseline: &core_command_domain::orchestration::SourceBaseline) -> Self {
+        Self {
+            listing: baseline.listing().map(str::to_string),
+        }
+    }
+    fn to_domain(
+        &self,
+    ) -> Result<core_command_domain::orchestration::SourceBaseline, DtoDecodeError> {
+        core_command_domain::orchestration::SourceBaseline::new(self.listing.clone())
+            .map_err(|_| DtoDecodeError::InvariantViolation)
     }
 }

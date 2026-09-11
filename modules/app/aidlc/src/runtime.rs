@@ -20,13 +20,31 @@
 //! **stderr・exit 1**（[`crate::presenter`] のモジュール doc）。[`Completion`] がその 2 つを
 //! 表す。
 
+mod continuation;
+mod continuation_cursor;
+mod dispatch_rules;
+mod fold_usage;
+mod jump;
+mod learnings;
+mod log_failure;
+mod pipeline_link;
+mod plan_approval;
+mod review_documents;
+mod review_guards;
+mod runtime_graph;
+mod session_hooks;
+mod session_start;
+mod task_sync;
+mod testing_posture;
+use core_command_domain::orchestration::ReportId;
+use core_query_use_case::orchestration::{ReportResultUseCase, ReportResultView};
 use std::path::Path;
 
+use crate::workspace_scanner::WorkspaceScanner;
 use chrono::Utc;
 use core_command_domain::orchestration::{
-    AutonomyMode, CommandError, IntentExecutionId, IntentId, ReportNoOp, ReportRefusal,
-    ReportRequest, ReviewVerdict, SkeletonStance, StartRequest, TransitionStep, TransitionSteps,
-    Verdict,
+    AutonomyMode, CommandError, IntentExecutionId, IntentId, ReportRefusal, ReportRequest,
+    ReviewVerdict, SkeletonStance, StartRequest, Verdict,
 };
 use core_command_domain::workflow_definition::{PRACTICES_DISCOVERY_SLUG, StageSlug};
 use core_command_domain::workspace::{
@@ -34,17 +52,17 @@ use core_command_domain::workspace::{
     StateVersionClassification, StateVersionKind, StorePath,
 };
 use core_command_interface_adapter::orchestration::{
-    CompiledDefinitionRepositoryImpl, IntentExecutionRepositoryImpl, IntentRepositoryImpl,
-    WorkflowDefinitionRepositoryImpl, WorkflowDefinitionSqliteStore,
+    ArtifactAuditRepositoryImpl, CompiledDefinitionRepositoryImpl, HookHealthRepositoryImpl,
+    IntentExecutionRepositoryImpl, IntentRepositoryImpl, WorkflowDefinitionRepositoryImpl,
+    WorkflowDefinitionSqliteStore,
 };
-use core_command_interface_adapter::{UnscannedWorkspace, WorkspaceScanner};
 use core_command_use_case::orchestration::{
-    AutonomySwitchRequest, CommitError, CommitOutcome, CommitVerdictUseCase, CreateIntentError,
-    CreateIntentUseCase, DefineWorkflowUseCase, IntentRepository as _, ParkError, ParkUseCase,
-    PracticesPromotionRequest, PromotePracticesUseCase, RecordReviewUseCase,
-    RecordSingleStageRunUseCase, RecordSkeletonStanceUseCase, ReviewLogError, ReviewLogKind,
-    ReviewLogOutcome, ReviewLogRequest, SingleStageRunError, SkeletonStanceError,
-    SwitchAutonomyError, SwitchAutonomyUseCase,
+    ArtifactAuditCommandError, AutonomySwitchRequest, CommitError, CommitVerdictUseCase,
+    CreateIntentError, CreateIntentUseCase, DefineWorkflowUseCase, HookHealthRepository, ParkError,
+    ParkUseCase, PracticesPromotionRequest, PromotePracticesUseCase,
+    RecordArtifactObservationUseCase, RecordReviewUseCase, RecordSingleStageRunUseCase,
+    RecordSkeletonStanceUseCase, ReviewLogError, ReviewLogKind, ReviewLogRequest,
+    SingleStageRunError, SkeletonStanceError, SwitchAutonomyError, SwitchAutonomyUseCase,
 };
 use core_infrastructure::canon_json::{
     JsonValue, Number, ObjectMembers, SerializationProfile, serialize,
@@ -55,7 +73,8 @@ use core_query_use_case::orchestration::{
     NextTurnInput, StageSlugView,
 };
 use core_read_model_updater::orchestration::{
-    JournalReaderImpl, ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
+    HookHealthReadModelUpdater, JournalReaderImpl, ProjectionName, ProjectionTargets,
+    ReadModelUpdater, SteeringSource,
 };
 
 use crate::cli::{Face, IntentCreateArgs, Invocation, Request, parse};
@@ -81,24 +100,45 @@ pub struct Completion {
 }
 
 impl Completion {
+    const fn new(line: Option<String>, diagnostic: Option<String>, code: u8) -> Self {
+        Self {
+            line,
+            diagnostic,
+            code,
+        }
+    }
+    /// ツール実行を停止するフックの拒否。
+    #[must_use]
+    pub const fn hook_denied(diagnostic: String) -> Self {
+        Self::new(None, Some(diagnostic), 2)
+    }
+
+    /// stdout/stderrを出さず成功するフック応答。
+    #[must_use]
+    pub const fn silent() -> Self {
+        Self::new(None, None, 0)
+    }
+
     /// directive を 1 つ出して正常終了する（ビジネス拒否の `error` directive もこちら）。
     #[must_use]
     pub const fn emitted(line: String) -> Completion {
-        Completion {
-            line: Some(line),
-            diagnostic: None,
-            code: 0,
-        }
+        Self::new(Some(line), None, 0)
     }
 
     /// 何も stdout へ出さず、stderr へ逐語を出して失敗する（自己防衛拒否）。
     #[must_use]
     pub const fn refused(diagnostic: String) -> Completion {
-        Completion {
-            line: None,
-            diagnostic: Some(diagnostic),
-            code: 1,
-        }
+        Self::new(None, Some(diagnostic), 1)
+    }
+
+    /// 何も stdout へ出さず、stderr へ助言を出して**止めずに**終わる。
+    ///
+    /// 終了コード 3 は PreToolUse の拒否 (2) でも成功 (0) でもない第 3 の観測であり、
+    /// 規則を自前で先読みするハーネスへ「今回は付けられなかった」とだけ伝える
+    /// (upstream `hooks/aidlc-deliver-stage-rules.ts:337-345`)。
+    #[must_use]
+    pub const fn hook_advisory(diagnostic: String) -> Completion {
+        Self::new(None, Some(diagnostic), 3)
     }
 
     /// stdout へ出す 1 行（改行は書く側が付ける）。
@@ -129,7 +169,9 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         .project_dir()
         .map_or_else(|| cwd.to_path_buf(), std::path::PathBuf::from);
     let layout = Layout::resolve(&project_dir);
-    match parse(Face::of(argv0), invocation.rest()) {
+    let completion = match parse(Face::of(argv0), invocation.rest()) {
+        Request::TestingPosture { args } => testing_posture::run(&layout, &args).await,
+        Request::Hook { name } => run_hook(&layout, &name).await,
         Request::Next(input) => emit(next(&layout, *input).await),
         Request::Continue { token } => emit(resume(&layout, &token).await),
         Request::Report(args) => report(&layout, &args).await,
@@ -145,7 +187,10 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
             )))
         }
         Request::LogReview(args) => log_review(&layout, &args).await,
-        Request::LogNotWired { verb } => Completion::refused(wording::log_verb_not_wired(&verb)),
+        Request::LogDecision(args) => log_decision(&layout, &args).await,
+        Request::LogAnswer(args) => log_answer(&layout, &args).await,
+        Request::Jump(args) => jump::run(&layout, &args).await,
+        Request::LogLink(args) => pipeline_link::run(&layout, &args).await,
         Request::UnknownLogVerb { given } => {
             Completion::refused(wording::unknown_log_subcommand(given.as_deref()))
         }
@@ -161,6 +206,19 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         Request::UnknownBoltVerb { given } => {
             Completion::refused(wording::unknown_bolt_subcommand(given.as_deref()))
         }
+        Request::LearningsSurface(args) => learnings::surface(&layout, &args).await,
+        Request::LearningsPersist(args) => learnings::persist(&layout, &args).await,
+        Request::LearningsHelp => Completion::emitted(wording::LEARNINGS_HELP.to_string()),
+        Request::UnknownLearningsVerb { given } => {
+            Completion::refused(wording::unknown_learnings_subcommand(given.as_deref()))
+        }
+    };
+    if Face::of(argv0) == Face::Log {
+        log_failure::finish(&layout, "aidlc-log", args, completion).await
+    } else if Face::of(argv0) == Face::Jump {
+        log_failure::finish(&layout, "aidlc-jump", args, completion).await
+    } else {
+        completion
     }
 }
 
@@ -176,23 +234,137 @@ fn emit(outcome: Result<(Directive, Vec<u8>), String>) -> Completion {
     }
 }
 
+/// 構造化済みの指示を表示する前に、発行の事実を保存して公開する。
+async fn publish_directive(
+    layout: &Layout,
+    directive: &Directive,
+    key: &[u8],
+) -> Result<(), String> {
+    use core_command_domain::orchestration::{DirectivePublication, PublishedDirective};
+    // Stop自身の確認は発行権限を更新しない。本家 emit の同じ環境入力に対応する。
+    if std::env::var("AIDLC_STOP_HOOK_PROBE").as_deref() == Ok("1") {
+        return Ok(());
+    }
+    let publication = match directive {
+        Directive::RunStage(run) => PublishedDirective::RunStage {
+            stage: StageSlug::parse(run.stage().as_str()).map_err(|error| error.to_string())?,
+            unit: run.unit().map(|unit| unit.name().as_str().to_string()),
+        },
+        Directive::LoadSteering(load) => PublishedDirective::LoadSteering {
+            stage: StageSlug::parse(load.stage().as_str()).map_err(|error| error.to_string())?,
+            part: load.part().as_u32(),
+            parts: load.parts().as_u32(),
+            token: core_query_interface_adapter::mint_continue_token(key, load.continue_token()),
+        },
+        _ => return Ok(()),
+    };
+    let Some(cursor) = active_execution(layout).map_err(|error| error.to_string())? else {
+        return Ok(());
+    };
+    Presenter::new(key.to_vec())
+        .render(directive)
+        .map_err(|_| wording::refusing_oversize_directive(DIRECTIVE_MAX_BYTES))?;
+    let project = std::fs::canonicalize(layout.project_dir()).map_err(|error| error.to_string())?;
+    let project = project
+        .to_str()
+        .ok_or_else(|| "Project path is not UTF-8".to_string())?;
+    let state = layout
+        .state_file()
+        .ok_or_else(|| "Directive publication requires workflow state".to_string())?;
+    let state = std::fs::read(state).map_err(|error| error.to_string())?;
+    let publication = DirectivePublication::new(
+        core_infrastructure::hash::sha256_hex(project.as_bytes()),
+        core_infrastructure::hash::sha256_hex(&state),
+        publication,
+    );
+    let publication = if publication.directive().stage().as_str() == "code-generation" {
+        publication.with_source_floor(Some(
+            crate::source_fingerprint::read(layout.project_dir())
+                .unwrap_or_else(|_| "unbindable".to_string()),
+        ))
+    } else {
+        publication
+    };
+    let mut approval = plan_approval::PlanApprovalAccess::open(layout).await?;
+    approval
+        .publish(layout, cursor.execution_id(), publication)
+        .await
+}
+
+/// トークンの外側のJSONを変えず、実際の状態本文を入力境界で束縛する。
+fn bind_state_text(layout: &Layout, directive: Directive) -> Result<Directive, String> {
+    let Directive::LoadSteering(load) = directive else {
+        return Ok(directive);
+    };
+    if load.continue_token().bindings().state().is_none() {
+        return Ok(Directive::LoadSteering(load));
+    }
+    let path = layout
+        .state_file()
+        .ok_or_else(|| "Cannot bind continuation without workflow state".to_string())?;
+    let body = std::fs::read(path).map_err(|error| error.to_string())?;
+    let digest = core_query_use_case::orchestration::StateTextDigest::parse(
+        &core_infrastructure::hash::sha256_hex(&body),
+    )
+    .ok_or_else(|| "Invalid state text digest".to_string())?;
+    Ok(Directive::LoadSteering(load.with_state_text_digest(digest)))
+}
+
 /// `next` — 初回だけ定義を準備し、リードモデルを追いつかせてから構造化面を引く。
+fn records_exist_without_cursor(layout: &Layout) -> bool {
+    if layout.record_dir().is_some() {
+        return false;
+    }
+    if std::fs::read_to_string(layout.intents_dir().join("active-intent"))
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        return false;
+    }
+    std::fs::read_dir(layout.intents_dir())
+        .ok()
+        .is_some_and(|entries| {
+            entries.flatten().any(|e| {
+                e.file_type().is_ok_and(|t| t.is_dir())
+                    && !e.file_name().to_string_lossy().starts_with('.')
+            })
+        })
+}
+
 async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u8>), String> {
+    let input = if layout.record_dir().is_none() && records_exist_without_cursor(layout) {
+        input.with_records_without_cursor()
+    } else {
+        input
+    };
+    // 本家 resolveScope の環境観測。空値は未指定、空白は ECMAScript trim に合わせる。
+    let input = match std::env::var("AWS_AIDLC_DEFAULT_SCOPE") {
+        Ok(value) if !core_infrastructure::ecmascript::trim(&value).is_empty() => {
+            input.with_env_default_scope(core_infrastructure::ecmascript::trim(&value))
+        }
+        _ => input,
+    };
+    // 終端の読取り操作は継続鍵も作らない。本家2.7.1の入口優先順を保つ。
+    if let Some(directive) = turn::pre_guard(&input) {
+        return Ok((directive, Vec::new()));
+    }
     // 鍵は `next` だけが鋳造する（I8 の例外 1 — steering MAC キー）。
     let key = SteeringKey::resolve(layout.project_dir(), layout.record_dir());
     let bytes = key
         .mint_for_next()
         .map_err(|error| key_wording(&key, &error))?;
 
-    // 配布物やストアを読まなくても答えが決まる拒否・ユーティリティは、初回準備より先に返す。
-    if let Some(directive) = turn::pre_guard(&input) {
-        return Ok((directive, bytes));
-    }
     if layout.record_dir().is_none() {
         prepare_definition_for_first_read(layout).await?;
     }
     catch_up_before_reading(layout).await?;
-    Ok((turn::next(layout, &input), bytes))
+    let mut directive = bind_state_text(layout, turn::next(layout, &input))?;
+    if pipeline_link::begin_single(layout, &directive).await? {
+        catch_up(layout).await?;
+        directive = bind_state_text(layout, turn::next(layout, &input))?;
+    }
+    publish_directive(layout, &directive, &bytes).await?;
+    Ok((directive, bytes))
 }
 
 /// `continue` — 鍵は**読むだけ**。無ければ・壊れていれば fail-closed（I12）。
@@ -213,7 +385,44 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
         Err(error) => return Err(key_wording(&key, &error)),
     };
     let verified = verify_continue_token(&bytes, token).ok();
-    Ok((turn::resume(layout, verified.as_ref()), bytes))
+    if let Some(verified) = &verified
+        && verified.bindings().state().is_some()
+    {
+        let matches = match (verified.state_text_digest(), layout.state_file()) {
+            (Some(expected), Some(path)) => std::fs::read(path).is_ok_and(|body| {
+                core_infrastructure::hash::sha256_hex(&body) == expected.as_str()
+            }),
+            _ => false,
+        };
+        if !matches {
+            return Ok((
+                Directive::Error {
+                    message: wording::STATE_MOVED_ON.to_string(),
+                },
+                bytes,
+            ));
+        }
+    }
+    // 継続を組み立てる前の作業文脈を控える (drift の突き合わせ相手)。
+    let snapshot = continuation_cursor::Snapshot::capture(layout);
+    let mut directive = bind_state_text(layout, turn::resume(layout, verified.as_ref()))?;
+    if pipeline_link::begin_single(layout, &directive).await? {
+        catch_up(layout).await?;
+        directive = bind_state_text(layout, turn::resume(layout, verified.as_ref()))?;
+    }
+    // カーソル照合 — 組み立て済みの結果を出す前に、提示トークンが現行か確かめる。
+    // 拒否のときは publish しない: どの逐語も「やり直せ」であり、`Busy` に至っては
+    // 「この呼び出しはカーソルを動かしていない」と明言している。
+    if let Some(message) = continuation_cursor::inspect(layout, &snapshot, token).refusal() {
+        return Ok((
+            Directive::Error {
+                message: message.to_string(),
+            },
+            bytes,
+        ));
+    }
+    publish_directive(layout, &directive, &bytes).await?;
+    Ok((directive, bytes))
 }
 
 /// `report` — 13 段ガードを順に通し、決まった遷移をコミットして投影で読み面へ落とす。
@@ -235,7 +444,10 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
 async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     // 読む面（状態ファイル・実行行）が最新でないと段 1 と段 4 が古い値で判断する。
     // 書いた事実を落とすのはコミットの後（末尾の `catch_up`）である。
-    if let Err(message) = catch_up_before_reading(layout).await {
+    // カーソル破損時は投影対象を推測しない。各report経路が下で既定の順序・文言で拒否する。
+    if active_execution(layout).is_ok()
+        && let Err(message) = catch_up_before_reading(layout).await
+    {
         return Completion::refused(message);
     }
 
@@ -290,6 +502,23 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         // 作業が続く。
         Err(error) => return emit_error(wording::unreadable_execution_cursor(&error.to_string())),
     };
+    // 完了時の観測を保存要求へ渡す。RMUが後日のファイルから再採取しない。
+    let validation = if verdict == Verdict::Forward {
+        crate::validation_basis::read(layout, explicit)
+    } else {
+        None
+    };
+    let (baseline, workspace_stages) = if matches!(verdict, Verdict::Forward | Verdict::Skipped) {
+        match crate::source_baseline::for_report(layout) {
+            Ok(observation) => observation,
+            Err(error) => return emit_error(error),
+        }
+    } else {
+        (
+            None,
+            core_command_domain::orchestration::StageSlugSet::empty(),
+        )
+    };
     // 段 13 の env — 判定そのものは集約が持つ（ここは観測を載せるだけ）。
     let request = ReportRequest::new(
         verdict,
@@ -297,6 +526,15 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         args.user_input().map(str::to_string),
         args.reason().map(str::to_string),
         human_presence_guard(),
+    )
+    .with_validation(validation)
+    .with_source_baseline(baseline, workspace_stages)
+    .with_pipeline_observation(
+        pipeline_link::current(layout),
+        std::env::var("AIDLC_DISABLE_ENSEMBLE_EVIDENCE")
+            .ok()
+            .as_deref()
+            == Some("1"),
     );
     let (
         Ok(intent_execution_repository),
@@ -311,21 +549,30 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
     // 段 11 のレビュー方針は定義から引く（Approve 段だけが読む — b48）。
+    let report_id = ReportId::generate();
     let outcome = CommitVerdictUseCase::new(
         intent_execution_repository,
         intent_repository,
         workflow_definition_repository,
     )
-    .execute(&execution_id, request, Utc::now())
+    .execute(&execution_id, &report_id, request, Utc::now())
     .await;
-    let directive = match outcome {
-        Ok(outcome) => outcome,
-        Err(error) => return emit_error(commit_refusal(raw, &error)),
-    };
+    if let Err(error) = outcome {
+        return emit_error(commit_refusal(raw, &error));
+    }
     // 書いた事実をリードモデルへ落とす（U7 の責務「コマンド末尾の RMU 起動」）。
     // ここは握り潰さない — 描けなければ利用者には何も見えないままになる。
     after_projection(layout, || {
-        emit(Ok((committed_directive(raw, &directive), Vec::new())))
+        let result = ReadModelDaos::open(store.as_path()).and_then(|daos| {
+            ReportResultUseCase::new(daos.report_result()).execute(report_id.as_str())
+        });
+        match result {
+            Ok(Some(view)) => emit(Ok((committed_directive(raw, &view), Vec::new()))),
+            Ok(None) => emit_error(wording::orchestrate_failure(
+                "report result unavailable after projection",
+            )),
+            Err(error) => emit_error(wording::orchestrate_failure(&error.to_string())),
+        }
     })
     .await
 }
@@ -398,16 +645,25 @@ async fn single_report(
             ));
         }
     };
-    let (Ok(intent_execution_repository), Ok(intent_repository)) = (
+    let (Ok(intent_execution_repository), Ok(intent_repository), Ok(definitions)) = (
         IntentExecutionRepositoryImpl::open(store),
         IntentRepositoryImpl::open(store),
+        WorkflowDefinitionRepositoryImpl::open(store),
     ) else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
-    if let Err(error) =
-        RecordSingleStageRunUseCase::new(intent_execution_repository, intent_repository)
-            .execute(&execution_id, &slug, Utc::now())
-            .await
+    if let Err(error) = RecordSingleStageRunUseCase::new(
+        intent_execution_repository,
+        intent_repository,
+        definitions,
+        pipeline_link::current(layout),
+        std::env::var("AIDLC_DISABLE_ENSEMBLE_EVIDENCE")
+            .ok()
+            .as_deref()
+            == Some("1"),
+    )
+    .execute(&execution_id, &slug, Utc::now())
+    .await
     {
         return emit_error(single_run_refusal(stage, &error));
     }
@@ -428,6 +684,28 @@ async fn single_report(
 /// 逐語を選ぶのは**出す側**である（`coding-rules/error-handling.md`）。集約が運ぶのは
 /// `InvalidTarget` という材料だけなので、initialization の逐語はここで当てる。
 fn single_run_refusal(stage: &str, error: &SingleStageRunError) -> String {
+    if let SingleStageRunError::Command {
+        error: CommandError::SingleStageAttemptNotOpen,
+        ..
+    } = error
+    {
+        return format!(
+            "Cannot complete isolated stage \"{stage}\": no open single-stage:{stage} STAGE_STARTED boundary exists. Run `next --stage {stage} --single` first."
+        );
+    }
+    if let SingleStageRunError::Command {
+        error:
+            CommandError::PipelineLinksMissing {
+                stage,
+                missing,
+                single,
+            },
+        ..
+    } = error
+    {
+        return pipeline_link::missing_wording(stage, missing, *single);
+    }
+
     match error {
         SingleStageRunError::UnknownStage { .. } => wording::unknown_stage(stage),
         SingleStageRunError::Command {
@@ -483,6 +761,7 @@ async fn skeleton_stance_report(layout: &Layout, stance: &str, store: &StorePath
         emit(Ok((
             Directive::Print {
                 message: wording::skeleton_stance_recorded(stance.as_str(), &current_stage),
+                narration: None,
             },
             Vec::new(),
         )))
@@ -552,7 +831,13 @@ fn resume_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         // 拒否は**正規化前の生値**を埋める（upstream も `flags.userInput` をそのまま出す）。
         return emit_error(wording::unrecognized_resume_choice(user_input));
     };
-    emit(Ok((Directive::Print { message }, Vec::new())))
+    emit(Ok((
+        Directive::Print {
+            message,
+            narration: None,
+        },
+        Vec::new(),
+    )))
 }
 
 /// 空白だけの `--stage` は「無い」と同じ（upstream の `flags.stage?.trim()`）。
@@ -608,76 +893,75 @@ fn current_execution_view(layout: &Layout) -> Result<Option<(String, String)>, S
 }
 
 /// 成功 3 形を directive へ写す（`raw` は報告された生の語）。
-fn committed_directive(raw: &str, outcome: &CommitOutcome) -> Directive {
-    match outcome {
-        CommitOutcome::Committed {
-            stage,
-            scope,
-            steps,
-        } => committed_transition(raw, stage.as_str(), scope, steps),
-        CommitOutcome::NoOp { scope, no_op, .. } => no_op_directive(scope, no_op),
+fn committed_directive(raw: &str, outcome: &ReportResultView) -> Directive {
+    let invalid = || Directive::Error {
+        message: wording::orchestrate_failure("invalid projected report result"),
+    };
+    let stage = outcome.stage();
+    let scope = outcome.scope();
+    match outcome.result_kind() {
+        "committed" => {
+            let Ok(steps) = serde_json::from_str::<Vec<String>>(outcome.steps()) else {
+                return invalid();
+            };
+            let names: Vec<&str> = steps.iter().map(String::as_str).collect();
+            match names.as_slice() {
+                ["gate-start" | "reject" | "revise"] => Directive::Print {
+                    message: wording::recorded_result(raw, stage),
+                    narration: None,
+                },
+                ["skip"] => Directive::Done {
+                    reason: Some(wording::committed_skip(stage, scope)),
+                },
+                ["approve"] | ["gate-start", "approve"] => Directive::Done {
+                    reason: Some(wording::committed_transition(
+                        &names.join(" + "),
+                        stage,
+                        scope,
+                    )),
+                },
+                _ => invalid(),
+            }
+        }
+        "no_op" => match outcome.no_op_reason() {
+            Some("already_awaiting") => Directive::Print {
+                message: wording::already_awaiting_approval(stage),
+                narration: None,
+            },
+            Some("already_completed_moved_on") => match outcome.current_stage() {
+                Some(current) => Directive::Done {
+                    reason: Some(wording::already_completed_moved_on(stage, current, scope)),
+                },
+                None => invalid(),
+            },
+            Some("workflow_already_completed") => Directive::Done {
+                reason: Some(wording::workflow_already_completed(stage, scope)),
+            },
+            _ => invalid(),
+        },
+        _ => invalid(),
     }
 }
 
-/// コミットした段の列を逐語へ写す。
-///
-/// gate 系 3 段は `print`（`Recorded <result> for "<slug>".`）、読み飛ばしと前進は `done`。
-fn committed_transition(raw: &str, stage: &str, scope: &str, steps: &TransitionSteps) -> Directive {
-    // 段の同定は名前付きクエリで行う（スライスの形合わせをやめる — BR5.5）。
-    let recorded = [
-        TransitionStep::GateStart,
-        TransitionStep::Reject,
-        TransitionStep::Revise,
-    ]
-    .into_iter()
-    .any(|step| steps.is_single(step));
-    if recorded {
-        return Directive::Print {
-            message: wording::recorded_result(raw, stage),
-        };
-    }
-    if steps.is_single(TransitionStep::Skip) {
-        return Directive::Done {
-            reason: Some(wording::committed_skip(stage, scope)),
-        };
-    }
-    Directive::Done {
-        reason: Some(wording::committed_transition(
-            &steps
-                .fold_left(Vec::new(), |mut names, step| {
-                    names.push(step.subcommand());
-                    names
-                })
-                .join(" + "),
-            stage,
-            scope,
-        )),
-    }
-}
-
-/// no-op 3 形を directive へ写す。
-fn no_op_directive(scope: &str, no_op: &ReportNoOp) -> Directive {
-    match no_op {
-        ReportNoOp::AlreadyAwaiting { stage } => Directive::Print {
-            message: wording::already_awaiting_approval(stage.as_str()),
-        },
-        ReportNoOp::AlreadyCompletedMovedOn { stage, current } => Directive::Done {
-            reason: Some(wording::already_completed_moved_on(
-                stage.as_str(),
-                current.as_str(),
-                scope,
-            )),
-        },
-        ReportNoOp::WorkflowAlreadyCompleted { stage } => Directive::Done {
-            reason: Some(wording::workflow_already_completed(stage.as_str(), scope)),
-        },
-    }
-}
-
-/// 失敗を逐語へ写す（`raw` は報告された生の語 — upstream も `flags.result` を埋める）。
+/// 報告の拒否材料を公開文言へ写す。
 fn commit_refusal(raw: &str, error: &CommitError) -> String {
     match error {
         CommitError::Refused(refusal) => report_refusal(raw, refusal),
+        CommitError::Pipeline(CommandError::PipelineLinksMissing {
+            stage,
+            missing,
+            single,
+        }) => pipeline_link::missing_wording(stage, missing, *single),
+        CommitError::Pipeline(error) => error.to_string(),
+        CommitError::Transition {
+            error:
+                CommandError::PipelineLinksMissing {
+                    stage,
+                    missing,
+                    single,
+                },
+            ..
+        } => pipeline_link::missing_wording(stage, missing, *single),
         // 段 11 — レビュアー受領証の欠落だけは `aidlc-state.ts approve` の stderr 逐語を
         // 包み文の中に置く（upstream も spawn 先の出力をそのまま挟む — b46 の既存形）。
         // 段 12 — 昇格受領証の欠落は **orchestrate 自身の** error directive である
@@ -754,6 +1038,643 @@ fn gate_precondition(verdict: Verdict, stage: &str, state: &str) -> String {
     }
 }
 
+/// 人間応答フックは配布の明示契約どおり、記録失敗でも人間の入力を止めない。
+async fn run_hook(layout: &Layout, name: &str) -> Completion {
+    if !matches!(
+        name,
+        "record-human-turn"
+            | "state-transition-guard"
+            | "write-audit-log"
+            | "continue-workflow"
+            | "session-start"
+            | "session-end"
+            | "log-subagent"
+            | "validate-state"
+            | "sync-workflow-state"
+            | "rebuild-stage-graph"
+            | "review-freeze"
+            | "reviewer-scope"
+            | "deliver-stage-rules"
+            | "fold-usage"
+    ) {
+        return Completion::refused(format!("Unknown hook: {name}"));
+    }
+    use std::io::Read as _;
+    let mut bytes = Vec::new();
+    if std::io::stdin().read_to_end(&mut bytes).is_err() {
+        return Completion::silent();
+    }
+    // Bun.stdin.textと同じ置換復号。保護された応答のsession/内容の検査は別に行う。
+    let input = String::from_utf8_lossy(&bytes);
+    if name == "session-start" {
+        return session_start::run(layout, &input).await;
+    }
+    if name == "session-end" {
+        return session_hooks::end_session(layout, &input).await;
+    }
+    if name == "log-subagent" {
+        return session_hooks::complete_subagent(layout, &input).await;
+    }
+    if name == "validate-state" {
+        return session_hooks::validate_state(layout, &input).await;
+    }
+    if name == "sync-workflow-state" {
+        return task_sync::run(layout, &input).await;
+    }
+    if name == "review-freeze" {
+        return review_guards::freeze(layout, &input).await;
+    }
+    if name == "reviewer-scope" {
+        return review_guards::reviewer_scope(layout, &input).await;
+    }
+    if name == "rebuild-stage-graph" {
+        return runtime_graph::run(layout, &input).await;
+    }
+    if name == "deliver-stage-rules" {
+        return dispatch_rules::run(layout, &input).await;
+    }
+    if name == "fold-usage" {
+        return fold_usage::run(layout, &input);
+    }
+    if name == "continue-workflow" {
+        return continuation::run(layout, &input).await;
+    }
+    if name == "write-audit-log" {
+        let health = observe_hook_health(layout, name).await;
+        if health.code != 0 {
+            return health;
+        }
+        if let Err(error) = audit_artifact_after_write(layout, &input).await {
+            let _ = record_hook_drop(layout, name, &error).await;
+        }
+        return Completion::silent();
+    }
+    if name == "state-transition-guard" {
+        let result = match harness_claude::StateTransitionGuard::evaluate(&input) {
+            Ok(result) => result,
+            Err(error) => return Completion::refused(error.to_string()),
+        };
+        return result.denial().map_or_else(Completion::silent, |reason| {
+            Completion::hook_denied(reason.to_string())
+        });
+    }
+    // フックの失敗を承認権限としては使わない。保存された事実だけが後段の材料になる。
+    if name != "record-human-turn" {
+        return Completion::refused(format!("Unknown hook: {name}"));
+    }
+    let _ = observe_human_prompt(layout, &input).await;
+    Completion::silent()
+}
+
+/// 監査対象ファイルの保存事実を、既存のRMU描画と同じ監査ブロックへ追記する。
+async fn audit_artifact_after_write(layout: &Layout, input: &str) -> Result<(), String> {
+    let value: serde_json::Value = match serde_json::from_str(input) {
+        Ok(value) => value,
+        Err(_) => return Ok(()),
+    };
+    if !value.is_object() {
+        return Ok(());
+    }
+    let layout = layout_for_artifact_only(layout)?;
+    let tool = value
+        .get("tool_name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let raw = value
+        .get("tool_input")
+        .and_then(|input| input.get("file_path"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if raw.is_empty() {
+        return Ok(());
+    }
+    let file = if Path::new(raw).is_absolute() {
+        Path::new(raw).to_path_buf()
+    } else {
+        layout.project_dir().join(raw)
+    };
+    let file = std::fs::canonicalize(&file).unwrap_or(file);
+    let record_root = layout.record_dir().map(Path::to_path_buf);
+    let codekb_root = layout
+        .aidlc_root()
+        .join("spaces")
+        .join(layout.space())
+        .join("codekb");
+    let context = if let Some(root) = record_root.as_ref().filter(|root| file.starts_with(root)) {
+        file.strip_prefix(root)
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/")
+            .replace('/', " > ")
+    } else if file.starts_with(&codekb_root) {
+        format!(
+            "codekb > {}",
+            file.strip_prefix(&codekb_root)
+                .map_err(|error| error.to_string())?
+                .to_string_lossy()
+                .replace('\\', "/")
+                .replace('/', " > ")
+        )
+    } else {
+        return Ok(());
+    };
+    if file.ends_with("audit.md")
+        || file
+            .components()
+            .any(|component| component.as_os_str() == "audit")
+            && file.extension().and_then(|ext| ext.to_str()) == Some("md")
+    {
+        return Ok(());
+    }
+    let audit_dir = layout
+        .audit_dir()
+        .ok_or_else(|| "active audit directory is missing".to_string())?;
+    let _audit = std::fs::read_dir(&audit_dir)
+        .map_err(|error| error.to_string())?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("md"))
+        .ok_or_else(|| "active audit shard is missing".to_string())?;
+    let event = if tool == "Edit" {
+        EventType::ArtifactUpdated
+    } else {
+        let metadata = std::fs::metadata(&file).map_err(|error| error.to_string())?;
+        if metadata
+            .modified()
+            .ok()
+            .zip(metadata.created().ok())
+            .is_some_and(|(modified, created)| {
+                modified
+                    .duration_since(created)
+                    .is_ok_and(|delta| delta.as_millis() < 10)
+            })
+        {
+            EventType::ArtifactCreated
+        } else {
+            EventType::ArtifactUpdated
+        }
+    };
+    let record = layout
+        .record_dir()
+        .and_then(|path| path.file_name().and_then(|value| value.to_str()))
+        .and_then(|value| core_command_domain::workspace::IntentDirName::parse(value).ok())
+        .ok_or_else(|| "active artifact record is missing".to_string())?;
+    let space = SpaceName::parse(layout.space()).map_err(|error| format!("{error:?}"))?;
+    let target = core_command_domain::workspace::HookHealthTarget::new(space, Some(record));
+    let observation = core_command_domain::workspace::ArtifactWriteObservation::new(
+        target,
+        tool.to_string(),
+        file.to_string_lossy().into_owned(),
+        context,
+        event == EventType::ArtifactCreated,
+    );
+    let store = store_path(&layout)?;
+    let repository =
+        ArtifactAuditRepositoryImpl::open(&store).map_err(|error| error.to_string())?;
+    RecordArtifactObservationUseCase::new(repository)
+        .execute(observation, Utc::now())
+        .await
+        .map_err(|error| match error {
+            ArtifactAuditCommandError::Domain(error) => error.to_string(),
+            ArtifactAuditCommandError::Repository(error) => error.to_string(),
+        })?;
+    catch_up(&layout).await
+}
+
+/// state ファイルがまだ無い TypeScript 由来の record でも、Artifact-only の投影先を解決する。
+/// 状態を作成せず、active-intent の配置だけを通常 RMU へ渡す。
+fn layout_for_artifact_only(layout: &Layout) -> Result<Layout, String> {
+    // `state_file()` は `record_dir` から導くので、ここから先は record が無い配置だけである。
+    if layout.state_file().is_some() {
+        return Ok(layout.clone());
+    }
+    let cursor = std::fs::read_to_string(layout.intents_dir().join("active-intent"))
+        .map_err(|error| error.to_string())?;
+    let record = core_command_domain::workspace::IntentDirName::parse(cursor.trim())
+        .map_err(|_| "active artifact record is invalid".to_string())?;
+    let space = SpaceName::parse(layout.space()).map_err(|error| format!("{error:?}"))?;
+    Ok(Layout::for_record(layout.project_dir(), &space, &record))
+}
+
+/// 監査追記の失敗をHookHealthのdrop事実へ保存する。
+async fn record_hook_drop(layout: &Layout, name: &str, reason: &str) -> Result<(), String> {
+    let space = SpaceName::parse(layout.space()).map_err(|error| format!("{error:?}"))?;
+    let record = layout.record_dir().and_then(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| core_command_domain::workspace::IntentDirName::parse(name).ok())
+    });
+    let target = core_command_domain::workspace::HookHealthTarget::new(space, record);
+    let hook =
+        core_command_domain::workspace::HookName::parse(name).map_err(|error| error.to_string())?;
+    // 初回は共有ストアを準備する。使用済みストアの消失は共通検証で拒否する。
+    plan_approval::prepare_hook_store(layout)?;
+    let path = StorePath::for_runtime(&layout.aidlc_root());
+    let repository = HookHealthRepositoryImpl::open(&path).map_err(|error| error.to_string())?;
+    core_command_use_case::orchestration::RecordHookDropUseCase::new(repository)
+        .execute(&target, &hook, reason, Utc::now())
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut updater =
+        HookHealthReadModelUpdater::open(path.as_path()).map_err(|error| error.to_string())?;
+    updater.catch_up().map_err(|error| error.to_string())
+}
+
+/// write-audit-logの稼働事実を承認ストリームと分離して保存する。
+async fn observe_hook_health(layout: &Layout, name: &str) -> Completion {
+    let Ok(space) = SpaceName::parse(layout.space()) else {
+        return Completion::refused(wording::invalid_active_space(layout.space()));
+    };
+    let record = layout.record_dir().and_then(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| core_command_domain::workspace::IntentDirName::parse(name).ok())
+    });
+    let target = core_command_domain::workspace::HookHealthTarget::new(space, record);
+    let heartbeat_path = layout
+        .aidlc_root()
+        .join(target.relative_directory())
+        .join(".aidlc-hooks-health")
+        .join(format!("{name}.last"));
+    let hook = match core_command_domain::workspace::HookName::parse(name) {
+        Ok(hook) => hook,
+        Err(error) => return Completion::refused(error.to_string()),
+    };
+    let id = core_command_domain::workspace::HookHealthId::for_hook(&target, &hook);
+    let path = StorePath::for_runtime(&layout.aidlc_root());
+    // 承認初期化と同じmarker検証を通し、使用済み共有ストアの欠落を修復しない。
+    if let Err(error) = plan_approval::prepare_hook_store(layout) {
+        return Completion::refused(error);
+    }
+    let mut repository = match HookHealthRepositoryImpl::open(&path) {
+        Ok(repository) => repository,
+        Err(error) => return Completion::refused(error.to_string()),
+    };
+    let result = match repository.find_by_id(&id).await {
+        Ok(mut health) => health
+            .observe_heartbeat(Utc::now())
+            .map(|event| (event, health)),
+        Err(core_command_use_case::orchestration::RepositoryError::NotFound { .. }) => {
+            core_command_domain::workspace::HookHealth::start(target, hook, Utc::now())
+                .map(|(health, event)| (event, health))
+        }
+        Err(error) => return Completion::refused(error.to_string()),
+    };
+    match result {
+        Ok((event, health)) => match repository.store(&event, &health).await {
+            Ok(()) => match HookHealthReadModelUpdater::open(path.as_path()) {
+                Ok(mut updater) => match updater.catch_up() {
+                    Ok(()) => Completion::silent(),
+                    Err(error) => Completion::refused(wording::hook_heartbeat_failure(
+                        &error,
+                        name,
+                        &heartbeat_path,
+                    )),
+                },
+                Err(error) => Completion::refused(error.to_string()),
+            },
+            Err(error) => Completion::refused(error.to_string()),
+        },
+        Err(error) => Completion::refused(error.to_string()),
+    }
+}
+
+async fn observe_human_prompt(layout: &Layout, input: &str) -> Result<(), String> {
+    let Some(state) = layout.state_file() else {
+        return Ok(());
+    };
+    if !state.try_exists().map_err(|error| error.to_string())? {
+        return Ok(());
+    }
+    let Some(cursor) = active_execution(layout).map_err(|error| error.to_string())? else {
+        return Ok(());
+    };
+    let envelope = harness_claude::HumanTurnEnvelope::parse(input);
+    let store = store_path(layout)?;
+    let repository =
+        IntentExecutionRepositoryImpl::open(&store).map_err(|error| error.to_string())?;
+    let unattended = std::env::var("AIDLC_UNATTENDED").is_ok_and(|value| value == "1");
+    let mut shared_failure = None;
+    if !unattended
+        && (layout
+            .aidlc_root()
+            .join(".aidlc-runtime.state.json")
+            .exists()
+            || StorePath::for_runtime(&layout.aidlc_root())
+                .as_path()
+                .exists())
+        && let Ok(session) =
+            core_command_domain::orchestration::PlanSession::new(envelope.session().to_string())
+    {
+        match plan_approval::PlanApprovalAccess::open(layout).await {
+            Ok(mut access) => {
+                return access
+                    .record_response(layout, cursor.execution_id(), session, envelope.response())
+                    .await;
+            }
+            Err(error) => shared_failure = Some(error),
+        }
+    }
+    core_command_use_case::orchestration::ObservePromptUseCase::new(repository)
+        .execute(
+            cursor.execution_id(),
+            envelope.session(),
+            envelope.response(),
+            unattended,
+            Utc::now(),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    catch_up(layout).await?;
+    shared_failure.map_or(Ok(()), Err)
+}
+
+fn summary_choice_refusal(details: &str) -> String {
+    format!(
+        "Cannot record the summary choice because reply {} did not match an offered option. Present \"Looks correct\" and \"Request changes\". Re-present those choices and wait for the human to choose one.",
+        serialize(
+            &JsonValue::String(details.trim().to_string()),
+            SerializationProfile::ContractCompact
+        )
+    )
+}
+
+/// 回答の意味を集約が受理し、指定AnswerIdの投影結果だけを表示する。
+async fn log_answer(layout: &Layout, args: &crate::cli::InteractionArgs) -> Completion {
+    if let Some(error) = args.parse_error() {
+        return Completion::refused(error.to_string());
+    }
+    let Some(stage) = args.value("stage").filter(|value| !value.is_empty()) else {
+        return Completion::refused("Missing --stage <slug>".to_string());
+    };
+    let Some(details) = args.value("details").filter(|value| !value.is_empty()) else {
+        return Completion::refused("Missing --details <text>".to_string());
+    };
+    if let Some(checkpoint) = args.value("checkpoint") {
+        if checkpoint == "plan-approval" {
+            let id = core_command_domain::orchestration::PlanApprovalOperationId::generate();
+            if let Err(error) = plan_approval::answer(layout, args, id.clone()).await {
+                return Completion::refused(error);
+            }
+            let daos = match core_query_interface_adapter::ReadModelDaos::open(
+                core_command_domain::workspace::StorePath::for_runtime(&layout.aidlc_root())
+                    .as_path(),
+            ) {
+                Ok(daos) => daos,
+                Err(error) => return Completion::refused(error.to_string()),
+            };
+            let result = match core_query_use_case::orchestration::PlanAnswerUseCase::new(
+                daos.plan_answer(),
+            )
+            .execute(id.as_str())
+            {
+                Ok(Some(result)) => result,
+                Ok(None) => {
+                    return Completion::refused(
+                        "Recorded Plan Approval answer projection is missing".to_string(),
+                    );
+                }
+                Err(error) => return Completion::refused(error.to_string()),
+            };
+            let Some(emitted) = result.emitted() else {
+                return Completion::refused(
+                    "Plan Approval answer has not completed audit delivery".to_string(),
+                );
+            };
+            let mut fields = ObjectMembers::new();
+            fields.insert("emitted", JsonValue::String(emitted.to_string()));
+            fields.insert("checkpoint", JsonValue::String("plan-approval".to_string()));
+            fields.insert("stage", JsonValue::String(result.stage().to_string()));
+            return Completion::emitted(serialize(
+                &JsonValue::Object(fields),
+                SerializationProfile::ContractCompact,
+            ));
+        }
+        if checkpoint != "summary-confirmation" {
+            return Completion::refused(format!(
+                "Unknown --checkpoint \"{checkpoint}\". Accepted: summary-confirmation, plan-approval"
+            ));
+        }
+        if core_command_domain::orchestration::SummaryChoice::parse(details).is_err() {
+            return Completion::refused(summary_choice_refusal(details));
+        }
+    }
+    for protected in ["unit", "single"] {
+        if args.value(protected).is_some() {
+            return Completion::refused(format!(
+                "Cannot record answer: --{protected} is not wired in this build."
+            ));
+        }
+    }
+    let summary = if args.value("checkpoint") == Some("summary-confirmation") {
+        match crate::summary_questions_input::read(layout, args.value("questions-file"), details) {
+            Ok(evidence) => Some(evidence),
+            Err(message) => return Completion::refused(message),
+        }
+    } else {
+        None
+    };
+    let cursor = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor,
+        Ok(None) => {
+            return Completion::refused(
+                "Cannot record answer without an active execution.".to_string(),
+            );
+        }
+        Err(error) => {
+            return Completion::refused(wording::unreadable_execution_cursor(&error.to_string()));
+        }
+    };
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return Completion::refused(message),
+    };
+    let repository = match IntentExecutionRepositoryImpl::open(&store) {
+        Ok(repository) => repository,
+        Err(error) => return Completion::refused(format!("Audit emission failed: {error}")),
+    };
+    let answer_id = core_command_domain::orchestration::AnswerId::generate();
+    let mut request = core_command_domain::orchestration::AnswerRequest::new(
+        stage,
+        details,
+        human_presence_guard(),
+    );
+    if let Some(evidence) = summary {
+        request = request.with_summary(evidence);
+    }
+    if let Err(error) = core_command_use_case::orchestration::RecordAnswerUseCase::new(repository)
+        .execute(cursor.execution_id(), &answer_id, &request, Utc::now())
+        .await
+    {
+        return Completion::refused(match error {
+            core_command_use_case::orchestration::InteractionCommandError::Answer(core_command_domain::orchestration::AnswerError::Dismissed) => format!("Cannot record reply {} because it represents a dismissed question, not a human answer. Re-present the question and wait for a real response before trying again.", serialize(&JsonValue::String(details.trim().to_string()), SerializationProfile::ContractCompact)),
+            core_command_use_case::orchestration::InteractionCommandError::Answer(core_command_domain::orchestration::AnswerError::HumanReplyMissing { approval_choice: true }) => "Cannot record this approval choice because no new human reply has arrived. After the human types their choice, use aidlc-orchestrate.ts report --result approved or rejected; do not use aidlc-log.ts answer for an approval.".to_string(),
+            core_command_use_case::orchestration::InteractionCommandError::Answer(core_command_domain::orchestration::AnswerError::HumanReplyMissing { approval_choice: false }) => "Cannot record this answer because no new human reply has arrived for the question. Wait for the human to type an answer, then try again.".to_string(),
+            core_command_use_case::orchestration::InteractionCommandError::Answer(core_command_domain::orchestration::AnswerError::InvalidSummaryChoice) => summary_choice_refusal(details),
+            core_command_use_case::orchestration::InteractionCommandError::Answer(core_command_domain::orchestration::AnswerError::SummaryQuestionMissing) => "Cannot record the summary choice because no matching unanswered summary question exists for this stage and work item. Record the question before presenting it, then wait for the human's choice.".to_string(),
+            core_command_use_case::orchestration::InteractionCommandError::Answer(core_command_domain::orchestration::AnswerError::SummaryHumanReplyMissing) => "Cannot record the summary choice because no human reply has arrived after this question, or that turn was already used by another decision. End the turn, wait for the human's choice, then try again.".to_string(),
+            error => format!("Audit emission failed: {error}"),
+        });
+    }
+    after_projection(layout, || {
+        let daos = match core_query_interface_adapter::ReadModelDaos::open(store.as_path()) {
+            Ok(daos) => daos,
+            Err(error) => {
+                return Completion::refused(format!("Answer result unavailable: {error}"));
+            }
+        };
+        let result = match core_query_use_case::orchestration::AnswerResultUseCase::new(
+            daos.answer_result(),
+        )
+        .execute(answer_id.as_str())
+        {
+            Ok(Some(result)) => result,
+            Ok(None) => return Completion::refused(format!("Answer result missing: {answer_id}")),
+            Err(error) => {
+                return Completion::refused(format!("Answer result unavailable: {error}"));
+            }
+        };
+        let mut fields = ObjectMembers::new();
+        match result.disposition() {
+            "summary-confirmation" => {
+                fields.insert(
+                    "emitted",
+                    JsonValue::String("SUMMARY_CONFIRMATION_RECORDED".to_string()),
+                );
+                fields.insert(
+                    "checkpoint",
+                    JsonValue::String("summary-confirmation".to_string()),
+                );
+            }
+            "recorded" => {
+                fields.insert(
+                    "emitted",
+                    JsonValue::String("QUESTION_ANSWERED".to_string()),
+                );
+            }
+            "approval-gate-report-owned" => {
+                fields.insert(
+                    "skipped",
+                    JsonValue::String("QUESTION_ANSWERED".to_string()),
+                );
+            }
+            value => return Completion::refused(format!("Unknown answer disposition: {value}")),
+        }
+        fields.insert("stage", JsonValue::String(result.stage().to_string()));
+        if result.disposition() == "approval-gate-report-owned" {
+            fields.insert(
+                "reason",
+                JsonValue::String("approval-gate-report-owned".to_string()),
+            );
+        }
+        Completion::emitted(serialize(
+            &JsonValue::Object(fields),
+            SerializationProfile::ContractCompact,
+        ))
+    })
+    .await
+}
+
+/// 質問提示をイベントへ保存し、投影完了後に呼出側の対象を応答する。
+async fn log_decision(layout: &Layout, args: &crate::cli::InteractionArgs) -> Completion {
+    if let Some(error) = args.parse_error() {
+        return Completion::refused(error.to_string());
+    }
+    let Some(stage) = args.value("stage").filter(|value| !value.is_empty()) else {
+        return Completion::refused("Missing --stage <slug>".to_string());
+    };
+    let Some(decision) = args.value("decision").filter(|value| !value.is_empty()) else {
+        return Completion::refused("Missing --decision <text>".to_string());
+    };
+    if let Some(checkpoint) = args.value("checkpoint") {
+        if checkpoint == "plan-approval" {
+            return match plan_approval::decision(layout, args).await {
+                Ok(()) => {
+                    let mut fields = ObjectMembers::new();
+                    fields.insert(
+                        "emitted",
+                        JsonValue::String("DECISION_RECORDED".to_string()),
+                    );
+                    fields.insert("stage", JsonValue::String(stage.to_string()));
+                    Completion::emitted(serialize(
+                        &JsonValue::Object(fields),
+                        SerializationProfile::ContractCompact,
+                    ))
+                }
+                Err(error) => Completion::refused(error),
+            };
+        }
+        if checkpoint != "summary-confirmation" {
+            return Completion::refused(format!(
+                "Unknown --checkpoint \"{checkpoint}\". Accepted: summary-confirmation, plan-approval"
+            ));
+        }
+    }
+    for protected in ["unit", "single"] {
+        if args.value(protected).is_some() {
+            return Completion::refused(format!(
+                "Cannot record decision: --{protected} is not wired in this build."
+            ));
+        }
+    }
+    let summary = if args.value("checkpoint") == Some("summary-confirmation") {
+        match crate::summary_questions_input::read(layout, args.value("questions-file"), "") {
+            Ok(evidence) => Some(evidence),
+            Err(message) => return Completion::refused(message),
+        }
+    } else {
+        None
+    };
+    let cursor = match active_execution(layout) {
+        Ok(Some(cursor)) => cursor,
+        Ok(None) => {
+            return Completion::refused(
+                "Cannot record decision without an active execution.".to_string(),
+            );
+        }
+        Err(error) => {
+            return Completion::refused(wording::unreadable_execution_cursor(&error.to_string()));
+        }
+    };
+    let store = match store_path(layout) {
+        Ok(store) => store,
+        Err(message) => return Completion::refused(message),
+    };
+    let repository = match IntentExecutionRepositoryImpl::open(&store) {
+        Ok(repository) => repository,
+        Err(error) => return Completion::refused(format!("Audit emission failed: {error}")),
+    };
+    let mut prompt = core_command_domain::orchestration::DecisionPrompt::new(stage, decision);
+    if let Some(evidence) = summary {
+        prompt = prompt.with_summary_file(evidence.questions_file());
+    }
+    if let Some(options) = args.value("options").filter(|value| !value.is_empty()) {
+        prompt = prompt.with_options(options);
+    }
+    if let Some(rationale) = args.value("rationale").filter(|value| !value.is_empty()) {
+        prompt = prompt.with_rationale(rationale);
+    }
+    if let Err(error) = core_command_use_case::orchestration::RecordDecisionUseCase::new(repository)
+        .execute(cursor.execution_id(), &prompt, Utc::now())
+        .await
+    {
+        return Completion::refused(format!("Audit emission failed: {error}"));
+    }
+    after_projection(layout, || {
+        let mut fields = ObjectMembers::new();
+        fields.insert(
+            "emitted",
+            JsonValue::String("DECISION_RECORDED".to_string()),
+        );
+        fields.insert("stage", JsonValue::String(stage.to_string()));
+        Completion::emitted(serialize(
+            &JsonValue::Object(fields),
+            SerializationProfile::ContractCompact,
+        ))
+    })
+    .await
+}
+
 /// `aidlc-log review` — レビュー受領証の対を記録する（b48 / B10）。
 ///
 /// 段の順序は upstream `handleReview`（ピン `3c3146cf` `aidlc-log.ts:900-1168`）と同順である:
@@ -762,7 +1683,7 @@ fn gate_precondition(verdict: Verdict, stage: &str, state: &str) -> String {
 /// `--retry-pending` 併用 → `--iteration` → `--verdict` の閉集合 → 記録。
 ///
 /// **失敗はすべて stderr + exit 1** である（`Completion::refused`）— upstream の `error()` は
-/// directive を出さない。`ERROR_LOGGED` 行は本 build では描かない（逸脱台帳）。
+/// directive を出さない。公開入口の共通処理が失敗をERROR_LOGGEDへ投影する。
 async fn log_review(layout: &Layout, args: &crate::cli::ReviewArgs) -> Completion {
     // 段 0 — フラグ文法そのものの違反（値が必要なフラグに値が無い）。
     if let Some(refusal) = args.parse_error() {
@@ -821,7 +1742,13 @@ async fn log_review(layout: &Layout, args: &crate::cli::ReviewArgs) -> Completio
     else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
-    let request = ReviewLogRequest::new(slug, reviewer, iteration, kind);
+    let request = ReviewLogRequest::new(
+        slug,
+        reviewer,
+        iteration,
+        kind,
+        review_documents::read(layout, stage),
+    );
     let recorded = RecordReviewUseCase::new(
         intent_execution_repository,
         intent_repository,
@@ -829,13 +1756,12 @@ async fn log_review(layout: &Layout, args: &crate::cli::ReviewArgs) -> Completio
     )
     .execute(&execution_id, &request, Utc::now())
     .await;
-    let outcome = match recorded {
-        Ok(outcome) => outcome,
-        Err(error) => return Completion::refused(review_refusal(stage, reviewer, args, &error)),
-    };
+    if let Err(error) = recorded {
+        return Completion::refused(review_refusal(stage, reviewer, args, &error));
+    }
     // 書いた事実をリードモデルへ落とす（監査 1 行はこの投影で台帳に現れる）。
     after_projection(layout, || {
-        Completion::emitted(review_log_line(stage, outcome))
+        Completion::emitted(review_log_line(stage, request.kind()))
     })
     .await
 }
@@ -887,10 +1813,12 @@ fn positive_iteration(raw: Option<&str>) -> Option<u32> {
 ///
 /// `aidlc-log` 面は directive プロトコルに参加しないので、`aidlc-utility` と同じく
 /// 契約 JSON をそのまま出す（直列化は canon-json を通す — BR1.7）。
-fn review_log_line(stage: &str, outcome: ReviewLogOutcome) -> String {
+fn review_log_line(stage: &str, kind: ReviewLogKind) -> String {
     let mut emitted = ObjectMembers::new();
-    match outcome {
-        ReviewLogOutcome::Requested { retry } => {
+    match kind {
+        ReviewLogKind::Request {
+            retry_pending: retry,
+        } => {
             emitted.insert(
                 "emitted",
                 JsonValue::String(EventType::ReviewRequested.as_str().to_string()),
@@ -900,7 +1828,7 @@ fn review_log_line(stage: &str, outcome: ReviewLogOutcome) -> String {
                 emitted.insert("retry", JsonValue::String("pending-request".to_string()));
             }
         }
-        ReviewLogOutcome::Completed => {
+        ReviewLogKind::Verdict(_) => {
             emitted.insert(
                 "emitted",
                 JsonValue::String(EventType::ReviewCompleted.as_str().to_string()),
@@ -925,6 +1853,47 @@ fn review_refusal(
     error: &ReviewLogError,
 ) -> String {
     match error {
+        ReviewLogError::Command {
+            error: CommandError::ReviewEvidence(error),
+            ..
+        } => {
+            use core_command_domain::orchestration::ReviewEvidenceError;
+            match error {
+                ReviewEvidenceError::PendingIterations(iterations) => format!(
+                    "Cannot start another review for \"{stage}\" because iteration {} is still waiting for a verdict. Record that verdict, or repeat the same iteration with --retry-pending if the reviewer did not run.",
+                    iterations
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                ReviewEvidenceError::RetryAlreadyUsed => format!(
+                    "Refusing review retry for \"{stage}\": REVIEW_REQUESTED iteration {} already used its one pending-request retry. Do not dispatch it again; record the bounded incomplete-review NOT-READY fallback or start the next permitted review iteration.",
+                    args.iteration().unwrap_or("")
+                ),
+                ReviewEvidenceError::ArtifactsUnavailable => format!(
+                    "Cannot start review for \"{stage}\": a required output document is missing or unreadable. Create every required output document for this stage, then retry the review."
+                ),
+                ReviewEvidenceError::ArtifactsChanged => format!(
+                    "Cannot record the verdict for \"{stage}\" because its output documents changed outside the reviewer-authored appendix after review iteration {} started. Restore the bytes the reviewer was dispatched on and re-run that exact iteration; --retry-pending cannot rebaseline changed content.",
+                    args.iteration().unwrap_or("")
+                ),
+                ReviewEvidenceError::SourceChanged => format!(
+                    "Refusing REVIEW_COMPLETED for \"{stage}\": workspace source changed after REVIEW_REQUESTED iteration {}. Restore the requested source state and re-dispatch the reviewer.",
+                    args.iteration().unwrap_or("")
+                ),
+                ReviewEvidenceError::StaleAppendix => format!(
+                    "Refusing REVIEW_COMPLETED for \"{stage}\": the review appendix still starts with the exact section that existed before REVIEW_REQUESTED iteration {}, so it is not fresh reviewer evidence. Appending prose does not make stale reviewer authority fresh. Have the reviewer remove the old section and write a new `## Review` section for this iteration, then record the verdict.",
+                    args.iteration().unwrap_or("")
+                ),
+                ReviewEvidenceError::InvalidAppendix(reason) => {
+                    format!("Refusing REVIEW_COMPLETED for \"{stage}\": {reason}.")
+                }
+                ReviewEvidenceError::InvalidBinding => {
+                    format!("Refusing REVIEW_COMPLETED for \"{stage}\": invalid request binding.")
+                }
+            }
+        }
         // 「定義がその slug を知らない」と「宣言が無い」は upstream では同じ文言である。
         ReviewLogError::UnknownStage(_)
         | ReviewLogError::Command {
@@ -973,7 +1942,8 @@ fn review_refusal(
 /// 記録 → 投影 → stdout JSON 1 行。
 ///
 /// **失敗はすべて stderr + exit 1** である（`Completion::refused`）— upstream の `error()` は
-/// directive を出さない。失敗時の `PRACTICES_OVERRIDE` 行は本 build では描かない（逸脱台帳）。
+/// directive を出さない。失敗時の `PRACTICES_OVERRIDE` 行は本 build では描かない（採取された
+/// 2.7.1 の `cli/practices-promote/affirm` に失敗時の行は無く、切替条件 2 の記録対象）。
 async fn practices_promote(layout: &Layout, args: &crate::cli::PromoteArgs) -> Completion {
     // 段 0 — 2 つの必須フラグ（upstream `:3520-3524`）。
     let (Some(team_practices), Some(discovered_rules)) =
@@ -1300,8 +2270,8 @@ fn audit_ledger(layout: &Layout) -> String {
 
 /// 状態ファイルに `Construction Autonomy Mode` 欄が在るか（upstream `setFieldStrict` の検査）。
 ///
-/// 逸脱台帳 #2 の M12 修正により誕生が欄を書くので、ここに掛かるのは**手編集で欄を消した
-/// ときだけ**である。状態ファイルそのものが無い（まだ鋳造していない）ときは検査しない —
+/// 誕生 (`intent-create`) が欄を書くので、ここに掛かるのは**手編集で欄を消したときだけ**
+/// である。状態ファイルそのものが無い（まだ鋳造していない）ときは検査しない —
 /// upstream の `readStateFile` はそこで別の失敗になるが、こちらは実行カーソルの段で既に
 /// 断っている。
 fn autonomy_field_guard(layout: &Layout) -> Option<String> {
@@ -1474,7 +2444,6 @@ trait Records {
     /// 記録ディレクトリ（監査シャードの置き場ごと）を用意する。
     fn create(&self, record: &Path) -> std::io::Result<()>;
     /// 状態ファイルの骨格を書く。
-    fn write_state(&self, record: &Path, contents: &str) -> std::io::Result<()>;
     /// 実行カーソルを record に据える。
     fn write_execution_cursor(
         &self,
@@ -1490,11 +2459,8 @@ struct RealRecords;
 
 impl Records for RealRecords {
     fn create(&self, record: &Path) -> std::io::Result<()> {
-        std::fs::create_dir_all(record.join("audit"))
-    }
-
-    fn write_state(&self, record: &Path, contents: &str) -> std::io::Result<()> {
-        std::fs::write(record.join("aidlc-state.md"), contents)
+        std::fs::create_dir(record)?;
+        std::fs::create_dir(record.join("audit"))
     }
 
     fn write_execution_cursor(
@@ -1537,6 +2503,7 @@ async fn mint_intent(
     args: &IntentCreateArgs,
     records: &dyn Records,
 ) -> Result<Completion, String> {
+    let store = store_path(layout)?;
     let scope = args
         .scope()
         .ok_or_else(|| wording::orchestrate_failure("intent-create requires --scope <name>."))?;
@@ -1563,7 +2530,7 @@ async fn mint_intent(
         &now.format("%y%m%d").to_string(),
         args.label(),
         args.arguments(),
-        &intent_id,
+        scope,
     )
     .map_err(|error| {
         fault(
@@ -1571,16 +2538,55 @@ async fn mint_intent(
             &format!("{error:?}"),
         )
     })?;
-    let record = layout.intents_dir().join(name.as_str());
-    records
-        .create(&record)
-        .map_err(|error| fault("cannot create the record directory", &error.to_string()))?;
+    let base = name;
+    if !layout.intents_dir().exists() {
+        std::fs::create_dir_all(layout.intents_dir())
+            .map_err(|error| fault("cannot create the record directory", &error.to_string()))?;
+    }
+    let mut reservation = None;
+    for suffix in 1..1000 {
+        let name = if suffix == 1 {
+            base.clone()
+        } else {
+            core_command_domain::workspace::IntentDirName::parse(&format!(
+                "{}-{suffix}",
+                base.as_str()
+            ))
+            .map_err(|error| fault("cannot compose a record directory name", &error.to_string()))?
+        };
+        let record = layout.intents_dir().join(name.as_str());
+        match records.create(&record) {
+            Ok(()) => {
+                reservation = Some((name, record));
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => {
+                return Err(fault(
+                    "cannot create the record directory",
+                    &error.to_string(),
+                ));
+            }
+        }
+    }
+    let (name, record) = reservation.ok_or_else(|| format!("Could not find a free intent record dir for \"{}\" after 1000 attempts in {}. This many same-day intents with the same label indicates a bug or a runaway caller — pass a distinct --label.", base.as_str(), layout.intents_dir().display()))?;
 
-    let scan = UnscannedWorkspace::new()
+    let scan = WorkspaceScanner::new(layout.project_dir().to_path_buf())
         .scan()
         .map_err(|error| fault("cannot scan the workspace", &format!("{error:?}")))?;
-    let request = build_request(scope, args, review.as_deref());
-    let store = store_path(layout)?;
+    let label = base
+        .as_str()
+        .split_once('-')
+        .map(|(_, label)| label)
+        .ok_or_else(|| fault("cannot resolve the record label", base.as_str()))?;
+    let baseline = crate::source_baseline::read(layout.project_dir())
+        .map_err(|error| fault("cannot capture source baseline", &error.to_string()))?;
+    let request = build_request(scope, args, review.as_deref())
+        .with_record_name(core_command_domain::orchestration::IntentRecordName::new(
+            name.clone(),
+            label,
+        ))
+        .with_source_baseline(baseline);
     let (
         Ok(intent_repository),
         Ok(intent_execution_repository),
@@ -1593,7 +2599,6 @@ async fn mint_intent(
     else {
         return Err(wording::orchestrate_failure("cannot open the event store"));
     };
-    let reopened_intent_repository = intent_repository.reopened();
     // 鋳造の前に定義を確立しておく（ensure-defined）。ハーネス配布物の 3 入力を取り込み、
     // ストアに定義が無ければ確立し、内容版が違えば改訂する。同じなら何も書かない
     // （冪等は集約の `Unchanged` ガードが決める — `DefineWorkflowUseCase` の doc）。
@@ -1630,20 +2635,6 @@ async fn mint_intent(
         )
         .await
         .map_err(|error| mint_failure_wording(&error))?;
-    // 骨格を書く — 投影は既存の行を**書き換える**ので、書き換え先が無いと 1 行も描けない
-    // (`crate::scaffold` の doc / RMU の `ScaffoldMissing`)。
-    let intent = reopened_intent_repository
-        .find_by_id(&intent_id)
-        .await
-        .map_err(|error| diagnose("cannot read back the minted intent", &error))?;
-    let scaffold = crate::scaffold::compose(
-        &intent,
-        &layout.project_dir().to_string_lossy(),
-        &now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-    );
-    records
-        .write_state(&record, &scaffold)
-        .map_err(|error| fault("cannot write the state scaffold", &error.to_string()))?;
     // 実行カーソルは active-intent カーソルより**先に**据える — 逆にすると、record を
     // 解決できるのに「どの実行か」が答えられない瞬間が生まれ、その隙の `report` が
     // 「まだ鋳造していない」と誤読する。
@@ -1655,18 +2646,53 @@ async fn mint_intent(
         .map_err(|error| fault("cannot set the active-intent cursor", &error.to_string()))?;
     // カーソルを据えたので配置を取り直してから投影する（record が決まって初めて
     // 状態ファイルと監査シャードの置き場が決まる）。
-    catch_up(&Layout::resolve(layout.project_dir()))
+    let created_layout = Layout::for_record(
+        layout.project_dir(),
+        &SpaceName::parse(layout.space())
+            .map_err(|error| fault("cannot resolve the created space", &format!("{error:?}")))?,
+        &name,
+    );
+    catch_up(&created_layout)
         .await
         .map_err(|error| wording::orchestrate_failure(&error))?;
-    // 鋳造の結果は directive ではなく upstream の素の JSON 1 行である
-    // (`aidlc-utility` 面は directive プロトコルに参加しない)。契約 JSON なので
-    // 直列化はやはり canon-json を通す (BR1.7)。
-    let mut created = ObjectMembers::new();
-    created.insert("created", JsonValue::Bool(true));
-    created.insert("record", JsonValue::String(name.as_str().to_string()));
-    Ok(Completion::emitted(serialize(
-        &JsonValue::Object(created),
-        SerializationProfile::ContractCompact,
+    let view = core_query_use_case::orchestration::FindInitializationUseCase::new(
+        ReadModelDaos::open(store.as_path())
+            .map_err(|error| fault("cannot read initialization result", &error.to_string()))?
+            .initialization(),
+    )
+    .execute(intent_id.as_str())
+    .map_err(|error| fault("cannot read initialization result", &error.to_string()))?
+    .ok_or_else(|| {
+        fault(
+            "cannot read initialization result",
+            "not found after projection",
+        )
+    })?;
+    if let Some(session) =
+        crate::session_navigation::SessionNavigation::current_id(layout.project_dir())
+        && let Some(navigation) =
+            crate::session_navigation::SessionNavigation::new(layout.project_dir(), &session)
+    {
+        let previous = navigation.stamp();
+        let _ = navigation.write_binding(&created_layout);
+        if let Some(previous) = previous {
+            let _ = navigation.write_handoff(&previous, intent_id.as_str());
+        }
+        let _ = navigation.write_stamp(intent_id.as_str());
+    }
+    Ok(Completion::emitted(format!(
+        "Intent created: {} (space: {})\nState initialized: {} scope, {} stages, {} depth\nProject type: {}\nLanguages: {}\nFrameworks: {}\nBuild System: {}\nFirst post-init stage: {} ({})",
+        name.as_str(),
+        layout.space(),
+        view.scope(),
+        view.total_stages(),
+        view.depth().unwrap_or("undefined"),
+        view.project_type(),
+        view.languages(),
+        view.frameworks(),
+        view.build_system(),
+        view.first_stage().unwrap_or("none"),
+        view.first_phase().unwrap_or("IDEATION")
     )))
 }
 
@@ -1698,6 +2724,14 @@ async fn ensure_defined(
 /// 無いため、この時点では定義イベントから構造化面だけを描く。
 async fn prepare_definition_for_first_read(layout: &Layout) -> Result<(), String> {
     let store = store_path(layout)?;
+    // 作業が 1 件も無いワークスペースには `intents/` がまだ無い (配布シェルは memory 層だけを
+    // 置く)。定義の読取面はその中のストアに載るので、鋳造 (`mint_intent`) と同じく先に
+    // 用意する — 本家はここで `print` を返す (`cli/next/no-active-intent`) のであって、
+    // ストアが開けないことを利用者に断りはしない。
+    if !layout.intents_dir().exists() {
+        std::fs::create_dir_all(layout.intents_dir())
+            .map_err(|error| fault("cannot create the record directory", &error.to_string()))?;
+    }
     let workflow_definition_repository = WorkflowDefinitionRepositoryImpl::open(&store)
         .map_err(|error| diagnose("cannot open the workflow definition repository", &error))?;
     let definition_id =
@@ -1806,25 +2840,54 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
     let (Some(state_file), Some(audit_dir)) = (layout.state_file(), layout.audit_dir()) else {
         return Ok(());
     };
+    let execution_id = active_execution(layout)
+        .map_err(|error| wording::unreadable_execution_cursor(&error.to_string()))?
+        .map(|cursor| cursor.execution_id().clone());
+    let name = execution_id
+        .as_ref()
+        .map_or_else(|| PROJECTION.to_string(), |id| format!("{PROJECTION}-{id}"));
     let projection =
-        ProjectionName::parse(PROJECTION).map_err(|error| format!("projection name: {error:?}"))?;
+        ProjectionName::parse(&name).map_err(|error| format!("projection name: {error:?}"))?;
     let mut journal_reader = JournalReaderImpl::open(&store_path(layout)?)
         .map_err(|error| format!("journal: {error}"))?;
+    if execution_id.is_some() {
+        let legacy = ProjectionName::parse(PROJECTION)
+            .map_err(|error| format!("projection name: {error:?}"))?;
+        ReadModelUpdater::require_unpublished(&journal_reader, &legacy)
+            .await
+            .map_err(|error| format!("projection: {error}"))?;
+    }
     let clone_id = crate::clone_identity::load_or_mint(&layout.aidlc_root())
         .map_err(|error| format!("clone id: {error}"))?;
     let shard = ShardName::of(&host_name(), &clone_id);
-    let targets = ProjectionTargets::new(
-        state_file,
-        audit_dir.join(shard.as_str()),
-        layout.memory_dir(),
-    );
+    let shard_path = if !state_file.exists() {
+        std::fs::read_dir(&audit_dir)
+            .ok()
+            .and_then(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("md"))
+            })
+            .unwrap_or_else(|| audit_dir.join(shard.as_str()))
+    } else {
+        audit_dir.join(shard.as_str())
+    };
+    let targets = ProjectionTargets::new(state_file, shard_path, layout.memory_dir());
     journal_reader
         .restore_missing_files(&projection, &targets)
         .map_err(|error| format!("projection restoration: {error}"))?;
     // 参照入力 (memory 層) はジャーナルとは別の入口である — 規則の編集はイベントを
     // 伴わないので、読取先を明示的に渡す。
-    let steering = SteeringSource::new(layout.memory_dir());
-    ReadModelUpdater::new(journal_reader, projection, targets, steering)
+    let steering =
+        SteeringSource::new(layout.memory_dir()).relative_to(layout.project_dir().to_path_buf());
+    let updater = ReadModelUpdater::new(journal_reader, projection, targets, steering)
+        .with_pipeline_handoff(pipeline_link::current(layout));
+    let mut updater = match execution_id {
+        Some(id) => updater.for_execution(id),
+        None => updater,
+    };
+    updater
         .catch_up()
         .await
         .map(|_| ())
@@ -1926,6 +2989,7 @@ fn key_wording(
 #[cfg(test)]
 mod tests {
     #![allow(clippy::panic)]
+    use core_command_domain::orchestration::{ReportNoOp, TransitionStep, TransitionSteps};
 
     use super::*;
     use core_command_domain::workflow_definition::WorkflowDefinitionId;
@@ -2014,16 +3078,26 @@ corrupt review override: Adversarial"
         assert_eq!(
             review_log_line(
                 "domain-design",
-                ReviewLogOutcome::Requested { retry: false }
+                ReviewLogKind::Request {
+                    retry_pending: false
+                }
             ),
             r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design"}"#
         );
         assert_eq!(
-            review_log_line("domain-design", ReviewLogOutcome::Requested { retry: true }),
+            review_log_line(
+                "domain-design",
+                ReviewLogKind::Request {
+                    retry_pending: true
+                }
+            ),
             r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#
         );
         assert_eq!(
-            review_log_line("domain-design", ReviewLogOutcome::Completed),
+            review_log_line(
+                "domain-design",
+                ReviewLogKind::Verdict(ReviewVerdict::Ready)
+            ),
             r#"{"emitted":"REVIEW_COMPLETED","stage":"domain-design"}"#
         );
     }
@@ -2161,23 +3235,20 @@ corrupt review override: Adversarial"
 
     #[derive(PartialEq, Eq)]
     enum Step {
+        PublishState,
         /// どの手も失敗させない（ダブルが素通しであることを固定するための対照）。
         Nothing,
-        WriteState,
         WriteExecutionCursor,
         PointAt,
     }
 
     impl Records for FailingAt {
         fn create(&self, record: &Path) -> std::io::Result<()> {
-            RealRecords.create(record)
-        }
-
-        fn write_state(&self, record: &Path, contents: &str) -> std::io::Result<()> {
-            if self.0 == Step::WriteState {
-                return Err(std::io::Error::other("disk full"));
+            RealRecords.create(record)?;
+            if self.0 == Step::PublishState {
+                std::fs::create_dir(record.join("aidlc-state.md"))?;
             }
-            RealRecords.write_state(record, contents)
+            Ok(())
         }
 
         fn write_execution_cursor(
@@ -2261,6 +3332,26 @@ corrupt review override: Adversarial"
             .expect("イベント件数")
     }
 
+    /// 隔離実行の開始境界を開いて投影する — `next --stage <slug> --single` が
+    /// `pipeline_link::begin_single` で打つ手と同じ。`report --single` はこの境界を要求する。
+    async fn open_single_stage_boundary(layout: &Layout, store: &StorePath, stage: &str) {
+        let cursor = active_execution(layout)
+            .expect("実行カーソル")
+            .expect("鋳造済みの実行");
+        core_command_use_case::orchestration::BeginSingleStageRunUseCase::new(
+            IntentExecutionRepositoryImpl::open(store).expect("実行ストア"),
+            IntentRepositoryImpl::open(store).expect("intent ストア"),
+        )
+        .execute(
+            cursor.execution_id(),
+            &StageSlug::parse(stage).expect("文法内の slug"),
+            Utc::now(),
+        )
+        .await
+        .expect("開始境界");
+        catch_up(layout).await.expect("開始境界の投影");
+    }
+
     fn assert_late_read_error(completion: &Completion, expected: &str) {
         assert_eq!(
             completion.code(),
@@ -2289,7 +3380,11 @@ corrupt review override: Adversarial"
         let before = journal_count_at(store.as_path());
         let state = layout.state_file().expect("投影先");
         assert_eq!(state_version_guard(&layout), None);
-        assert_eq!(autonomy_field_guard(&layout), None);
+        assert!(
+            autonomy_field_guard(&layout)
+                .is_some_and(|message| message.contains("Field not found")),
+            "本家の初期状態はAutonomy欄を作らない"
+        );
         let original = std::fs::read(&state).expect("公開済み状態");
         std::fs::remove_file(&state).expect("別の利用者が状態を置き換える");
         std::fs::create_dir(&state).expect("同名ディレクトリ");
@@ -2305,7 +3400,11 @@ corrupt review override: Adversarial"
         std::fs::remove_dir(&state).expect("障害除去");
         std::fs::write(&state, original).expect("公開済み状態を戻す");
         assert_eq!(state_version_guard(&layout), None);
-        assert_eq!(autonomy_field_guard(&layout), None);
+        assert!(
+            autonomy_field_guard(&layout)
+                .is_some_and(|message| message.contains("Field not found")),
+            "本家の初期状態はAutonomy欄を作らない"
+        );
     }
 
     /// 復旧後に別接続が実行表を壊しても、再開とstanceは不在の逐語や成功へ畳まない。
@@ -2446,10 +3545,17 @@ corrupt review override: Adversarial"
             .expect("skeleton gateを持つ定義");
             let layout = recovered_test_layout(&root).await;
             let store = store_path(&layout).expect("store");
+            if single {
+                open_single_stage_boundary(&layout, &store, "domain-design").await;
+            }
             let before = journal_count_at(store.as_path());
             let concurrent = rusqlite::Connection::open(store.as_path()).expect("別SQLite接続");
+            let projection = format!(
+                "orchestration-{}",
+                active_execution(&layout).unwrap().unwrap().execution_id()
+            );
             let checkpoint = || {
-                concurrent.query_row("SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection='orchestration'", [], |row| row.get::<_, i64>(0)).expect("公開位置")
+                concurrent.query_row("SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection=?1", [&projection], |row| row.get::<_, i64>(0)).expect("対象実行の公開位置")
             };
             let before_position = checkpoint();
             concurrent.execute_batch(&format!("CREATE TRIGGER fail_late_publication BEFORE INSERT ON amadeus_publication WHEN NEW.target_position > {before_position} BEGIN SELECT RAISE(ABORT,'publication unavailable'); END;")).expect("コミット後の公開を失敗させる");
@@ -2508,6 +3614,7 @@ corrupt review override: Adversarial"
         let root = minimal_workspace();
         let layout = recovered_test_layout(&root).await;
         let store = store_path(&layout).unwrap();
+        open_single_stage_boundary(&layout, &store, "domain-design").await;
         let execution = active_execution(&layout)
             .unwrap()
             .unwrap()
@@ -2721,15 +3828,18 @@ corrupt review override: Adversarial"
         let completion = create_intent_with(
             &layout,
             &intent_create_args(&["--scope", "classic", "--label", "demo"]),
-            &FailingAt(Step::WriteState),
+            &FailingAt(Step::PublishState),
         )
         .await;
 
         assert_eq!(completion.code(), 1);
         assert_eq!(completion.line(), None, "stdout には何も出さない");
-        assert_eq!(
-            completion.diagnostic(),
-            Some("aidlc-orchestrate: cannot write the state scaffold: disk full")
+        assert!(
+            completion
+                .diagnostic()
+                .unwrap_or_default()
+                .contains("directory"),
+            "{completion:?}"
         );
     }
 
@@ -2986,22 +4096,39 @@ corrupt review override: Adversarial"
     #[test]
     fn every_commit_outcome_renders_its_directive() {
         let stage = StageSlug::parse("domain-design").expect("slug");
-        let committed = |steps: TransitionSteps| CommitOutcome::Committed {
-            stage: stage.clone(),
-            scope: "classic".to_string(),
-            steps,
+        let committed = |steps: TransitionSteps| {
+            ReportResultView::new(
+                "execution".into(),
+                stage.to_string(),
+                "classic".into(),
+                "committed".into(),
+                core_infrastructure::canon_json::serialize(
+                    &core_infrastructure::canon_json::JsonValue::Array(steps.fold_left(
+                        Vec::new(),
+                        |mut values, step| {
+                            values.push(core_infrastructure::canon_json::JsonValue::String(
+                                step.subcommand().to_string(),
+                            ));
+                            values
+                        },
+                    )),
+                    core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+                ),
+                None,
+                None,
+            )
         };
         assert!(matches!(
             committed_directive("awaiting-approval", &committed(TransitionSteps::single(TransitionStep::GateStart))),
-            Directive::Print { message } if message == "Recorded awaiting-approval for \"domain-design\"."
+            Directive::Print { message, .. } if message == "Recorded awaiting-approval for \"domain-design\"."
         ));
         assert!(matches!(
             committed_directive("rejected", &committed(TransitionSteps::single(TransitionStep::Reject))),
-            Directive::Print { message } if message == "Recorded rejected for \"domain-design\"."
+            Directive::Print { message, .. } if message == "Recorded rejected for \"domain-design\"."
         ));
         assert!(matches!(
             committed_directive("revised", &committed(TransitionSteps::single(TransitionStep::Revise))),
-            Directive::Print { message } if message == "Recorded revised for \"domain-design\"."
+            Directive::Print { message, .. } if message == "Recorded revised for \"domain-design\"."
         ));
         assert!(matches!(
             committed_directive("skipped", &committed(TransitionSteps::single(TransitionStep::Skip))),
@@ -3028,14 +4155,27 @@ corrupt review override: Adversarial"
     fn every_no_op_renders_its_directive() {
         let stage = StageSlug::parse("domain-design").expect("slug");
         let current = StageSlug::parse("contract-design").expect("slug");
-        let no_op = |no_op: ReportNoOp| CommitOutcome::NoOp {
-            stage: stage.clone(),
-            scope: "classic".to_string(),
-            no_op,
+        let no_op = |no_op: ReportNoOp| {
+            let (reason, current) = match no_op {
+                ReportNoOp::AlreadyAwaiting { .. } => ("already_awaiting", None),
+                ReportNoOp::AlreadyCompletedMovedOn { current, .. } => {
+                    ("already_completed_moved_on", Some(current.to_string()))
+                }
+                ReportNoOp::WorkflowAlreadyCompleted { .. } => ("workflow_already_completed", None),
+            };
+            ReportResultView::new(
+                "execution".into(),
+                stage.to_string(),
+                "classic".into(),
+                "no_op".into(),
+                "[]".into(),
+                Some(reason.into()),
+                current,
+            )
         };
         assert!(matches!(
             committed_directive("awaiting-approval", &no_op(ReportNoOp::AlreadyAwaiting { stage: stage.clone() })),
-            Directive::Print { message } if message == "Stage \"domain-design\" is already awaiting approval."
+            Directive::Print { message, .. } if message == "Stage \"domain-design\" is already awaiting approval; gate evidence revalidated."
         ));
         assert!(matches!(
             committed_directive(

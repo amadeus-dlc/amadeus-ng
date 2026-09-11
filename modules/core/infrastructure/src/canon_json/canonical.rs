@@ -14,8 +14,7 @@ use std::cmp::Ordering;
 use crate::canon_json::profile::KeyOrder;
 use crate::canon_json::value::ObjectMembers;
 
-/// 配列インデックスの上限 (ECMAScript: `ToUint32(P) != 2^32-1`)。
-const MAX_ARRAY_INDEX: u64 = (u32::MAX as u64) - 1;
+use crate::ecmascript::array_index;
 
 /// メンバを書き出す順序を、挿入順の添字列として返す。
 pub(crate) fn member_order(members: &ObjectMembers, order: KeyOrder) -> Vec<usize> {
@@ -49,28 +48,6 @@ pub(crate) fn member_order(members: &ObjectMembers, order: KeyOrder) -> Vec<usiz
     }
     order_indices.append(&mut rest);
     order_indices
-}
-
-/// キーが ECMAScript の配列インデックス (integer-like) なら、その数値。
-///
-/// 正準十進表記に限る — 先頭ゼロ (`01`)・符号 (`+1` / `-1`)・小数点 (`1.0`)・指数はいずれも
-/// integer-like ではない。`0` だけは唯一の 1 文字ゼロとして許す。
-fn array_index(key: &str) -> Option<u64> {
-    if key == "0" {
-        return Some(0);
-    }
-    if key.is_empty() || key.starts_with('0') || key.len() > 10 {
-        return None;
-    }
-    if !key.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let value: u64 = key.parse().ok()?;
-    if value <= MAX_ARRAY_INDEX {
-        Some(value)
-    } else {
-        None
-    }
 }
 
 /// UTF-16 コード単位順の比較 (JS の `Array#sort` 既定と同じ照合順序)。

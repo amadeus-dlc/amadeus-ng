@@ -22,6 +22,11 @@ pub enum CheckboxState {
 }
 
 impl CheckboxState {
+    /// 承認待ちまたは人間が開始した修正の往復中か。停止フックの人間待ち境界。
+    #[must_use]
+    pub const fn is_waiting_for_human(self) -> bool {
+        matches!(self, Self::AwaitingApproval | Self::Revising)
+    }
     /// 行に書かれる 1 文字マーカー。`from_marker` の逆写像であり 6 状態と 1:1
     /// (往復忠実: `from_marker(s.marker()) == Some(s)`)。
     #[must_use]

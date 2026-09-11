@@ -16,6 +16,10 @@ use super::port::RepositoryError;
 // ある (裁定 6 で受容済み)。テストは `matches!` で判定する。
 #[derive(Debug)]
 pub enum SingleStageRunError {
+    /// 定義の取得失敗。
+    DefinitionRepository(
+        RepositoryError<core_command_domain::workflow_definition::WorkflowDefinitionId>,
+    ),
     /// 実行の再構成・永続化の失敗（ポートからそのまま伝播）。
     Repository(RepositoryError<IntentExecutionId>),
     /// intent の取得の失敗（ポートからそのまま伝播）。
@@ -37,6 +41,7 @@ pub enum SingleStageRunError {
 impl fmt::Display for SingleStageRunError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::DefinitionRepository(e) => write!(f, "definition repository: {e}"),
             SingleStageRunError::Repository(error) => write!(f, "repository: {error}"),
             SingleStageRunError::IntentRepository(error) => {
                 write!(f, "intent repository: {error}")
@@ -58,6 +63,7 @@ impl std::error::Error for SingleStageRunError {
     /// `UnknownStage` はこの型自身の失敗なので連鎖先を持たない。
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::DefinitionRepository(e) => Some(e),
             SingleStageRunError::Repository(error) => Some(error),
             SingleStageRunError::IntentRepository(error) => Some(error),
             SingleStageRunError::UnknownStage { .. } => None,

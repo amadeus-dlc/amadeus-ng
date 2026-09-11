@@ -20,6 +20,45 @@
 //! 必要になった機構が `harness-claude`（アダプタ層）へ紛れ込み、後から剥がすことになる。
 //!
 //! 依存方向: infrastructure は domain / use-case / interface-adapter を**知らない**。逆は
-//! どの層から依存してもよい。したがって本クレートの `[dependencies]` は空である。
+//! どの層から依存してもよい。依存は言語拡張のcore-infrastructureと正規表現ライブラリに限定する。
 
 #![forbid(unsafe_code)]
+
+mod shell_parse_error;
+mod shell_text;
+pub use shell_parse_error::ShellParseError;
+pub use shell_text::ShellText;
+
+mod shell_pattern;
+pub use shell_pattern::compile_shell_pattern;
+
+mod shell_segments;
+mod shell_words;
+pub use shell_segments::split_shell_segments;
+pub use shell_words::ShellWords;
+
+mod shell_invocation;
+pub use shell_invocation::ShellInvocation;
+
+// シェルコマンドが書き換えうるファイルの抽出。字句解析の 4 部品は crate 内部に閉じ、
+// 公開するのは結果の列だけである。上の `ShellWords` / `split_shell_segments` /
+// `ShellInvocation` とは**別の上流関数の移植で字句規則も違う**ので、混ぜて使わないこと
+// (差分は各型の doc に書いてある)。
+mod command_segments;
+mod redirection_free_words;
+mod shell_mutation;
+mod shell_options;
+mod shell_write_targets;
+pub use shell_write_targets::ShellWriteTargets;
+
+// reviewer-scope (§12a の読み取り範囲) が読むシェルコマンドの字句。上の 2 系統とは
+// **また別の上流関数の移植で字句規則も違う** (差は `ReviewerScopeWords` の doc の表)。
+mod reviewer_scope_segments;
+mod reviewer_scope_words;
+pub use reviewer_scope_segments::ReviewerScopeSegments;
+pub use reviewer_scope_words::ReviewerScopeWords;
+
+mod heredoc_substitutions;
+mod shell_substitutions;
+pub use heredoc_substitutions::heredoc_substitution_bodies;
+pub use shell_substitutions::ShellSubstitutions;

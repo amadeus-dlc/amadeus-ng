@@ -49,6 +49,7 @@ mod skeleton_stance_recorded_dto;
 mod stage_revised_dto;
 mod stage_skipped_dto;
 mod started_dto;
+mod task_synchronized_dto;
 mod unparked_dto;
 mod workflow_definition_event_dto;
 
@@ -68,9 +69,58 @@ pub use skeleton_stance_recorded_dto::SkeletonStanceRecordedDto;
 pub use stage_revised_dto::StageRevisedDto;
 pub use stage_skipped_dto::StageSkippedDto;
 pub use started_dto::StartedDto;
+pub use task_synchronized_dto::TaskSynchronizedDto;
 pub use workflow_definition_event_dto::WorkflowDefinitionEventDto;
 
 #[cfg(test)]
 mod definition_dto_tests;
 #[cfg(test)]
 mod tests;
+
+mod reported_dto;
+
+mod decision_recorded_dto;
+
+mod prompt_observed_dto;
+
+mod answer_recorded_dto;
+
+mod active_directive_dto;
+mod directive_issued_dto;
+
+mod plan_approval_event_dto;
+mod plan_approval_runtime_dto;
+pub(super) use plan_approval_event_dto::PlanApprovalEventDto;
+
+mod plan_approval_evidence_dto;
+mod plan_decision_evidence_dto;
+
+mod plan_response_preparation_dto;
+
+mod plan_answer_dto;
+mod plan_answer_input_dto;
+mod plan_answer_logged_dto;
+mod plan_receipt_dto;
+
+mod plan_generation_dto;
+
+mod command_failed_dto;
+mod health_checked_dto;
+mod learnings_captured_dto;
+mod memory_journals_observed_dto;
+
+mod pipeline_link_completed_dto;
+pub use pipeline_link_completed_dto::PipelineLinkCompletedDto;
+
+mod single_stage_run_started_dto;
+pub use single_stage_run_started_dto::SingleStageRunStartedDto;
+
+mod directive_context_invalidated_dto;
+
+mod source_baseline_dto;
+
+mod jump_observation_dto;
+mod jump_scope_dto;
+
+mod review_binding_dto;
+mod review_completion_dto;

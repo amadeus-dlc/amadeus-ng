@@ -10,7 +10,6 @@ use super::port::RepositoryError;
 use super::port::WorkflowDefinitionRepository;
 use super::review_log_error::ReviewLogError;
 use super::review_log_kind::ReviewLogKind;
-use super::review_log_outcome::ReviewLogOutcome;
 use super::review_log_request::ReviewLogRequest;
 
 /// レビュアーの差し向けと判定を記録する（`aidlc-log review [--verdict <v>]`）。
@@ -41,7 +40,7 @@ pub struct RecordReviewUseCase<
 #[derive(Debug)]
 enum AttemptOutcome {
     /// 決着した — 受領証の行をコミットした。
-    Settled(ReviewLogOutcome),
+    Settled,
     /// 楽観 version が競合した（2 回目も競合したらこれを伝播する）。
     Conflicted(RepositoryError<IntentExecutionId>),
 }
@@ -77,12 +76,12 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         execution_id: &IntentExecutionId,
         request: &ReviewLogRequest,
         occurred_at: DateTime<Utc>,
-    ) -> Result<ReviewLogOutcome, ReviewLogError> {
+    ) -> Result<(), ReviewLogError> {
         match self.attempt(execution_id, request, occurred_at).await? {
-            AttemptOutcome::Settled(outcome) => Ok(outcome),
+            AttemptOutcome::Settled => Ok(()),
             AttemptOutcome::Conflicted(_) => {
                 match self.attempt(execution_id, request, occurred_at).await? {
-                    AttemptOutcome::Settled(outcome) => Ok(outcome),
+                    AttemptOutcome::Settled => Ok(()),
                     AttemptOutcome::Conflicted(conflict) => {
                         Err(ReviewLogError::Repository(conflict))
                     }
@@ -115,6 +114,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
                 request.reviewer(),
                 request.iteration(),
                 retry_pending,
+                request.documents(),
                 occurred_at,
             ),
             ReviewLogKind::Verdict(verdict) => aggregate.record_review_verdict(
@@ -124,6 +124,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
                 request.reviewer(),
                 request.iteration(),
                 verdict,
+                request.documents(),
                 occurred_at,
             ),
         };
@@ -131,18 +132,12 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
             stage: request.stage().clone(),
             error,
         })?;
-        let outcome = match request.kind() {
-            ReviewLogKind::Request { retry_pending } => ReviewLogOutcome::Requested {
-                retry: retry_pending,
-            },
-            ReviewLogKind::Verdict(_) => ReviewLogOutcome::Completed,
-        };
         match self
             .intent_execution_repository
             .store(&event, &aggregate)
             .await
         {
-            Ok(()) => Ok(AttemptOutcome::Settled(outcome)),
+            Ok(()) => Ok(AttemptOutcome::Settled),
             Err(conflict @ RepositoryError::Conflict { .. }) => {
                 Ok(AttemptOutcome::Conflicted(conflict))
             }
@@ -186,11 +181,11 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
 mod tests {
     // panic! は「想定した変種でなければ即失敗」という検証用途で使う。
     #![allow(clippy::panic)]
+    use super::review_test_fixture;
 
     use super::super::port::RepositoryError;
     use super::super::review_log_error::ReviewLogError;
     use super::super::review_log_kind::ReviewLogKind;
-    use super::super::review_log_outcome::ReviewLogOutcome;
     use super::super::review_log_request::ReviewLogRequest;
     use super::super::test_support::{
         InMemoryIntentExecutionRepository, InMemoryIntentRepository,
@@ -217,10 +212,7 @@ mod tests {
     }
 
     impl Subject {
-        async fn execute(
-            &mut self,
-            request: &ReviewLogRequest,
-        ) -> Result<ReviewLogOutcome, ReviewLogError> {
+        async fn execute(&mut self, request: &ReviewLogRequest) -> Result<(), ReviewLogError> {
             self.use_case.execute(&execution_id(), request, at()).await
         }
 
@@ -262,6 +254,7 @@ mod tests {
             ReviewLogKind::Request {
                 retry_pending: false,
             },
+            review_test_fixture::documents(REVIEWER, iteration, None),
         )
     }
 
@@ -273,6 +266,7 @@ mod tests {
             ReviewLogKind::Request {
                 retry_pending: true,
             },
+            review_test_fixture::documents(REVIEWER, iteration, None),
         )
     }
 
@@ -282,6 +276,7 @@ mod tests {
             REVIEWER,
             iteration,
             ReviewLogKind::Verdict(verdict),
+            review_test_fixture::documents(REVIEWER, iteration, Some(verdict)),
         )
     }
 
@@ -319,12 +314,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_review_command_returns_only_unit_after_persisting_its_event() {
+        let mut subject = use_case(reviewed(None, None));
+        fn assert_unit<T>(_: T) {
+            assert_eq!(
+                std::any::type_name::<T>(),
+                "()",
+                "更新の成功戻り値はunitだけ"
+            );
+        }
+        subject
+            .execute(&request(1))
+            .await
+            .map(assert_unit)
+            .expect("レビュー依頼を保存");
+        assert_eq!(subject.intent_execution_repository().committed().len(), 1);
+    }
+
+    #[tokio::test]
     async fn a_request_commits_a_review_requested_event() {
         let mut subject = use_case(reviewed(None, None));
 
-        let outcome = subject.execute(&request(1)).await.expect("1 回目は通る");
-
-        assert_eq!(outcome, ReviewLogOutcome::Requested { retry: false });
+        subject.execute(&request(1)).await.expect("1 回目は通る");
         let committed = subject.intent_execution_repository().committed();
         assert_eq!(committed.len(), 1);
         assert!(matches!(
@@ -334,18 +345,17 @@ mod tests {
         ));
     }
 
-    /// 判定は依頼と対になったときだけ通り、`Completed` を返す。
+    /// 判定は依頼と対になったときだけ通り、対応する事実を保存する。
     #[tokio::test]
     async fn a_verdict_commits_a_review_completed_event_after_its_request() {
         let mut subject = use_case(reviewed(None, None));
         subject.execute(&request(1)).await.expect("依頼は通る");
 
-        let outcome = subject
+        subject
             .execute(&verdict(1, ReviewVerdict::Ready))
             .await
             .expect("対になる判定は通る");
 
-        assert_eq!(outcome, ReviewLogOutcome::Completed);
         assert!(matches!(
             subject.intent_execution_repository().committed().last(),
             Some(IntentExecutionEvent::ReviewCompleted(completed))
@@ -353,15 +363,21 @@ mod tests {
         ));
     }
 
-    /// 呼び直しは `retry: true` を返す（行は出るが依頼には数えない）。
+    /// 呼び直しの事実を記録する（行は出るが依頼には数えない）。
     #[tokio::test]
     async fn a_retry_reports_that_it_was_a_retry() {
         let mut subject = use_case(reviewed(None, None));
         subject.execute(&request(1)).await.expect("依頼は通る");
 
-        let outcome = subject.execute(&retry(1)).await.expect("呼び直しは通る");
-
-        assert_eq!(outcome, ReviewLogOutcome::Requested { retry: true });
+        subject.execute(&retry(1)).await.expect("呼び直しは通る");
+        assert!(
+            matches!(subject.intent_execution_repository().committed().last(), Some(IntentExecutionEvent::ReviewRequested(event)) if event.is_retry())
+        );
+        // 呼び直しは判定待ちを解消しない — 1 番の判定を記録してから次の依頼へ進む。
+        subject
+            .execute(&verdict(1, ReviewVerdict::NotReady))
+            .await
+            .expect("呼び直した依頼の判定は通る");
         // 数え上げは進まないので、2 回目の通常依頼は依然として 2 番である。
         subject.execute(&request(2)).await.expect("2 回目は通る");
     }
@@ -618,3 +634,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../../../tests/support/review_fixture.rs"]
+mod review_test_fixture;

@@ -11,6 +11,7 @@ use super::review_log_kind::ReviewLogKind;
 /// 受ける）。`--unit` / `--single` は本 build では未配線なので運ばない（設計 §1 の繰延）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewLogRequest {
+    documents: core_command_domain::orchestration::ReviewDocuments,
     stage: StageSlug,
     reviewer: String,
     iteration: u32,
@@ -25,8 +26,10 @@ impl ReviewLogRequest {
         reviewer: impl Into<String>,
         iteration: u32,
         kind: ReviewLogKind,
+        documents: core_command_domain::orchestration::ReviewDocuments,
     ) -> ReviewLogRequest {
         ReviewLogRequest {
+            documents,
             stage,
             reviewer: reviewer.into(),
             iteration,
@@ -34,6 +37,11 @@ impl ReviewLogRequest {
         }
     }
 
+    /// 入力境界が観測したレビュー対象。
+    #[must_use]
+    pub const fn documents(&self) -> &core_command_domain::orchestration::ReviewDocuments {
+        &self.documents
+    }
     /// レビュー対象のステージ。
     #[must_use]
     pub const fn stage(&self) -> &StageSlug {

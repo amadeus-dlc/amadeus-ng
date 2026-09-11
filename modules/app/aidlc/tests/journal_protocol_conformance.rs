@@ -49,12 +49,16 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    ArtifactPaths, AutonomyMode, AutonomyModeSet, Created, GateApproved, GateOpened, GateRejected,
-    Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, PracticesAffirmed,
-    Recomposed, ReviewCompleted, ReviewRequested, ReviewVerdict, SingleStageRunCommitted,
-    SkeletonStance, SkeletonStanceRecorded, StageDisplay, StageEntries, StageEntry, StageRevised,
-    StageSkipped, StageSlugSet, StartRequest, Unparked, WorkspaceScan,
+    ArtifactPaths, AutonomyMode, AutonomyModeSet, CodeGenerationAuthority, CommandFailed,
+    CommandFailure, Created, GateApproved, GateOpened, GateRejected, HealthCheckResult,
+    HealthChecked, Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
+    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, PipelineLinkCompleted,
+    PipelineReceipt, PlanAnswerInput, PlanAnswerLogged, PlanApprovalEvidence,
+    PlanApprovalOperationId, PlanApprovalOrigin, PlanChoice, PlanDecisionEvidence, PlanSession,
+    PlanTarget, PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested, ReviewVerdict,
+    SingleStageRunCommitted, SingleStageRunStarted, SkeletonStance, SkeletonStanceRecorded,
+    StageDisplay, StageEntries, StageEntry, StageRevised, StageSkipped, StageSlugSet, StartRequest,
+    TaskSynchronized, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
@@ -927,13 +931,105 @@ fn both_sides_write_the_definition_payload_with_the_same_bytes() {
     }
 }
 
-/// 実行イベント 15 変種を 1 つずつ (b40 — 全変種が `id` / `aggregate_id` を運ぶ)。
+/// 実行イベント全変種を 1 つずつ (b40 — 全変種が `id` / `aggregate_id` を運ぶ)。
 fn every_execution_variant() -> Vec<IntentExecutionEvent> {
     let ev = || IntentExecutionEventId::generate();
     let agg = execution_id;
     let slug = |s: &str| StageSlug::parse(s).expect("文法内の slug");
     let (_, started) = IntentExecution::start(execution_id(), &intent(), at());
     vec![
+        IntentExecutionEvent::DecisionRecorded(
+            core_command_domain::orchestration::DecisionRecorded::new(
+                ev(),
+                agg(),
+                core_command_domain::orchestration::DecisionPrompt::new(
+                    "stage-1",
+                    "Choose a correction",
+                )
+                .with_options("A,B"),
+            )
+            .with_human_before(Some(ev())),
+        ),
+        IntentExecutionEvent::PromptObserved(
+            core_command_domain::orchestration::PromptObserved::new(
+                ev(),
+                agg(),
+                "session",
+                "1",
+                false,
+            ),
+        ),
+        IntentExecutionEvent::AnswerRecorded(
+            core_command_domain::orchestration::AnswerRecorded::new(
+                ev(),
+                agg(),
+                core_command_domain::orchestration::AnswerId::generate(),
+                "stage-1",
+                "A",
+                core_command_domain::orchestration::AnswerDisposition::Recorded,
+            ),
+        ),
+        IntentExecutionEvent::DirectiveContextInvalidated(
+            core_command_domain::orchestration::DirectiveContextInvalidated::new(
+                ev(),
+                agg(),
+                core_command_domain::orchestration::ActiveDirective::new(
+                    1,
+                    intent().id().clone(),
+                    core_command_domain::orchestration::DirectivePublication::new(
+                        "1".repeat(64),
+                        "2".repeat(64),
+                        core_command_domain::orchestration::PublishedDirective::Error {
+                            stage: slug("stage-1"),
+                        },
+                    ),
+                    "2".repeat(64),
+                    "sessionless:1111111111111111".to_string(),
+                    0,
+                    0,
+                    1,
+                ),
+            ),
+        ),
+        IntentExecutionEvent::DirectiveIssued(
+            core_command_domain::orchestration::DirectiveIssued::new(
+                ev(),
+                agg(),
+                core_command_domain::orchestration::ActiveDirective::new(
+                    1,
+                    intent().id().clone(),
+                    core_command_domain::orchestration::DirectivePublication::new(
+                        "1".repeat(64),
+                        "2".repeat(64),
+                        core_command_domain::orchestration::PublishedDirective::RunStage {
+                            stage: slug("stage-1"),
+                            unit: None,
+                        },
+                    ),
+                    "2".repeat(64),
+                    "sessionless:1111111111111111".to_string(),
+                    0,
+                    0,
+                    1,
+                ),
+            ),
+        ),
+        IntentExecutionEvent::Reported(
+            core_command_domain::orchestration::Reported::new(
+                ev(),
+                agg(),
+                core_command_domain::orchestration::ReportId::generate(),
+                core_command_domain::orchestration::ReportResult::NoOp {
+                    scope: "bugfix".into(),
+                    no_op: core_command_domain::orchestration::ReportNoOp::AlreadyAwaiting {
+                        stage: slug("stage-1"),
+                    },
+                },
+                None,
+                None,
+            )
+            .unwrap(),
+        ),
         started,
         IntentExecutionEvent::GateOpened(GateOpened::new(
             ev(),
@@ -960,7 +1056,13 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             slug("stage-1"),
             "out of scope".to_string(),
         )),
-        IntentExecutionEvent::Jumped(Jumped::new(ev(), agg(), slug("stage-0"))),
+        IntentExecutionEvent::Jumped(Jumped::new(
+            ev(),
+            agg(),
+            slug("stage-0"),
+            core_command_domain::orchestration::JumpDirection::Forward,
+            None,
+        )),
         IntentExecutionEvent::Parked(Parked::new(ev(), agg(), slug("stage-1"))),
         IntentExecutionEvent::Unparked(Unparked::new(ev(), agg())),
         IntentExecutionEvent::Recomposed(Recomposed::new(
@@ -991,6 +1093,7 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             "aidlc-quality-agent",
             2,
             true,
+            review_test_fixture::binding(),
         )),
         IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
             ev(),
@@ -999,6 +1102,7 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             "aidlc-quality-agent",
             2,
             ReviewVerdict::NotReady,
+            review_test_fixture::completion(),
         )),
         IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
             ev(),
@@ -1013,6 +1117,100 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             RuleLines::new(vec!["ALWAYS review. (affirmed 2026-09-05)".to_string()]),
             RuleLines::new(vec!["NEVER force-push. (affirmed 2026-09-05)".to_string()]),
         )),
+        IntentExecutionEvent::SingleStageRunStarted(SingleStageRunStarted::new(
+            ev(),
+            agg(),
+            slug("contract-design"),
+        )),
+        IntentExecutionEvent::PipelineLinkCompleted(PipelineLinkCompleted::new(
+            ev(),
+            agg(),
+            PipelineReceipt::new(
+                "reverse-engineering".to_string(),
+                "aidlc-architect-agent".to_string(),
+                None,
+                false,
+                1,
+                3,
+                None,
+            )
+            .expect("整合した受領証"),
+        )),
+        IntentExecutionEvent::PlanAnswerLogged(Box::new(PlanAnswerLogged::new(
+            ev(),
+            agg(),
+            PlanApprovalOperationId::generate(),
+            PlanAnswerInput::new(
+                PlanApprovalOrigin::new(
+                    core_command_domain::workspace::SpaceName::default(),
+                    execution_id(),
+                ),
+                "code-generation".to_string(),
+                PlanDecisionEvidence::new(
+                    PlanApprovalEvidence::new(
+                        CodeGenerationAuthority::new(
+                            &PlanTarget::stage_level(),
+                            intent().id(),
+                            format!("sha256:{}", "a".repeat(64)),
+                            "WORKFLOW_STARTED:2026-09-08T01:00:00Z#1".to_string(),
+                            "b".repeat(64),
+                            2,
+                        )
+                        .expect("計画承認の権限"),
+                        format!("sha256:{}", "c".repeat(64)),
+                        "questions.md".to_string(),
+                        "d".repeat(64),
+                        "e".repeat(64),
+                    )
+                    .expect("計画承認の証跡"),
+                    PlanSession::new("session".to_string()).expect("セッション"),
+                ),
+                PlanChoice::ApprovePlan,
+                Some("b".repeat(64)),
+            ),
+        ))),
+        IntentExecutionEvent::CommandFailed(CommandFailed::new(
+            ev(),
+            agg(),
+            CommandFailure::new(
+                "aidlc-utility".to_string(),
+                "aidlc-utility set-status --stage unknown-stage".to_string(),
+                "Unknown stage: unknown-stage".to_string(),
+            ),
+        )),
+        IntentExecutionEvent::HealthChecked(HealthChecked::new(
+            ev(),
+            agg(),
+            HealthCheckResult::new(3, 0),
+        )),
+        IntentExecutionEvent::TaskSynchronized(TaskSynchronized::new(ev(), agg(), slug("stage-1"))),
+        IntentExecutionEvent::LearningsCaptured(Box::new(
+            core_command_domain::orchestration::LearningsCaptured::new(
+                ev(),
+                agg(),
+                slug("stage-1"),
+                core_command_domain::orchestration::LearningProvenance::new(
+                    core_command_domain::workspace::SpaceName::default(),
+                    core_command_domain::workspace::IntentDirName::parse("260908-learnings")
+                        .expect("記録名"),
+                ),
+                core_command_domain::orchestration::CapturedLearnings::new(vec![
+                    core_command_domain::orchestration::CapturedLearning::new(
+                        core_command_domain::orchestration::Learning::new(
+                            core_command_domain::orchestration::LearningCandidateId::parse("c1")
+                                .expect("候補番号"),
+                            core_command_domain::orchestration::LearningScope::Team,
+                            core_command_domain::orchestration::PracticeHeading::from_routed(
+                                "Testing Posture",
+                            ),
+                            "ALWAYS run the suite",
+                            core_command_domain::orchestration::LearningSource::UserAddition,
+                        ),
+                        core_command_domain::orchestration::LearningDisposition::AuditRowOnly,
+                    ),
+                ]),
+            ),
+        )),
     ]
 }
 
@@ -1026,7 +1224,14 @@ fn every_execution_variant_written_by_the_command_side_is_read_back_by_the_proje
     // (`coding-rules/cqrs-boundaries.md` — 側ごと専用化)。b40 で全変種に `id` と
     // `aggregate_id` が加わり、`Unparked` は単位変種から構造体へ変わったので、変種ごとに
     // 書いて読み戻す照合をここに置く (ITF 駆動の経路は park / jump / recompose を通らない)。
-    for event in every_execution_variant() {
+    let cases = every_execution_variant();
+    assert_eq!(cases.len(), 29, "現在の実行イベント全変種を列挙する");
+    let mut variants = std::collections::HashSet::new();
+    for event in cases {
+        assert!(
+            variants.insert(std::mem::discriminant(&event)),
+            "同じ変種を重複して数えない"
+        );
         let bytes = serde_json::to_string(&CommandExecutionEventDto::of(&event))
             .expect("書く側の DTO は直列化できる");
         let read: ProjectionExecutionEventDto =
@@ -1043,3 +1248,6 @@ fn every_execution_variant_written_by_the_command_side_is_read_back_by_the_proje
         );
     }
 }
+
+#[path = "../../../../tests/support/review_fixture.rs"]
+mod review_test_fixture;

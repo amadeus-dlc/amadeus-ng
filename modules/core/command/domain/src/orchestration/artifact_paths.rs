@@ -8,22 +8,32 @@ use core_infrastructure::collections::FirstClassCollection;
 /// 名指した綴りそのものであり、ドメインは並べ替えも重複除去も正規化もしない。集合ではない
 /// ので `combine` / `divide` は持たない (`coding-rules/first-class-collections.md` — 順序付き
 /// 列を便宜的な集合として扱わない)。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactPaths {
     items: Vec<String>,
 }
 
+impl Default for ArtifactPaths {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl ArtifactPaths {
+    // 検査済みの列・集合とその部分列は、この構築口で全状態を初期化する。
+    const fn of_items(items: Vec<String>) -> Self {
+        Self { items }
+    }
+
     /// 成果物を 1 つも伴わないゲート開放の列。
     #[must_use]
     pub const fn empty() -> ArtifactPaths {
-        ArtifactPaths { items: Vec::new() }
+        ArtifactPaths::of_items(Vec::new())
     }
 
     /// 与えられた順序と重複のまま列にする (**この型の唯一の構築経路**)。
     #[must_use]
     pub const fn new(items: Vec<String>) -> ArtifactPaths {
-        ArtifactPaths { items }
+        ArtifactPaths::of_items(items)
     }
 
     /// 成果物の件数。

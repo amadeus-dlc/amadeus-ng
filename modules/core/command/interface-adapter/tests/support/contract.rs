@@ -55,6 +55,34 @@ pub(crate) async fn seed<R: IntentExecutionRepository>(repository: &mut R) -> In
     .await
 }
 
+/// 失敗記録も両backendで保存・再開でき、許可と工程位置は変わらない。
+pub(crate) async fn command_failures_survive_reopening_without_changing_authority<
+    F: StoreFixture,
+>(
+    fixture: &F,
+) {
+    let mut repository = fixture.open();
+    let before = store_genesis(&mut repository).await;
+    let after = advance(&mut repository, &before, |execution| {
+        execution.record_command_failure(
+            core_command_domain::orchestration::CommandFailure::new(
+                "aidlc-log".into(),
+                "aidlc-log review".into(),
+                "Missing --stage <slug>".into(),
+            ),
+            at(),
+        )
+    })
+    .await;
+    let reopened = fixture.reopen(&repository);
+    let restored = reopened.find_by_id(before.id()).await.expect("再開");
+    assert_eq!(restored, after);
+    assert_eq!(restored.cursor(), before.cursor());
+    assert_eq!(restored.status(), before.status());
+    assert_eq!(restored.progress_seq_nr(), before.progress_seq_nr());
+    assert_eq!(restored.seq_nr(), before.seq_nr() + 1);
+}
+
 /// `open()` は毎回**空のストア**を指す新しい Repository を返す (BR2.7 — 実装によらない)。
 ///
 /// 2 度目の `open()` が 1 度目の書込を見てしまうと、契約テストは「前のテストが書いた行」に

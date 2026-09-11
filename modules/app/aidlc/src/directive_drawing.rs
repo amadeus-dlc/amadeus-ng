@@ -14,6 +14,7 @@
 //! 全行が書き替わる)。基準は 3 つ — ステージ本体の置き場・record・ハーネス根 — で、
 //! いずれも [`Layout`] が知っている。
 
+use core_command_domain::workflow_definition::BrownfieldGreenfield;
 use core_infrastructure::canon_json::{JsonValue, parse};
 use core_query_use_case::orchestration::{
     Bindings, BundleDigest, ContinueToken, ContinueTokenBuilder, Directive, DirectiveDigest,
@@ -94,6 +95,13 @@ fn under(base: &str, column: &str, encoded: &str) -> Result<Vec<String>, String>
 /// 「次のステージ」も無いからである。呼出側の渡し値に依らずここで潰すのは、経路が増えても
 /// この 2 点が破れないようにするためである。
 ///
+/// # `consumes` は作業の種別で選ぶ
+///
+/// 本家 `resolveConsumes` (`aidlc-orchestrate.ts:2519-2534` @a277af21) は、状態ファイルの
+/// `Project Type` と食い違う `conditional_on` の宣言を落とし、種別が読めなければ全宣言を
+/// 残す。行は 3 通り (全宣言・Brownfield・Greenfield) を持つので、ここは `project_kind` で
+/// 列を選ぶだけである。
+///
 /// # Errors
 ///
 /// record が解決できない、または行の JSON 列が開けない (材料だけを運ぶ診断文言)。
@@ -102,13 +110,18 @@ pub(crate) fn run_stage(
     layout: &Layout,
     gate: GateField,
     single: bool,
+    project_kind: Option<BrownfieldGreenfield>,
 ) -> Result<RunStageDirective, String> {
     let Some(record) = layout.record_dir() else {
         return Err("No workspace record was resolved for run-stage assembly.".to_string());
     };
-    let record = record.to_string_lossy().into_owned();
-    let harness = layout.harness_dir().to_string_lossy().into_owned();
-    let stages = layout.stage_library_dir().to_string_lossy().into_owned();
+    let record = record
+        .strip_prefix(layout.project_dir())
+        .map_err(|_| "record path is outside the workspace".to_string())?
+        .to_string_lossy()
+        .into_owned();
+    let harness = ".claude".to_string();
+    let stages = ".claude/aidlc-common/stages".to_string();
     // 隔離実行に承認ライフサイクルは無い (ピン `directive.gate = false`)。
     let gate = if single { GateField::Ungated } else { gate };
     let slug = StageSlugView::parse(row.stage_slug())
@@ -130,8 +143,38 @@ pub(crate) fn run_stage(
         "inline_context_paths_rel",
         row.inline_context_paths_rel(),
     )?)
-    .with_consumes(under(&record, "consumes_rel", row.consumes_rel())?)
-    .with_produces(under(&record, "produces_rel", row.produces_rel())?)
+    .with_consumes(match project_kind {
+        Some(BrownfieldGreenfield::Brownfield) => under(
+            &record,
+            "consumes_brownfield_rel",
+            row.consumes_brownfield_rel(),
+        )?,
+        Some(BrownfieldGreenfield::Greenfield) => under(
+            &record,
+            "consumes_greenfield_rel",
+            row.consumes_greenfield_rel(),
+        )?,
+        None => under(&record, "consumes_rel", row.consumes_rel())?,
+    })
+    .with_produces(if row.stage_slug() == "reverse-engineering" {
+        let repo = layout
+            .project_dir()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| "workspace repository name unavailable".to_string())?;
+        strings("produces_rel", row.produces_rel())?
+            .iter()
+            .map(|path| {
+                format!(
+                    "aidlc/spaces/{}/codekb/{repo}/{}",
+                    layout.space(),
+                    path.rsplit('/').next().unwrap_or(path)
+                )
+            })
+            .collect()
+    } else {
+        under(&record, "produces_rel", row.produces_rel())?
+    })
     .with_sensors(strings("sensors_applicable", row.sensors_applicable())?)
     .with_protocol_modules(strings("protocol_modules", row.protocol_modules())?);
     // 隔離実行は 1 ステージで止まるので次のステージを名乗らない (ピン `next_stage = null`)。
@@ -149,7 +192,8 @@ pub(crate) fn run_stage(
     if single {
         builder = builder.with_single();
     }
-    Ok(builder.build())
+    let directive = builder.build();
+    Ok(directive)
 }
 
 /// 束縛 (token に封じる 4 値) を行から組む。
@@ -354,6 +398,8 @@ mod tests {
                 self.inline_context_paths_rel,
                 "domain-design.md".to_string(),
                 "inception/domain-design/memory.md".to_string(),
+                self.consumes_rel.clone(),
+                self.consumes_rel.clone(),
                 self.consumes_rel,
                 self.produces_rel,
                 self.sensors_applicable,
@@ -376,9 +422,16 @@ mod tests {
     }
 
     /// record を指すカーソルを据えた配置。
+    ///
+    /// 記録は `aidlc-state.md` を持つディレクトリだけである (本家 `activeIntent` の
+    /// `existsSync(join(dir, raw, "aidlc-state.md"))`) ので、状態ファイルも置く。
     fn layout_with_record(root: &tempfile::TempDir) -> Layout {
         let layout = Layout::resolve(root.path());
         layout.point_at("260904-demo-abcd1234").expect("カーソル");
+        let record = layout.intents_dir().join("260904-demo-abcd1234");
+        std::fs::create_dir_all(&record).expect("record");
+        std::fs::write(record.join("aidlc-state.md"), "# AI-DLC State Tracking\n")
+            .expect("state file");
         Layout::resolve(root.path())
     }
 
@@ -388,7 +441,7 @@ mod tests {
         let root = tempfile::tempdir().expect("一時ディレクトリ");
         let layout = layout_with_record(&root);
 
-        let refused = run_stage(&row("not-json"), &layout, GateField::Gated, false)
+        let refused = run_stage(&row("not-json"), &layout, GateField::Gated, false, None)
             .expect_err("開けない列がある");
 
         assert_eq!(refused, refusal("inline_context_paths_rel", "not-json"));
@@ -401,7 +454,7 @@ mod tests {
         let layout = Layout::resolve(root.path());
 
         assert_eq!(
-            run_stage(&row("[]"), &layout, GateField::Gated, false),
+            run_stage(&row("[]"), &layout, GateField::Gated, false, None),
             Err("No workspace record was resolved for run-stage assembly.".to_string())
         );
     }
@@ -466,7 +519,7 @@ mod tests {
             let mut sound = Row::sound();
             break_it(&mut sound);
             assert_eq!(
-                run_stage(&sound.build(), &layout, GateField::Gated, false),
+                run_stage(&sound.build(), &layout, GateField::Gated, false, None),
                 Err(refusal(column, value)),
                 "{column} の壊れた値は列名ごと運ぶ"
             );
@@ -482,8 +535,8 @@ mod tests {
         sound.review_class = Some("adversarial".to_string());
         sound.consumes_rel = r#"["inception/brief.md"]"#.to_string();
 
-        let directive =
-            run_stage(&sound.build(), &layout, GateField::Gated, false).expect("全列が正しい");
+        let directive = run_stage(&sound.build(), &layout, GateField::Gated, false, None)
+            .expect("全列が正しい");
 
         assert_eq!(directive.stage().as_str(), "domain-design");
         assert_eq!(directive.next_stage(), Some("Contract Design"));
@@ -507,7 +560,7 @@ mod tests {
         sound.review_class = Some("adversarial".to_string());
 
         let directive =
-            run_stage(&sound.build(), &layout, GateField::Gated, true).expect("全列が正しい");
+            run_stage(&sound.build(), &layout, GateField::Gated, true, None).expect("全列が正しい");
 
         assert!(directive.is_single());
         assert_eq!(
@@ -527,7 +580,8 @@ mod tests {
     fn a_part_index_outside_the_one_based_range_is_refused() {
         let root = tempfile::tempdir().expect("一時ディレクトリ");
         let layout = layout_with_record(&root);
-        let directive = run_stage(&row("[]"), &layout, GateField::Gated, false).expect("組める");
+        let directive =
+            run_stage(&row("[]"), &layout, GateField::Gated, false, None).expect("組める");
         let plan = SteeringPlanView::new(
             "plan-1".to_string(),
             "inception".to_string(),

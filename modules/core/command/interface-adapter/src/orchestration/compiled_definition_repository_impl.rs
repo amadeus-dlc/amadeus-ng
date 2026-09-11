@@ -32,8 +32,9 @@
 //! 3. 未知の列挙値は**全列挙 (`phase` / `execution` / `review_class` / `mode`) を load 時に
 //!    厳密 enum で落とす** (12 §10 表 #3 — 2026-08-22 裁定)。ドメイン型に `Unknown` variant を
 //!    持たせず Always Valid を維持する。upstream との観測差は手編集グラフの未知値に限られ、
-//!    dist の正規データでは生じない — ピン留め `3c3146cf` の配布実バイト 33 ノードが全数
-//!    取り込めることは `tests/golden_parity_test.rs` が固定した。
+//!    dist の正規データでは生じない — 固定コミット `a277af21` の配布実バイト
+//!    (`tests/golden/upstream-a277af21/data/`) が全数取り込めることは
+//!    `tests/golden_parity_test.rs` が固定した。
 //!
 //! **失敗態度** (12 §4): グラフは fatal、グリッドは転置導出フォールバック、identity と
 //! グリッド列の不一致は双方向とも正当。
@@ -335,6 +336,8 @@ struct StageNodeDto {
     #[serde(default)]
     reviewer: Option<String>,
     #[serde(default)]
+    review_artifact: Option<String>,
+    #[serde(default)]
     reviewer_max_iterations: Option<u32>,
     #[serde(default)]
     review_class: Option<String>,
@@ -374,6 +377,12 @@ struct RuleInContextDto {
 struct SensorRefDto {
     id: String,
     path: String,
+    #[serde(default)]
+    fire_on: Option<String>,
+    #[serde(default)]
+    default_severity: Option<String>,
+    #[serde(default)]
+    category: Option<String>,
     #[serde(default)]
     matches: Option<String>,
 }
@@ -718,10 +727,11 @@ impl CompiledDefinitionRepository for CompiledDefinitionRepositoryImpl {
 }
 
 // ---------------------------------------------------------------------------
-// 書き手 (store) — contract-pretty のバイト契約 (12 §10 / golden-3c3146cf-graph-dist §1-§2)
+// 書き手 (store) — contract-pretty のバイト契約 (2.7.1 の配布バイトとの一致は
+// `tests/golden_parity_test.rs` の `storing_the_ingested_bundle_reproduces_the_dist_bytes`)
 // ---------------------------------------------------------------------------
 
-/// `FIELD_ORDER` 28 キーを **struct 宣言順で符号化**した emit 用ワイヤ構造体
+/// `FIELD_ORDER` 29 キーを **struct 宣言順で符号化**した emit 用ワイヤ構造体
 /// (ADR 0001 決定 3)。`undefined` 落としに相当するのは skip 属性だけで、
 /// `null` / `[]` / `""` / `false` は落とさない — ただし dist 実測 (golden §2) で
 /// 「キーごと不在」が常態のフィールド (`workspace_requires` は true の 1 件のみ・
@@ -761,6 +771,8 @@ struct StageNodeEmitDto<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     reviewer: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    review_artifact: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     reviewer_max_iterations: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     review_class: Option<&'a str>,
@@ -793,6 +805,12 @@ struct RuleInContextEmitDto<'a> {
 struct SensorRefEmitDto<'a> {
     id: &'a str,
     path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fire_on: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_severity: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     matches: Option<&'a str>,
 }
@@ -849,6 +867,7 @@ fn emit_graph(graph: &StageGraph) -> Result<String, ToValueError> {
             sensors: node.sensors(),
             scopes: node.scopes(),
             reviewer: node.reviewer(),
+            review_artifact: node.review_artifact(),
             reviewer_max_iterations: node.reviewer_max_iterations(),
             review_class: node.review_class().map(ReviewClass::as_str),
             summary_confirmation: node.summary_confirmation(),
@@ -868,6 +887,9 @@ fn emit_graph(graph: &StageGraph) -> Result<String, ToValueError> {
                 .map(|sensor| SensorRefEmitDto {
                     id: sensor.id(),
                     path: sensor.path(),
+                    fire_on: sensor.fire_on(),
+                    default_severity: sensor.default_severity(),
+                    category: sensor.category(),
                     matches: sensor.matches(),
                 })
                 .collect(),
@@ -1050,7 +1072,16 @@ fn to_stage_node(dto: StageNodeDto, path: &Path) -> Result<StageNode, Definition
     let sensors_applicable = dto
         .sensors_applicable
         .into_iter()
-        .map(|s| SensorRef::new(s.id, s.path, s.matches))
+        .map(|s| {
+            SensorRef::new(
+                s.id,
+                s.path,
+                s.matches,
+                s.fire_on,
+                s.default_severity,
+                s.category,
+            )
+        })
         .collect();
 
     let mut builder = StageNodeBuilder::new(slug, number, dto.name, phase, execution, mode)
@@ -1074,6 +1105,9 @@ fn to_stage_node(dto: StageNodeDto, path: &Path) -> Result<StageNode, Definition
     }
     if let Some(v) = dto.reviewer {
         builder = builder.reviewer(v);
+    }
+    if let Some(v) = dto.review_artifact {
+        builder = builder.review_artifact(v);
     }
     if let Some(v) = dto.reviewer_max_iterations {
         builder = builder.reviewer_max_iterations(v);
@@ -1116,8 +1150,10 @@ fn scope_file_paths(scopes_dir: &Path) -> io::Result<Vec<PathBuf>> {
 
 /// frontmatter の最小 YAML サブセットを手書きで読む。
 ///
-/// 受理する形は `---` で挟まれた `key: value` 行と `keywords: [a, b]` のフロー列だけで、
-/// 未知キー (`description` / `testStrategy` / `runner` / `plugin` 等) は黙って無視する。
+/// 受理する形は `---` で挟まれた `key: value` 行と、`keywords` のフロー列 `[a, b]` または
+/// ブロック列 (直後に続くインデントされた `- item` 行) だけで (本家 `aidlc-lib.ts` の
+/// `listField` と同じ受理範囲)、未知キー (`description` / `testStrategy` / `runner` /
+/// `plugin` 等) は黙って無視する。
 /// 汎用 YAML パーサへ置換すると寛容パースと逐語拒否文言の契約が静かに変わる (12 §3.3)。
 fn parse_scope_metadata(
     path: &Path,
@@ -1133,7 +1169,8 @@ fn parse_scope_metadata(
     let mut review_cap: Option<ReviewCapValue> = None;
     let mut freeform_default = false;
 
-    for line in body.lines() {
+    let mut lines = body.lines().peekable();
+    while let Some(line) = lines.next() {
         // インデントされた行は未知キーのブロックマッピング配下 (入れ子) の中身であり、
         // トップレベルキーとして解釈しない — trim してから split すると `plugin:` 配下の
         // `name: acme` が `name` を上書きし、寛容パース (「未知キーは黙って無視」) が壊れる。
@@ -1151,7 +1188,13 @@ fn parse_scope_metadata(
         match key.trim() {
             "name" => name = Some(value.to_string()),
             "depth" => depth = Some(value.to_string()),
-            "keywords" => keywords = parse_flow_sequence(value),
+            "keywords" => {
+                keywords = if raw.trim().is_empty() {
+                    parse_block_sequence(&mut lines)
+                } else {
+                    parse_flow_sequence(value)
+                };
+            }
             "skeleton" => {
                 skeleton = Some(
                     SkeletonDefault::parse(value)
@@ -1231,15 +1274,41 @@ fn scope_prose(content: &str) -> &str {
 
 /// `[a, b]` のフロー列を読む。角括弧が無い形は「1 要素の列」として寛容に受ける。
 fn parse_flow_sequence(value: &str) -> Vec<String> {
-    let inner = match value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        Some(inner) => inner,
-        None => value,
+    // 本家 `listField` はフロー列を `[` で始まる値にだけ認め、裸のスカラー
+    // (`keywords: api`) は列とみなさず空を返す。
+    let Some(inner) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) else {
+        return Vec::new();
     };
     inner
         .split(',')
         .map(|item| unquote(item.trim()).to_string())
         .filter(|item| !item.is_empty())
         .collect()
+}
+
+/// `keywords:` (値なし) の直後に続くインデントされた `- item` 行をブロック列として読む。
+/// 本家 `listField` と同じく、要素はダッシュの後に空白 1 つ以上を要求し (`-foo` は要素で
+/// ない)、インデントされた `- ` 行以外に当たった時点で列を閉じる (後続の `description: >`
+/// の折返し行を列へ漏らさない)。消費するのは列の要素行だけで、閉じた行は呼び手が
+/// トップレベルキーとして読み直す。
+fn parse_block_sequence(lines: &mut std::iter::Peekable<std::str::Lines<'_>>) -> Vec<String> {
+    let mut items = Vec::new();
+    while let Some(line) = lines.peek() {
+        let is_indented = line.starts_with(' ') || line.starts_with('\t');
+        let Some(item) = is_indented
+            .then(|| line.trim_start().strip_prefix('-'))
+            .flatten()
+            .filter(|rest| rest.starts_with(' ') || rest.starts_with('\t'))
+        else {
+            break;
+        };
+        let item = unquote(item.trim());
+        if !item.is_empty() {
+            items.push(item.to_string());
+        }
+        lines.next();
+    }
+    items
 }
 
 /// 前後を囲う `"` / `'` を 1 組だけ剥がす。
@@ -1428,7 +1497,7 @@ mod tests {
     }
 
     #[test]
-    fn keywords_read_the_flow_sequence_and_tolerate_a_bare_scalar() {
+    fn keywords_read_the_flow_sequence() {
         let metadata = parse_scope_metadata(
             scope_path(),
             "---\nname: feature\nkeywords: [\"api\", endpoint , ]\n---\n",
@@ -1440,12 +1509,68 @@ mod tests {
         );
 
         let metadata =
-            parse_scope_metadata(scope_path(), "---\nname: feature\nkeywords: api\n---\n").unwrap();
-        assert_eq!(metadata.keywords(), ["api".to_string()]);
-
-        let metadata =
             parse_scope_metadata(scope_path(), "---\nname: feature\nkeywords: []\n---\n").unwrap();
         assert!(metadata.keywords().is_empty());
+    }
+
+    /// 配布 `.claude/scopes/aidlc-bugfix.md` と同じブロック列 (`- fix`) を読む。本家
+    /// `aidlc-lib.ts` `listField` (a277af21) はブロック列とフロー列だけを受理する。
+    #[test]
+    fn keywords_read_the_block_sequence_as_distributed() {
+        let metadata = parse_scope_metadata(
+            scope_path(),
+            "---\nname: bugfix\ndepth: Minimal\nkeywords:\n  - fix\n  - bug\n  - broken\ndescription: Fix a specific bug\nskeleton: off\n---\n",
+        )
+        .unwrap();
+        assert_eq!(
+            metadata.keywords(),
+            ["fix".to_string(), "bug".to_string(), "broken".to_string()]
+        );
+        assert_eq!(metadata.depth(), Some("Minimal"));
+        assert_eq!(metadata.skeleton(), Some(SkeletonDefault::Off));
+    }
+
+    /// ブロック列の要素は `- ` 直後の 1 項目で、引用符は剥がす。ブロックは次のトップレベル
+    /// キーで終わり、後続の `description: >` 折返し行を列へ漏らさない (本家 `listField`)。
+    #[test]
+    fn keywords_block_sequence_stops_at_the_next_top_level_key() {
+        let metadata = parse_scope_metadata(
+            scope_path(),
+            "---\nname: feature\nkeywords:\n  - \"api\"\n\t- 'endpoint'\ndescription: >\n  folded prose\n  - not a keyword\n---\n",
+        )
+        .unwrap();
+        assert_eq!(
+            metadata.keywords(),
+            ["api".to_string(), "endpoint".to_string()]
+        );
+    }
+
+    /// 本家は `keywords:` の後にブロック要素もフロー列も無ければ空とみなす。裸のスカラー
+    /// (`keywords: api`) は列ではないので空。
+    #[test]
+    fn keywords_are_empty_when_neither_a_block_nor_a_flow_sequence_follows() {
+        for raw in [
+            "---\nname: feature\nkeywords:\n---\n",
+            "---\nname: feature\nkeywords:\ndepth: Minimal\n---\n",
+            "---\nname: feature\nkeywords: api\n---\n",
+            "---\nname: feature\nkeywords:\n  -no-space\n---\n",
+        ] {
+            let metadata = parse_scope_metadata(scope_path(), raw).unwrap();
+            assert!(metadata.keywords().is_empty(), "{raw:?}");
+        }
+    }
+
+    /// `keywords:` の後にインデントされた入れ子キーが続いても、他のトップレベルキーの
+    /// 読取 (`depth`) を壊さない。
+    #[test]
+    fn keywords_block_sequence_does_not_swallow_following_scalar_keys() {
+        let metadata = parse_scope_metadata(
+            scope_path(),
+            "---\nname: feature\nkeywords:\n  - api\ndepth: Standard\nreview_cap: none\n---\n",
+        )
+        .unwrap();
+        assert_eq!(metadata.keywords(), ["api".to_string()]);
+        assert_eq!(metadata.depth(), Some("Standard"));
     }
 
     #[test]

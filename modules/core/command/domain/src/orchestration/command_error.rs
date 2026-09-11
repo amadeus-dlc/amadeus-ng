@@ -8,6 +8,28 @@ use crate::workspace::CheckboxState;
 /// ガード違反は「発火しないアクション」であって状態は一切動かない (モデルの enabled 条件と同型)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandError {
+    /// レビューが要求した原文と観測が一致しない。
+    ReviewEvidence(super::ReviewEvidenceError),
+    /// 対象の単独pipeline試行は既に開いている。
+    SingleStageAttemptAlreadyOpen,
+    /// 単独pipelineの開始が未記録。
+    SingleStageAttemptNotOpen,
+
+    /// 現試行のpipeline受領が足りない。
+    PipelineLinksMissing {
+        /// 対象stage。
+        stage: String,
+        /// 不足linkの宣言順表示。
+        missing: String,
+        /// 単独実行の完了か。
+        single: bool,
+    },
+    /// 共有側に、対応する応答の観測準備がない。
+    PlanResponseUnavailable,
+    /// 観測先の実行とこの集約が一致しない。
+    PlanResponseTargetMismatch,
+    /// 同じ応答操作はこの実行に保存済み。
+    PlanResponseAlreadyRecorded,
     /// 判断に渡された `Intent` がこの実行のものでない (識別子不一致、または計画長の不一致)。
     ///
     /// 集約は intent を ID で参照するので、この照合が書ける
@@ -101,6 +123,21 @@ pub enum CommandError {
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ReviewEvidence(error) => error.fmt(f),
+            Self::SingleStageAttemptAlreadyOpen => f.write_str("pipeline attempt already open"),
+            Self::SingleStageAttemptNotOpen => f.write_str("pipeline attempt not open"),
+            Self::PipelineLinksMissing {
+                stage,
+                missing,
+                single,
+            } => write!(f, "pipeline {stage}: missing {missing}, single={single}"),
+            Self::PlanResponseUnavailable => f.write_str("no prepared Plan Approval response"),
+            Self::PlanResponseTargetMismatch => {
+                f.write_str("Plan Approval response belongs to another execution")
+            }
+            Self::PlanResponseAlreadyRecorded => {
+                f.write_str("Plan Approval response has already been recorded")
+            }
             CommandError::IntentMismatch => f.write_str("intent mismatch"),
             CommandError::NotRunning => f.write_str("not running"),
             CommandError::CheckboxPrecondition { stage, actual } => write!(

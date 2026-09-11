@@ -16,9 +16,14 @@ const TIMESTAMP_KEY: &str = "Timestamp";
 /// `Timestamp` は受理して**黙って捨てる**。upstream は公開 `append` CLI でこのキーを受け取り、
 /// 描画時に読み飛ばす。捨てる位置を描き手ではなくコレクションに置くことで、「第二の
 /// `**Timestamp**:` 行は構成不能」が型の性質になる (描き手の規律に頼らない)。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditFields(Vec<(AuditFieldKey, AuditFieldValue)>);
 
+impl Default for AuditFields {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl AuditFields {
     /// 右側を優先して結合する。同じキーは最初の位置を保つ。
     #[must_use]

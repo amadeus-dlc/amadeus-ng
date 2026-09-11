@@ -363,7 +363,9 @@ impl Workspace {
         let class = class.map_or(String::new(), |class| {
             format!(r#","review_class":"{class}""#)
         });
-        let reviewed = format!(r#","reviewer":"{REVIEWER}"{class}"#);
+        let reviewed = format!(
+            r#","reviewer":"{REVIEWER}","review_artifact":"domain-design","produces":["domain-design"]{class}"#
+        );
         fs::write(
             data.join("stage-graph.json"),
             format!(
@@ -496,6 +498,46 @@ async fn invoke(workspace: &Workspace, argv0: &str, args: &[&str]) -> aidlc::run
     aidlc::runtime::run(argv0, &owned, workspace.project_dir()).await
 }
 
+/// in-process試験が継承したhost sessionのbindingを除き、共有cursor単独の拒否条件を作る。
+fn without_session_bindings(workspace: &Workspace) {
+    if let Ok(entries) = fs::read_dir(workspace.path("aidlc/.aidlc-sessions")) {
+        for entry in entries.filter_map(Result::ok) {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".binding.json")
+            {
+                fs::remove_file(entry.path())
+                    .expect("共有cursorの試験ではsession bindingを持たせない");
+            }
+        }
+    }
+}
+
+/// 公開入口から単独実行を開始し、規則配送があれば最後まで受け取る。
+async fn start_single_stage(workspace: &Workspace, stage: &str) {
+    let mut completion = invoke(
+        workspace,
+        "aidlc-orchestrate",
+        &["next", "--stage", stage, "--single"],
+    )
+    .await;
+    for _ in 0..16 {
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        let directive = line_of(&completion);
+        let kind = string_of(&directive, "kind");
+        if kind == "run-stage" {
+            assert_eq!(string_of(&directive, "stage"), stage);
+            assert_eq!(member_of(&directive, "single"), Some(JsonValue::Bool(true)));
+            return;
+        }
+        assert_eq!(kind, "load-steering", "{directive:?}");
+        let token = string_of(&directive, "continue_token");
+        completion = invoke(workspace, "aidlc-orchestrate", &["continue", &token]).await;
+    }
+    panic!("単独実行の規則配送がfixture上限を超えた");
+}
+
 fn line_of(completion: &aidlc::runtime::Completion) -> JsonValue {
     let line = completion
         .line()
@@ -557,22 +599,20 @@ async fn creating_an_intent_projects_both_read_model_faces() {
     .await;
 
     assert_eq!(completion.code(), 0, "{completion:?}");
-    // 記録名の形は `<yymmdd>-<kebab ラベル>-<id8>`。3 つの成分を**それぞれ独立に**
-    // 確かめる（記録名から取り出した値を記録名に突き合わせても何も検査したことにならない）。
-    let record = string_of(&line_of(&completion), "record");
-    let (head, id8) = record.rsplit_once('-').expect("`-<id8>` で終わる");
-    assert_eq!(id8.len(), 8, "{record}");
-    assert!(
-        id8.chars()
-            .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase() && c.is_ascii_hexdigit()),
-        "id8 は小文字 16 進: {record}"
-    );
-    let date = head.get(..6).unwrap_or_default();
-    assert!(
-        date.len() == 6 && date.chars().all(|c| c.is_ascii_digit()),
-        "先頭は yymmdd: {record}"
-    );
-    assert_eq!(head.get(6..), Some("-demo-run"), "{record}");
+    let first_line = completion
+        .line()
+        .expect("開始結果")
+        .lines()
+        .next()
+        .expect("1行目");
+    let record = first_line
+        .strip_prefix("Intent created: ")
+        .expect("開始結果")
+        .strip_suffix(" (space: default)")
+        .expect("space");
+    let (date, label) = record.split_once('-').expect("日付とlabel");
+    assert!(date.len() == 6 && date.chars().all(|c| c.is_ascii_digit()));
+    assert_eq!(label, "demo-run");
 
     // カーソルが据わり、record が実在する。
     let record = workspace.record_dir().expect("カーソルが据わっている");
@@ -584,6 +624,132 @@ async fn creating_an_intent_projects_both_read_model_faces() {
     assert!(state.contains("state-init"), "{state}");
     let audit = workspace.audit_shard().expect("監査シャードが投影された");
     assert!(audit.contains("WORKFLOW_STARTED"), "{audit}");
+}
+
+/// 拒否も通常のイベント保存・投影を通り、権限や工程位置を動かさない。
+#[tokio::test]
+async fn a_log_refusal_records_the_failed_command_without_advancing_the_workflow() {
+    let workspace = Workspace::create();
+    let created = invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "failure"],
+    )
+    .await;
+    assert_eq!(created.code(), 0, "{created:?}");
+    let record = workspace.record_dir().expect("record");
+    let before_state = fs::read(record.join("aidlc-state.md")).expect("state");
+    let before_audit = workspace.audit_shard().expect("audit");
+    let result = invoke(
+        &workspace,
+        "aidlc-log",
+        &["decision", "--stage", "domain-design"],
+    )
+    .await;
+    assert_eq!(result.code(), 1);
+    assert_eq!(result.line(), None);
+    assert_eq!(
+        result.diagnostic(),
+        Some(r#"{"error":"Missing --decision <text>"}"#)
+    );
+    assert_eq!(
+        fs::read(record.join("aidlc-state.md")).expect("state"),
+        before_state
+    );
+    let audit = workspace.audit_shard().expect("audit");
+    let appended = audit.strip_prefix(&before_audit).expect("既存行を維持");
+    assert_eq!(appended.matches("**Event**: ERROR_LOGGED").count(), 1);
+    assert!(appended.contains("**Tool**: aidlc-log\n"));
+    assert!(appended.contains(
+        "**Command**: aidlc-log decision --stage domain-design --project-dir <project-dir>\n"
+    ));
+    assert!(appended.contains("**Error**: Missing --decision <text>\n"));
+    use base64::Engine as _;
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tests/golden/selfhost-stage1/log-failure.json"
+    ))
+    .expect("固定本家採取");
+    assert_eq!(
+        corpus
+            .get("source")
+            .and_then(|value| value.get("commit"))
+            .expect("commit"),
+        "a277af218f0df7f325d3b8be7b6d90fce2c5bd40"
+    );
+    let source = corpus
+        .get("observations")
+        .expect("observations")
+        .as_array()
+        .expect("観測")
+        .iter()
+        .find(|item| item.get("id").and_then(serde_json::Value::as_str) == Some("decision"))
+        .expect("decision");
+    let (path, encoded) = source
+        .get("changed_files")
+        .expect("changed_files")
+        .as_object()
+        .expect("公開差分")
+        .iter()
+        .find(|(path, _)| path.contains("/audit/"))
+        .expect("監査");
+    let decode = |value: &serde_json::Value| {
+        String::from_utf8(
+            base64::engine::general_purpose::STANDARD
+                .decode(value.as_str().expect("base64"))
+                .expect("base64"),
+        )
+        .expect("UTF-8")
+    };
+    let source_after = decode(encoded);
+    let source_before = decode(
+        source
+            .get("initial_files")
+            .and_then(|files| files.get(path))
+            .expect("source initial file"),
+    );
+    let source_added = source_after.strip_prefix(&source_before).expect("追記");
+    let without_time = |text: &str| {
+        text.lines()
+            .map(|line| {
+                if line.starts_with("**Timestamp**: ") {
+                    "**Timestamp**: <TS>"
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(
+        without_time(appended),
+        without_time(source_added),
+        "時刻だけを正規化し追加監査全文を比較"
+    );
+    assert_eq!(
+        format!("{}\n", result.diagnostic().expect("診断")),
+        source
+            .get("output")
+            .and_then(|value| value.get("stderr"))
+            .expect("stderr")
+            .as_str()
+            .expect("本家stderr")
+    );
+
+    let repeated = invoke(
+        &workspace,
+        "aidlc-log",
+        &["decision", "--stage", "domain-design"],
+    )
+    .await;
+    assert_eq!(repeated, result);
+    assert_eq!(
+        workspace
+            .audit_shard()
+            .expect("audit")
+            .matches("**Event**: ERROR_LOGGED")
+            .count(),
+        2
+    );
 }
 
 /// 鋳造の直後に `next` が同じワークスペースで進める（A-1 追加条項の受入）。
@@ -611,6 +777,11 @@ async fn next_runs_against_the_freshly_created_intent() {
 }
 
 /// 破損した復旧計画は読取・書込の全入口を止め、真実記録や公開位置を変えない。
+///
+/// 失わせる投影は監査シャード (`audit/`) である — 状態ファイルを失った記録は upstream
+/// `activeIntent` どおり記録として解決されず (裁定 F-H1 = B、`Layout::shared`)、復旧計画を
+/// 読む段へ到達しない。復元経路が残るのは、記録が状態ファイルを持って解決できたうえで
+/// 監査シャードや memory の投影だけが失われている場合である。
 #[tokio::test]
 async fn next_rejects_a_corrupt_restoration_plan_without_recreating_files() {
     let workspace = Workspace::with_practices();
@@ -633,21 +804,37 @@ async fn next_rejects_a_corrupt_restoration_plan_without_recreating_files() {
     assert_eq!(string_of(&ready_directive, "kind"), "load-steering");
     let token = string_of(&ready_directive, "continue_token");
     let before_journal = workspace.journal_rows();
-    let audit = workspace.audit_shard().expect("公開済み監査");
     let record = workspace.record_dir().expect("記録先");
     let path = StorePath::for_space(&workspace.path("aidlc"), &SpaceName::default());
     let database = rusqlite::Connection::open(path.as_path()).expect("実ストアを開く");
+    let projection = format!(
+        "orchestration-{}",
+        ExecutionCursor::read(&record)
+            .expect("実行カーソル")
+            .expect("対象実行")
+            .execution_id()
+    );
     let position = || {
-        database.query_row(
-        "SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection='orchestration'",
-        [], |row| row.get::<_, i64>(0),
-    ).expect("公開位置")
+        database
+            .query_row(
+                "SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection=?1",
+                [&projection],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("公開位置")
     };
     let before = position();
-    assert_eq!(database.execute(
-        "UPDATE amadeus_publication_snapshot SET plan_digest='corrupt' WHERE projection='orchestration'", [],
-    ).expect("保存計画の破損を注入"), 1);
-    fs::remove_file(record.join("aidlc-state.md")).expect("状態を失わせる");
+    assert_eq!(
+        database
+            .execute(
+                "UPDATE amadeus_publication_snapshot SET plan_digest='corrupt' WHERE projection=?1",
+                [&projection],
+            )
+            .expect("保存計画の破損を注入"),
+        1
+    );
+    let state = workspace.state_file().expect("公開済み状態");
+    fs::remove_dir_all(record.join("audit")).expect("監査出力を失わせる");
     let expected = format!(
         "aidlc-orchestrate: projection restoration: read: io: InvalidData at {}",
         path.as_path().display()
@@ -663,9 +850,9 @@ async fn next_rejects_a_corrupt_restoration_plan_without_recreating_files() {
         let directive = line_of(&completion);
         assert_eq!(string_of(&directive, "kind"), "error");
         assert_eq!(string_of(&directive, "message"), expected);
-        assert!(!record.join("aidlc-state.md").exists());
+        assert!(!record.join("audit").exists(), "監査出力を作り直さない");
+        assert_eq!(workspace.state_file().as_deref(), Some(state.as_str()));
         assert_eq!(workspace.journal_rows(), before_journal);
-        assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
         assert_eq!(position(), before);
     }
     for args in [
@@ -687,9 +874,9 @@ async fn next_rejects_a_corrupt_restoration_plan_without_recreating_files() {
             "aidlc-orchestrate: projection restoration: read: io: InvalidData at ",
             path.as_path(),
         );
-        assert!(!record.join("aidlc-state.md").exists());
+        assert!(!record.join("audit").exists(), "監査出力を作り直さない");
+        assert_eq!(workspace.state_file().as_deref(), Some(state.as_str()));
         assert_eq!(workspace.journal_rows(), before_journal);
-        assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
         assert_eq!(position(), before);
     }
     for completion in [
@@ -701,9 +888,9 @@ async fn next_rejects_a_corrupt_restoration_plan_without_recreating_files() {
             "aidlc-orchestrate: projection restoration: read: io: InvalidData at ",
             path.as_path(),
         );
-        assert!(!record.join("aidlc-state.md").exists());
+        assert!(!record.join("audit").exists(), "監査出力を作り直さない");
+        assert_eq!(workspace.state_file().as_deref(), Some(state.as_str()));
         assert_eq!(workspace.journal_rows(), before_journal);
-        assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
         assert_eq!(position(), before);
     }
 }
@@ -714,8 +901,22 @@ async fn a_committed_report_survives_publication_failure_and_is_recovered_once()
     let workspace = minted().await;
     let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");
     let database = rusqlite::Connection::open(&store).expect("実SQLiteストア");
+    let record = workspace.record_dir().expect("記録先");
+    let projection = format!(
+        "orchestration-{}",
+        ExecutionCursor::read(&record)
+            .expect("実行カーソル")
+            .expect("対象実行")
+            .execution_id()
+    );
     let checkpoint = || {
-        database.query_row("SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection='orchestration'", [], |row| row.get::<_, i64>(0)).expect("公開位置")
+        database
+            .query_row(
+                "SELECT last_global_seq FROM amadeus_projection_checkpoint WHERE projection=?1",
+                [&projection],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("対象実行の公開位置")
     };
     let before_position = checkpoint();
     let before_journal = workspace.journal_rows();
@@ -735,6 +936,25 @@ async fn a_committed_report_survives_publication_failure_and_is_recovered_once()
         &store,
     );
     let committed_journal = workspace.journal_rows();
+    let committed_position: i64 = database
+        .query_row("SELECT MAX(rowid) FROM journal", [], |row| row.get(0))
+        .expect("保存済み報告の位置");
+    let event_kinds_since_commit = || {
+        database
+            .prepare("SELECT payload FROM journal WHERE rowid > ?1 ORDER BY rowid")
+            .expect("後続イベントの読取り")
+            .query_map([committed_position], |row| row.get::<_, Vec<u8>>(0))
+            .expect("後続イベント")
+            .map(|payload| {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&payload.expect("イベント本文"))
+                        .expect("外部タグ付きイベントJSON");
+                let tags = value.as_object().expect("イベントのタグ");
+                assert_eq!(tags.len(), 1, "イベントは1種類の事実を運ぶ");
+                tags.keys().next().expect("イベント名").clone()
+            })
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
         committed_journal,
         (before_journal.0, before_journal.1 + 1),
@@ -759,10 +979,11 @@ async fn a_committed_report_survives_publication_failure_and_is_recovered_once()
     assert_ne!(string_of(&line_of(&recovered), "kind"), "error");
     assert_eq!(
         workspace.journal_rows(),
-        committed_journal,
-        "復旧は新イベントを作らない"
+        (committed_journal.0, committed_journal.1 + 1),
+        "次の指示発行の事実だけが増える"
     );
-    assert_eq!(checkpoint(), before_position + 1);
+    assert_eq!(event_kinds_since_commit(), ["DirectiveIssued"]);
+    assert_eq!(checkpoint(), before_position + 2);
     let after_state = workspace.state_file().expect("復旧済み状態");
     assert!(after_state.contains("- [?] domain-design"), "{after_state}");
     let after_audit = workspace.audit_shard().expect("復旧済み監査");
@@ -773,8 +994,16 @@ async fn a_committed_report_survives_publication_failure_and_is_recovered_once()
     let repeated = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
     assert_eq!(repeated.code(), 0, "{repeated:?}");
     assert_ne!(string_of(&line_of(&repeated), "kind"), "error");
-    assert_eq!(workspace.journal_rows(), committed_journal);
-    assert_eq!(checkpoint(), before_position + 1);
+    assert_eq!(
+        workspace.journal_rows(),
+        (committed_journal.0, committed_journal.1 + 2)
+    );
+    assert_eq!(
+        event_kinds_since_commit(),
+        ["DirectiveIssued", "DirectiveIssued"],
+        "再照会でも報告や遷移を再保存しない"
+    );
+    assert_eq!(checkpoint(), before_position + 3);
     assert_eq!(
         workspace.state_file().as_deref(),
         Some(after_state.as_str())
@@ -785,6 +1014,13 @@ async fn a_committed_report_survives_publication_failure_and_is_recovered_once()
     );
 }
 
+/// 失われた投影ファイルは `next` がジャーナルから描き直し、監査を繰り返さない (Step 3)。
+///
+/// 復元が届くのは記録が解決できる場合に限られる。記録の実在は upstream `activeIntent`
+/// どおり `aidlc-state.md` の有無で判定する (裁定 F-H1 = B、`Layout::shared`) ので、
+/// 監査シャードを失った記録は復元されるが、状態ファイルまで失った記録はカーソルが名指して
+/// いても記録として解決されず、唯一記録の後退にも数えられない。後者では `next` は
+/// 「状態なし」を答え、ファイルを作り直さず、ジャーナルにも触れない。
 #[tokio::test]
 async fn next_restores_missing_projection_files_without_repeating_audit() {
     let workspace = Workspace::create();
@@ -798,14 +1034,32 @@ async fn next_restores_missing_projection_files_without_repeating_audit() {
     let state = workspace.state_file().expect("公開済み状態");
     let audit = workspace.audit_shard().expect("公開済み監査");
     let record = workspace.record_dir().expect("記録先");
-    fs::remove_file(record.join("aidlc-state.md")).expect("状態を失わせる");
     fs::remove_dir_all(record.join("audit")).expect("監査出力を失わせる");
     for _ in 0..2 {
         let next = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
         assert_eq!(next.code(), 0, "{next:?}");
+        assert_ne!(string_of(&line_of(&next), "kind"), "error");
         assert_eq!(workspace.state_file().as_deref(), Some(state.as_str()));
         assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
     }
+
+    let before_journal = workspace.journal_rows();
+    fs::remove_file(record.join("aidlc-state.md")).expect("状態を失わせる");
+    let next = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    assert_eq!(next.code(), 0, "{next:?}");
+    let directive = line_of(&next);
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "No workflow state found (no active intent). Start one by describing what to build \
+(/aidlc \"build the auth service\") or by naming a scope (/aidlc --scope <scope>)."
+    );
+    assert!(
+        !record.join("aidlc-state.md").exists(),
+        "状態ファイルを失った記録は解決されず、復元も届かない"
+    );
+    assert_eq!(workspace.audit_shard().as_deref(), Some(audit.as_str()));
+    assert_eq!(workspace.journal_rows(), before_journal);
 }
 
 /// `report --result` が遷移をコミットし、投影が読み面へ落ちる。
@@ -826,6 +1080,206 @@ async fn next_restores_missing_projection_files_without_repeating_audit() {
 ///
 /// 本テストはその両面一致を逐語で固定する — `state-init` の完了行が最後まで 1 本の
 /// ままであることが、二重記録が戻っていないことの証拠である。
+#[tokio::test]
+async fn report_starts_workspace_stage_with_the_report_time_source_baseline() {
+    let workspace = Workspace::with_construction();
+    let path = workspace.path(".claude/tools/data/stage-graph.json");
+    let mut graph: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).expect("graph")).expect("graph JSON");
+    graph
+        .as_array_mut()
+        .expect("stages")
+        .iter_mut()
+        .find(|node| {
+            node.get("slug").and_then(serde_json::Value::as_str) == Some("code-generation")
+        })
+        .expect("stage")
+        .as_object_mut()
+        .expect("node")
+        .insert("workspace_requires".into(), serde_json::Value::Bool(true));
+    fs::write(
+        path,
+        core_infrastructure::canon_json::serialize(
+            &core_infrastructure::canon_json::to_value(&graph).expect("graph JSON"),
+            core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+        ),
+    )
+    .expect("graph");
+    fs::write(workspace.path(".claude/tools/data/scope-grid.json"), r#"{"classic":{"stages":{"state-init":"EXECUTE","domain-design":"EXECUTE","functional-design":"SKIP","code-generation":"EXECUTE"}}}"#).expect("grid");
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "baseline"],
+    )
+    .await;
+    fs::create_dir_all(workspace.path("src")).expect("src");
+    fs::write(workspace.path("src/lib.rs"), "pub fn example() {}\n").expect("source");
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "completed",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    assert_eq!(string_of(&line_of(&completion), "kind"), "done");
+    let audit = workspace.audit_shard().expect("audit");
+    let started = audit.rsplit("## Stage Start\n").next().expect("start");
+    assert!(
+        started.contains("**Stage**: code-generation\n"),
+        "{started}"
+    );
+    assert!(
+        started.contains("**Source Baseline**: sha256:"),
+        "新しいソースがある工程開始の指紋: {started}"
+    );
+    let expected_listing = format!(
+        "\tsrc/lib.rs\t100644\t{}\n",
+        core_infrastructure::hash::sha256_hex(b"pub fn example() {}\n")
+    );
+    let digest = core_infrastructure::hash::sha256_hex(expected_listing.as_bytes());
+    assert!(
+        started.contains(&format!("**Source Baseline**: sha256:{digest}\n")),
+        "{started}"
+    );
+    let directory = workspace
+        .record_dir()
+        .expect("record")
+        .join(".aidlc-source-review/code-generation");
+    let snapshot = directory.join(format!(
+        "baseline-{}.tsv",
+        digest.chars().take(12).collect::<String>()
+    ));
+    assert_eq!(
+        fs::read_to_string(&snapshot).expect("snapshot"),
+        expected_listing
+    );
+    let before_count = fs::read_dir(&directory).expect("snapshots").count();
+    fs::write(workspace.path("src/lib.rs"), "pub fn changed() {}\n").expect("source change");
+    let repeated = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "completed",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(repeated.code(), 0, "{repeated:?}");
+    assert_eq!(
+        fs::read_dir(&directory).expect("snapshots").count(),
+        before_count
+    );
+    assert_eq!(
+        fs::read_to_string(&snapshot).expect("snapshot after retry"),
+        expected_listing
+    );
+}
+
+#[tokio::test]
+async fn completed_validation_keeps_the_observed_artifact_bytes_after_files_change() {
+    let workspace = Workspace::create();
+    let graph_path = workspace.path(".claude/tools/data/stage-graph.json");
+    let mut graph: serde_json::Value =
+        serde_json::from_slice(&fs::read(&graph_path).expect("graph")).expect("JSON");
+    let stage = graph
+        .as_array_mut()
+        .expect("stages")
+        .iter_mut()
+        .find(|node| node.get("slug").and_then(serde_json::Value::as_str) == Some("domain-design"))
+        .expect("stage");
+    stage.as_object_mut().expect("object").insert(
+        "produces".into(),
+        serde_json::Value::Array(vec![serde_json::Value::from("components")]),
+    );
+    fs::write(
+        &graph_path,
+        core_infrastructure::canon_json::serialize(
+            &core_infrastructure::canon_json::to_value(&graph).expect("graph JSON"),
+            core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+        ),
+    )
+    .expect("graph");
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &[
+            "intent-create",
+            "--scope",
+            "classic",
+            "--label",
+            "validation",
+        ],
+    )
+    .await;
+    let artifact = workspace
+        .record_dir()
+        .expect("record")
+        .join("inception/domain-design/components.md");
+    fs::create_dir_all(artifact.parent().expect("parent")).expect("parent");
+    fs::write(&artifact, "# Components\n\n## Design\noriginal\n").expect("artifact");
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "completed",
+            "--stage",
+            "domain-design",
+            "--user-input",
+            "A",
+        ],
+    )
+    .await;
+    assert_eq!(completion.code(), 0, "{completion:?}");
+    assert_eq!(string_of(&line_of(&completion), "kind"), "done");
+    let audit = workspace.audit_shard().expect("audit");
+    let line = audit
+        .lines()
+        .find_map(|line| line.strip_prefix("**Validation Basis**: "))
+        .expect("validation basis");
+    let basis: serde_json::Value = serde_json::from_str(line).expect("basis JSON");
+    let outputs = basis
+        .get("outputs")
+        .and_then(serde_json::Value::as_array)
+        .expect("outputs");
+    let output = outputs.first().expect("output");
+    assert_eq!(
+        output.get("artifact"),
+        Some(&serde_json::Value::from("components"))
+    );
+    assert_eq!(
+        output.get("presentCount"),
+        Some(&serde_json::Value::from(1))
+    );
+    assert_eq!(
+        output.get("instanceCount"),
+        Some(&serde_json::Value::from(1))
+    );
+    fs::write(&artifact, "# Changed after completion\n").expect("changed");
+    invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    let after = workspace.audit_shard().expect("audit after query");
+    assert_eq!(
+        after
+            .lines()
+            .find_map(|line| line.strip_prefix("**Validation Basis**: ")),
+        Some(line)
+    );
+}
+
 #[tokio::test]
 async fn reporting_a_verdict_commits_and_projects() {
     let workspace = Workspace::create();
@@ -867,6 +1321,10 @@ async fn reporting_a_verdict_commits_and_projects() {
     assert_eq!(string_of(&line_of(&completion), "kind"), "done");
     // 遷移がコミットされ、投影が監査へ足した行の対象は `domain-design` である。
     let after_audit = workspace.audit_shard().expect("監査シャード");
+    assert!(
+        after_audit.contains("**Validation Basis**: {"),
+        "承認した工程の入力・出力・グラフを保存した検証根拠が必要: {after_audit}"
+    );
     assert_eq!(
         after_audit.matches("STAGE_COMPLETED").count(),
         before_completions + 1,
@@ -1211,8 +1669,9 @@ async fn the_four_resume_choices_route_and_anything_else_is_refused() {
         report_directive(&workspace, &["--result", "resumed", "--user-input", "2"]).await;
     assert_eq!(
         message,
-        "Redo accepted at \"domain-design\". Run `aidlc-jump execute --target domain-design \
---direction redo --scope classic` to reset the current stage, then re-run `next` to start it over."
+        "Redo accepted at \"domain-design\". Run `bun .claude/tools/aidlc-jump.ts execute \
+--target domain-design --direction redo --scope classic` to reset the current stage, then \
+re-run `next` to start it over."
     );
     let (_, message) =
         report_directive(&workspace, &["--result", "resumed", "--user-input", "3"]).await;
@@ -1283,22 +1742,22 @@ async fn minting_writes_the_execution_cursor_into_the_record() {
     assert_eq!(execution_id.len(), 36, "{cursor:?}");
     assert_eq!(intent_id.len(), 36, "{cursor:?}");
     assert_ne!(execution_id, intent_id, "{cursor:?}");
-    // 2 行目は record 名の id8 と一致する — record とカーソルが同じ intent を指す証拠。
+    // 本家2.7.1ではUUIDはカーソル/レジストリ、公開名は日付とラベルで分離する。
     let record = workspace.record_dir().expect("record");
     let name = record
         .file_name()
         .and_then(|n| n.to_str())
-        .expect("record 名")
-        .to_string();
-    let id8: String = intent_id
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .take(8)
-        .collect();
-    assert!(
-        name.ends_with(&id8),
-        "record 名 {name} と intent {intent_id}"
-    );
+        .expect("record名");
+    assert!(name.ends_with("-demo-run"), "{name}");
+    let store = StorePath::for_space(&workspace.path("aidlc"), &SpaceName::default());
+    let intent = IntentRepositoryImpl::open(&store)
+        .expect("ストア")
+        .find_by_id(
+            &core_command_domain::orchestration::IntentId::parse(intent_id).expect("UUIDv7"),
+        )
+        .await
+        .expect("カーソルが指す実在intent");
+    assert_eq!(intent.scope(), "classic");
 }
 
 /// 実行カーソルが壊れていれば**不在と混ぜず**に拒む。
@@ -1873,20 +2332,37 @@ async fn the_birth_print_names_a_command_the_receiving_surface_accepts() {
         .expect("print はコマンドをバッククォートで括る");
     assert_eq!(
         command,
-        "aidlc-utility intent-create --scope classic --arguments='build the auth service' --label \"<2-3 word kebab essence>\""
+        "bun .claude/tools/aidlc-utility.ts intent-create --scope classic --arguments='build the auth service' --label \"<2-3 word kebab essence>\""
     );
 
-    // conductor がラベルを畳む（唯一の置換）。
+    // conductor がラベルを畳む（唯一の置換）。名指しは本家逐語の `bun <harness>/tools/<tool>.ts`
+    // 入口であり (`aidlc-orchestrate.ts:1660` @a277af21)、その入口を native の面へ結ぶのは U4 の
+    // 配布接続 (契約 C6 / C8)。ここでは入口のツール名をそのまま面に読み替えて受け口を叩く。
     let argv = shell_split(&command.replace("<2-3 word kebab essence>", "auth service"));
-    let (face, rest) = argv.split_first().expect("argv0 がある");
+    let (runner, after_runner) = argv.split_first().expect("argv0 がある");
+    assert_eq!(runner, "bun");
+    let (entry, rest) = after_runner.split_first().expect("入口スクリプトがある");
+    assert_eq!(entry, ".claude/tools/aidlc-utility.ts");
+    let face = std::path::Path::new(entry)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .expect("入口スクリプトの語幹");
     assert_eq!(face, "aidlc-utility");
     let borrowed: Vec<&str> = rest.iter().map(String::as_str).collect();
 
     let created = invoke(&workspace, face, &borrowed).await;
 
     assert_eq!(created.code(), 0, "{created:?}");
-    let record = string_of(&line_of(&created), "record");
-    assert!(record.contains("-auth-service-"), "{record}");
+    let record = workspace.record_dir().expect("記録");
+    assert!(
+        record
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .ends_with("-auth-service"),
+        "{record:?}"
+    );
     // 自由記述は intent の Project 欄へ通っている（`--arguments` が届いた証拠）。
     let state = workspace.state_file().expect("状態ファイルが投影された");
     assert!(state.contains("build the auth service"), "{state}");
@@ -2062,6 +2538,10 @@ async fn a_repeated_awaiting_approval_report_is_an_idempotent_print() {
     )
     .await;
     let before = workspace.audit_shard().expect("監査シャード");
+    let before_state = workspace.state_file().expect("状態");
+    let before_journal = workspace.journal_rows();
+    // 公開時刻が秒単位でも、no-opで更新時刻を書き換える回帰を見逃さない。
+    std::thread::sleep(std::time::Duration::from_millis(1100));
 
     let completion = invoke(
         &workspace,
@@ -2071,11 +2551,21 @@ async fn a_repeated_awaiting_approval_report_is_an_idempotent_print() {
     .await;
 
     assert_eq!(completion.code(), 0, "{completion:?}");
+    assert_eq!(
+        workspace.state_file().as_deref(),
+        Some(before_state.as_str()),
+        "no-opはLast Updatedも含め公開状態を変えない"
+    );
+    assert_eq!(
+        workspace.journal_rows(),
+        (before_journal.0, before_journal.1 + 1),
+        "内部の報告事実は追記される"
+    );
     let directive = line_of(&completion);
     assert_eq!(string_of(&directive, "kind"), "print");
     assert_eq!(
         string_of(&directive, "message"),
-        "Stage \"domain-design\" is already awaiting approval."
+        "Stage \"domain-design\" is already awaiting approval; gate evidence revalidated."
     );
     assert_eq!(
         workspace.audit_shard().expect("監査シャード"),
@@ -2560,9 +3050,9 @@ async fn a_zero_byte_state_file_is_refused_as_an_unreadable_version() {
     );
 }
 
-/// 段 2 — `--single` は構文を検証し、**本流を一歩も進めずに**対をコミットする（I10 / #73）。
+/// 段 2 — 単独実行は公開next/continueで開始し、reportで完了する。本流は動かない。
 #[tokio::test]
-async fn the_single_report_commits_the_pair_without_advancing_the_main_workflow() {
+async fn the_single_run_starts_then_completes_without_advancing_the_main_workflow() {
     let workspace = Workspace::create();
     invoke(
         &workspace,
@@ -2617,7 +3107,33 @@ single stage's synthetic-id pair; --single never writes the main workflow's Curr
         "{message}"
     );
 
-    // 成功 — 監査 2 行だけが増え、状態ファイルは 1 バイトも動かない。
+    // 開始前の完了は拒否し、同じ公開入口から実行を開始する。
+    let (kind, message) = report_directive(
+        &workspace,
+        &[
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Cannot complete isolated stage \"contract-design\": no open single-stage:contract-design STAGE_STARTED boundary exists. Run `next --stage contract-design --single` first."
+    );
+    start_single_stage(&workspace, "contract-design").await;
+    let before_completion = workspace.audit_shard().expect("開始監査");
+    assert_eq!(
+        before_completion
+            .matches("**Workflow**: single-stage:contract-design")
+            .count(),
+        1
+    );
+
+    // 完了は1行だけ追加し、状態ファイルを動かさない。
     let (kind, message) = report_directive(
         &workspace,
         &[
@@ -2648,6 +3164,29 @@ single stage's synthetic-id pair; --single never writes the main workflow's Curr
     assert!(
         audit.contains("**Details**: Single-stage run of contract-design completed"),
         "{audit}"
+    );
+    let added = audit
+        .strip_prefix(&before_completion)
+        .expect("開始記録を維持");
+    assert_eq!(added.matches("**Event**: STAGE_COMPLETED").count(), 1);
+    assert!(!added.contains("**Event**: STAGE_STARTED"));
+    let (kind, message) = report_directive(
+        &workspace,
+        &[
+            "--single",
+            "--result",
+            "approved",
+            "--stage",
+            "contract-design",
+        ],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert!(message.contains("no open single-stage:contract-design STAGE_STARTED boundary"));
+    assert_eq!(
+        workspace.audit_shard().expect("監査"),
+        audit,
+        "完了済みの開始受領を再利用しない"
     );
 }
 
@@ -3595,6 +4134,14 @@ async fn log_review(workspace: &Workspace, args: &[&str]) -> aidlc::runtime::Com
 
 /// 依頼 1 件（成功を確かめて stdout の 1 行を返す）。
 async fn request_review(workspace: &Workspace, iteration: &str) -> String {
+    let path = workspace
+        .record_dir()
+        .expect("record")
+        .join("inception/domain-design/domain-design.md");
+    fs::create_dir_all(path.parent().expect("parent")).expect("stage dir");
+    if !path.exists() {
+        fs::write(&path, "# Domain design\n").expect("review input");
+    }
     let completion = log_review(
         workspace,
         &[
@@ -3613,6 +4160,27 @@ async fn request_review(workspace: &Workspace, iteration: &str) -> String {
 
 /// 判定 1 件（成功を確かめて stdout の 1 行を返す）。
 async fn record_verdict(workspace: &Workspace, iteration: &str, verdict: &str) -> String {
+    let path = workspace
+        .record_dir()
+        .expect("record")
+        .join("inception/domain-design/domain-design.md");
+    let original = fs::read_to_string(&path).expect("requested input");
+    let prefix = original.split("\n## Review").next().expect("body");
+    let audit = workspace.audit_shard().expect("request audit");
+    let request = audit
+        .rsplit("\n---\n")
+        .find(|row| {
+            row.contains("**Event**: REVIEW_REQUESTED")
+                && row.contains(&format!("**Iteration**: {iteration}\n"))
+        })
+        .expect("matching request");
+    let challenge = request
+        .lines()
+        .find_map(|line| line.strip_prefix("**Review Challenge**: "));
+    let challenge = challenge.map_or(String::new(), |value| {
+        format!("**Request Challenge:** {value}\n")
+    });
+    fs::write(&path, format!("{prefix}\n## Review\n\n{challenge}**Reviewer:** {REVIEWER}\n**Verdict:** {}\n**Iteration:** {iteration}\n",verdict.to_uppercase())).expect("fresh reviewer evidence");
     let completion = log_review(
         workspace,
         &[
@@ -3811,7 +4379,7 @@ async fn an_advisory_pass_is_terminal_at_the_first_verdict() {
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some("Cannot record review: stage \"contract-design\" has no declared reviewer.")
     );
 }
@@ -3872,7 +4440,8 @@ async fn a_retry_pending_request_reports_the_retry_and_does_not_spend_the_budget
         completion.line(),
         Some(r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#)
     );
-    // 呼び直しは数えないので、次の通常依頼は依然として 2 番である。
+    // 元の判定を受領してから次の通常依頼へ進む。retryは通常回数を増やさない。
+    record_verdict(&workspace, "1", "NOT-READY").await;
     request_review(&workspace, "2").await;
     // 監査台帳に `Retry` 行が並ぶ。
     let audit = workspace.audit_shard().expect("監査シャードは在る");
@@ -3905,7 +4474,7 @@ async fn the_review_refusals_are_verbatim() {
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some(
             "Refusing REVIEW_REQUESTED for \"domain-design\": iteration 2 is out of sequence; \
 expected 1 from the current audit attempt."
@@ -3927,7 +4496,7 @@ expected 1 from the current audit attempt."
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some(
             "Refusing REVIEW_REQUESTED for \"domain-design\": review request 3 exceeds this \
 stage's review budget (2). The review loop is exhausted - present the gate with the unresolved \
@@ -3952,7 +4521,7 @@ findings for the human's decision instead of another review pass."
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some(
             "Refusing REVIEW_COMPLETED for \"domain-design\": no unmatched REVIEW_REQUESTED \
 iteration 1 exists in the current audit attempt."
@@ -3975,7 +4544,7 @@ iteration 1 exists in the current audit attempt."
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some(
             "Refusing review retry for \"domain-design\": no unmatched REVIEW_REQUESTED \
 iteration 1 exists in the current audit attempt."
@@ -3997,7 +4566,7 @@ iteration 1 exists in the current audit attempt."
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some(&*format!(
             "Cannot record review for \"domain-design\": reviewer \"someone-else\" does not \
 match the declared reviewer \"{REVIEWER}\"."
@@ -4019,10 +4588,7 @@ async fn the_review_syntax_guards_refuse_in_the_upstream_order() {
     async fn refusal(workspace: &Workspace, args: &[&str]) -> String {
         let completion = log_review(workspace, args).await;
         assert_eq!(completion.code(), 1, "{completion:?}");
-        completion
-            .diagnostic()
-            .expect("stderr に逐語が要る")
-            .to_string()
+        log_error_message(&completion)
     }
 
     // フラグ文法 — 値が必要なフラグに値が無い。
@@ -4193,34 +4759,37 @@ workspace first."
 
 /// 記録面の未知動詞と未配線動詞は stderr + exit 1 である。
 #[tokio::test]
-async fn the_log_face_refuses_unknown_and_unwired_verbs() {
+async fn the_log_face_refuses_unknown_verbs_and_missing_required_arguments() {
     let workspace = Workspace::with_reviewer(None, None);
 
     let completion = invoke(&workspace, "aidlc-log", &["frobnicate"]).await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some("Unknown subcommand: frobnicate. Valid: decision, answer, link, review")
     );
 
     let completion = invoke(&workspace, "aidlc-log", &[]).await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some("Unknown subcommand: undefined. Valid: decision, answer, link, review")
     );
 
-    for verb in ["decision", "answer", "link"] {
+    for verb in ["decision", "answer"] {
         let completion = invoke(&workspace, "aidlc-log", &[verb]).await;
         assert_eq!(completion.code(), 1);
         assert_eq!(
-            completion.diagnostic(),
-            Some(&*format!(
-                "Cannot record a {verb} event: the aidlc-log {verb} verb is not wired in this \
-build. Only `review` is available."
-            ))
+            Some(log_error_message(&completion).as_str()),
+            Some("Missing --stage <slug>")
         );
     }
+    let completion = invoke(&workspace, "aidlc-log", &["link"]).await;
+    assert_eq!(completion.code(), 1);
+    assert_eq!(
+        Some(log_error_message(&completion).as_str()),
+        Some("Missing --stage <slug>")
+    );
 }
 
 /// 鋳造前のワークスペースは「アクティブな intent が無い」で断る。
@@ -4241,7 +4810,7 @@ async fn a_review_without_an_active_intent_is_refused() {
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some("Cannot resolve the active intent for review logging.")
     );
 }
@@ -4326,10 +4895,7 @@ async fn a_review_on_a_broken_execution_cursor_names_the_medium_failure() {
     .await;
     assert_eq!(completion.code(), 1);
     assert!(
-        completion
-            .diagnostic()
-            .expect("stderr に逐語が要る")
-            .starts_with("The execution cursor cannot be read"),
+        log_error_message(&completion).starts_with("The execution cursor cannot be read"),
         "{completion:?}"
     );
 }
@@ -4359,7 +4925,7 @@ async fn a_review_stage_outside_the_slug_grammar_reads_as_no_declared_reviewer()
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some("Cannot record review: stage \"Not A Slug\" has no declared reviewer.")
     );
 }
@@ -4389,7 +4955,7 @@ async fn an_empty_iteration_is_outside_the_positive_integer_grammar() {
     .await;
     assert_eq!(completion.code(), 1);
     assert_eq!(
-        completion.diagnostic(),
+        Some(log_error_message(&completion).as_str()),
         Some("REVIEW_REQUESTED requires --iteration <positive integer>.")
     );
 }
@@ -4404,6 +4970,7 @@ async fn a_review_under_an_invalid_active_space_is_refused_before_the_store() {
         &["intent-create", "--scope", "classic", "--label", "review"],
     )
     .await;
+    without_session_bindings(&workspace);
     fs::write(workspace.path("aidlc/active-space"), "../escape\n").expect("空間カーソルを壊す");
 
     let completion = log_review(
@@ -4420,10 +4987,7 @@ async fn a_review_under_an_invalid_active_space_is_refused_before_the_store() {
     .await;
     assert_eq!(completion.code(), 1);
     assert!(
-        completion
-            .diagnostic()
-            .expect("stderr に逐語が要る")
-            .starts_with("The active space \"../escape\""),
+        log_error_message(&completion).starts_with("The active space \"../escape\""),
         "{completion:?}"
     );
 }
@@ -4899,6 +5463,7 @@ async fn a_promotion_on_a_broken_execution_cursor_names_the_medium_failure() {
 async fn a_promotion_surfaces_every_medium_failure() {
     // active-space が空間名の文法外なら、ストアを開く前に断る。
     let workspace = minted_practices().await;
+    without_session_bindings(&workspace);
     fs::write(workspace.path("aidlc/active-space"), "Not A Space\n").expect("空間名を壊す");
     let completion = promote(&workspace).await;
     assert_eq!(completion.code(), 1, "{completion:?}");
@@ -5029,7 +5594,7 @@ async fn set_autonomy(workspace: &Workspace, mode: &str) -> aidlc::runtime::Comp
     bolt_verb(workspace, &["set-autonomy", "--mode", mode]).await
 }
 
-/// 鋳造だけ済ませたワークスペース（自律モードは既定の `gated`）。
+/// supplemental採取と同じ、自律モード欄を明示した合成ワークスペース。
 async fn minted() -> Workspace {
     let workspace = Workspace::create();
     invoke(
@@ -5038,6 +5603,17 @@ async fn minted() -> Workspace {
         &["intent-create", "--scope", "classic", "--label", "autonomy"],
     )
     .await;
+    // 本家2.7.1の初期状態にはAutonomy欄がない。切替契約の検査前提として明示する。
+    let path = workspace.record_dir().expect("記録").join("aidlc-state.md");
+    let state = fs::read_to_string(&path).expect("状態");
+    fs::write(
+        path,
+        state.replace(
+            "## Runtime State\n",
+            "## Runtime State\n- **Construction Autonomy Mode**: gated\n",
+        ),
+    )
+    .expect("合成前提");
     workspace
 }
 
@@ -5190,7 +5766,8 @@ async fn the_mode_flag_refusals_are_verbatim() {
     );
 }
 
-/// 状態ファイルの欄が消えていれば `setFieldStrict` の逐語で断る（逸脱台帳 #2 の M12）。
+/// 状態ファイルの欄が消えていれば `setFieldStrict` の逐語で断る（2.7.1 採取
+/// `cli/set-autonomy/state-field-absent` と同じ前提）。
 #[tokio::test]
 async fn a_state_file_without_the_autonomy_field_is_refused_verbatim() {
     let workspace = minted().await;
@@ -5346,6 +5923,7 @@ async fn a_restoration_failure_prevents_the_autonomy_switch_from_being_recorded(
 #[tokio::test]
 async fn switching_under_an_invalid_active_space_is_refused_by_name() {
     let workspace = minted().await;
+    without_session_bindings(&workspace);
     fs::write(workspace.path("aidlc/active-space"), "../escape\n").expect("空間カーソル");
 
     let completion = set_autonomy(&workspace, "gated").await;
@@ -5357,4 +5935,98 @@ async fn switching_under_an_invalid_active_space_is_refused_by_name() {
             .is_some_and(|line| line.contains("../escape")),
         "{completion:?}"
     );
+}
+
+#[tokio::test]
+async fn a_cold_log_refusal_does_not_create_an_execution_or_an_audit() {
+    let workspace = Workspace::create();
+    let result = invoke(
+        &workspace,
+        "aidlc-log",
+        &["decision", "--stage", "domain-design"],
+    )
+    .await;
+    assert_eq!(result.code(), 1);
+    assert_eq!(
+        result.diagnostic(),
+        Some(r#"{"error":"Missing --decision <text>"}"#)
+    );
+    assert!(workspace.record_dir().is_none());
+    assert!(workspace.audit_shard().is_none());
+    assert!(
+        !workspace
+            .path("aidlc/spaces/default/intents/.aidlc-store.sqlite")
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn a_log_refusal_keeps_its_diagnostic_when_audit_publication_fails() {
+    let workspace = Workspace::create();
+    assert_eq!(
+        invoke(
+            &workspace,
+            "aidlc-utility",
+            &["intent-create", "--scope", "classic", "--label", "failure"]
+        )
+        .await
+        .code(),
+        0
+    );
+    let audit_dir = workspace.record_dir().expect("record").join("audit");
+    let audit = fs::read_dir(&audit_dir)
+        .expect("audit")
+        .next()
+        .expect("entry")
+        .expect("entry")
+        .path();
+    let original = fs::read(&audit).expect("audit bytes");
+    fs::remove_file(&audit).expect("replace");
+    fs::create_dir(&audit).expect("barrier");
+    let result = invoke(
+        &workspace,
+        "aidlc-log",
+        &["decision", "--stage", "domain-design"],
+    )
+    .await;
+    assert_eq!(result.code(), 1);
+    assert_eq!(
+        result.diagnostic(),
+        Some(r#"{"error":"Missing --decision <text>"}"#)
+    );
+    fs::remove_dir(&audit).expect("remove barrier");
+    fs::write(&audit, original).expect("restore");
+    let recovered = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    assert_eq!(recovered.code(), 0, "{recovered:?}");
+    assert_eq!(
+        workspace
+            .audit_shard()
+            .expect("audit")
+            .matches("**Event**: ERROR_LOGGED")
+            .count(),
+        1
+    );
+    let repeated = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    assert_eq!(repeated.code(), 0, "{repeated:?}");
+    assert_eq!(
+        workspace
+            .audit_shard()
+            .expect("audit")
+            .matches("**Event**: ERROR_LOGGED")
+            .count(),
+        1
+    );
+}
+
+/// 生の文字列を許容せず、本家のJSONエラー封筒から本文を読む。
+fn log_error_message(completion: &aidlc::runtime::Completion) -> String {
+    let raw = completion.diagnostic().expect("log拒否のstderr");
+    let value: serde_json::Value = serde_json::from_str(raw).expect("本家同様のJSONエラー");
+    assert_eq!(value.as_object().expect("object").len(), 1);
+    value
+        .get("error")
+        .expect("error")
+        .as_str()
+        .expect("error文字列")
+        .to_string()
 }

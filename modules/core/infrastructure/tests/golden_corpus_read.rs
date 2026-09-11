@@ -1,8 +1,7 @@
 //! cli / hooks ゴールデンコーパスの読取と正規化 (FR7.2 / BR2.1 / BR2.2 / BR2.4)。
 //!
-//! 本 Unit (U1) が固定するのは「コーパスが読めて、正規化規則が適用できて、範囲を満たして
-//! いる」ところまでである。実装出力との突合せは U6 (next / continue) と U7 (CLI・フック)
-//! が同じ比較器を使って行う。
+//! 本家2.7.1のコーパス読取り・来歴・表示用の正規化・必要ケースの存在を検証する。
+//! 実装出力との互換判定は、各CLI/フック契約テストで生観測と照合する。
 //!
 //! 不一致が出たときに直すのは実装であってゴールデンではない (BR2.3 / BR2.5)。
 
@@ -232,7 +231,7 @@ fn both_families_carry_their_provenance() {
         let provenance = read_json(&format!("{family}/provenance.json"));
         assert_eq!(
             provenance["upstream_commit"].as_str(),
-            Some("3c3146cfd7cef33020d48e8d48d4e80d0f8c2820"),
+            Some("a277af218f0df7f325d3b8be7b6d90fce2c5bd40"),
             "{family}: 来歴の upstream commit が違う"
         );
         for field in [
@@ -261,7 +260,7 @@ fn both_families_carry_their_provenance() {
             let meta = read_json(&format!("{family}/{}/case.json", case.id()));
             assert_eq!(
                 meta["provenance"]["commit"].as_str(),
-                Some("3c3146cfd7cef33020d48e8d48d4e80d0f8c2820"),
+                Some("a277af218f0df7f325d3b8be7b6d90fce2c5bd40"),
                 "{}: ケース単位の provenance が無い",
                 case.id()
             );
@@ -321,7 +320,7 @@ fn the_normalization_rules_load_from_the_corpus() {
 }
 
 #[test]
-fn normalization_replaces_every_environment_specific_value() {
+fn normalization_replaces_only_declared_environment_values() {
     let norm = Normalization::load();
     let runtime = RuntimeValues::new(
         vec!["/tmp/aidlc-golden-cli-abc123".to_string()],
@@ -358,14 +357,16 @@ fn normalization_replaces_every_environment_specific_value() {
         out.contains("bare <TS>-golden"),
         "裸の記録ディレクトリ名が残っている:\n{out}"
     );
-    assert!(
-        out.contains("session <SESSION>"),
-        "セッション ID が残っている:\n{out}"
-    );
-    assert!(
-        out.contains("token <SESSION>"),
-        "継続トークンが残っている:\n{out}"
-    );
+    // 対応関係を与えていないIDやトークンを一律に潰すと、異なる値の不一致を隠す。
+    for identity in raw
+        .lines()
+        .filter(|line| line.starts_with("session ") || line.starts_with("token "))
+    {
+        assert!(
+            out.lines().any(|line| line == identity),
+            "未対応の識別子が変更された: {identity}\n{out}"
+        );
+    }
 }
 
 #[test]
@@ -491,10 +492,10 @@ fn an_outstanding_case_must_still_explain_its_reason() {
 
 #[test]
 fn previously_missing_paths_have_verified_supplemental_observations() {
-    let supplement = read_json("../supplemental-3c3146cf/cases.json");
+    let supplement = read_json("supplemental/cases.json");
     assert_eq!(
         supplement["upstream_commit"].as_str(),
-        Some("3c3146cfd7cef33020d48e8d48d4e80d0f8c2820")
+        Some("a277af218f0df7f325d3b8be7b6d90fce2c5bd40")
     );
     assert_eq!(
         supplement["fixture_kind"].as_str(),

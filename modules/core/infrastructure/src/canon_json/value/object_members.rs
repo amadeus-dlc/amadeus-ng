@@ -6,11 +6,16 @@ use super::json_value::JsonValue;
 ///
 /// 同名キーの再挿入は **値を置換し位置は最初の出現位置を維持する** (JS のオブジェクト
 /// および `serde_json` の `preserve_order` と同じ意味論)。
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ObjectMembers {
     entries: Vec<(String, JsonValue)>,
 }
 
+impl Default for ObjectMembers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl ObjectMembers {
     /// 右側の値を優先して結合する。既存キーは最初の位置を保持する。
     #[must_use]

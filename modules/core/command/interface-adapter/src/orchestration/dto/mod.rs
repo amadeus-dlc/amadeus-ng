@@ -49,6 +49,7 @@ mod skeleton_stance_recorded_dto;
 mod stage_revised_dto;
 mod stage_skipped_dto;
 mod started_dto;
+mod task_synchronized_dto;
 mod unparked_dto;
 mod workflow_definition_aggregate_key_dto;
 mod workflow_definition_dto;
@@ -77,6 +78,7 @@ pub use skeleton_stance_recorded_dto::SkeletonStanceRecordedDto;
 pub use stage_revised_dto::StageRevisedDto;
 pub use stage_skipped_dto::StageSkippedDto;
 pub use started_dto::StartedDto;
+pub use task_synchronized_dto::TaskSynchronizedDto;
 pub use unparked_dto::UnparkedDto;
 pub use workflow_definition_aggregate_key_dto::WorkflowDefinitionAggregateKeyDto;
 pub use workflow_definition_dto::WorkflowDefinitionDto;
@@ -84,3 +86,94 @@ pub use workflow_definition_event_dto::WorkflowDefinitionEventDto;
 
 #[cfg(test)]
 mod tests;
+
+mod reported_dto;
+
+mod decision_recorded_dto;
+
+mod prompt_observed_dto;
+
+mod answer_recorded_dto;
+
+mod active_directive_dto;
+mod directive_issued_dto;
+mod run_floor_dto;
+
+mod plan_approval_runtime_dto;
+pub use plan_approval_runtime_dto::PlanApprovalRuntimeDto;
+
+mod plan_approval_event_dto;
+pub use plan_approval_event_dto::PlanApprovalEventDto;
+
+mod plan_approval_runtime_key_dto;
+pub use plan_approval_runtime_key_dto::PlanApprovalRuntimeKeyDto;
+
+mod plan_approval_evidence_dto;
+mod plan_decision_evidence_dto;
+
+mod plan_response_preparation_dto;
+
+mod plan_answer_dto;
+mod plan_answer_input_dto;
+mod plan_answer_logged_dto;
+mod plan_receipt_dto;
+
+mod plan_generation_dto;
+
+mod hook_health_dto;
+
+pub use hook_health_dto::HookHealthDto;
+mod hook_health_event_dto;
+pub use hook_health_event_dto::HookHealthEventDto;
+mod hook_health_aggregate_key_dto;
+pub use hook_health_aggregate_key_dto::HookHealthAggregateKeyDto;
+
+mod artifact_audit_dto;
+pub use artifact_audit_dto::ArtifactAuditDto;
+mod artifact_audit_event_dto;
+pub use artifact_audit_event_dto::ArtifactAuditEventDto;
+mod artifact_audit_aggregate_key_dto;
+pub use artifact_audit_aggregate_key_dto::ArtifactAuditAggregateKeyDto;
+mod workflow_continuation_dto;
+mod workflow_continuation_event_dto;
+pub(crate) use workflow_continuation_dto::WorkflowContinuationDto;
+pub(crate) use workflow_continuation_event_dto::WorkflowContinuationEventDto;
+
+mod workflow_continuation_key_dto;
+pub(crate) use workflow_continuation_key_dto::WorkflowContinuationKeyDto;
+
+mod command_failed_dto;
+mod health_checked_dto;
+mod learnings_captured_dto;
+mod memory_journals_observed_dto;
+
+mod pipeline_link_completed_dto;
+pub use pipeline_link_completed_dto::PipelineLinkCompletedDto;
+
+mod pipeline_record_dto;
+
+mod session_audit_record_dto;
+pub(crate) use session_audit_record_dto::SessionAuditRecordDto;
+
+mod session_audit_dto;
+pub(crate) use session_audit_dto::SessionAuditDto;
+
+mod session_audit_event_dto;
+pub(crate) use session_audit_event_dto::SessionAuditEventDto;
+
+mod session_audit_key_dto;
+pub(crate) use session_audit_key_dto::SessionAuditKeyDto;
+
+mod single_stage_run_started_dto;
+pub use single_stage_run_started_dto::SingleStageRunStartedDto;
+
+mod directive_context_invalidated_dto;
+
+mod source_baseline_dto;
+
+mod jump_observation_dto;
+mod jump_scope_dto;
+
+mod review_binding_dto;
+mod review_completion_dto;
+mod review_record_dto;

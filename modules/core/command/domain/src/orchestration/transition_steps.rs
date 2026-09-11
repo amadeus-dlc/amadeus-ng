@@ -11,12 +11,22 @@ use super::transition_steps_error::TransitionStepsError;
 /// 構築時に拒否する。列の**形**は名前付きクエリ ([`TransitionSteps::is_single`] /
 /// [`TransitionSteps::is_pair`]) で問う: 適用側が生のスライスを受け取って自前で分岐すると、
 /// 段の並びという業務判断が集約の外へ漏れる (`coding-rules/tell-dont-ask.md`)。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransitionSteps {
     items: Vec<TransitionStep>,
 }
 
+impl Default for TransitionSteps {
+    fn default() -> Self {
+        Self::of_items(Default::default())
+    }
+}
 impl TransitionSteps {
+    // 検査済みの列・集合とその部分列は、この構築口で全状態を初期化する。
+    const fn of_items(items: Vec<TransitionStep>) -> Self {
+        Self { items }
+    }
+
     /// 遷移順の段から列を組む (**DTO とディスパッチの唯一の構築経路**)。
     ///
     /// # Errors
@@ -30,13 +40,13 @@ impl TransitionSteps {
             }
             seen.push(*step);
         }
-        Ok(TransitionSteps { items })
+        Ok(TransitionSteps::of_items(items))
     }
 
     /// 段 1 つだけの列 (重複し得ないので検査を要さない)。
     #[must_use]
     pub fn single(step: TransitionStep) -> TransitionSteps {
-        TransitionSteps { items: vec![step] }
+        TransitionSteps::of_items(vec![step])
     }
 
     /// 復旧の 2 段 — ゲートを開き直してから承認する。
@@ -47,9 +57,10 @@ impl TransitionSteps {
     /// 名前付きの全域構築子を持つ (プロダクトコードで `unwrap` を使わないため)。
     #[must_use]
     pub fn recovered_approval() -> TransitionSteps {
-        TransitionSteps {
-            items: vec![TransitionStep::GateStartRecovered, TransitionStep::Approve],
-        }
+        TransitionSteps::of_items(vec![
+            TransitionStep::GateStartRecovered,
+            TransitionStep::Approve,
+        ])
     }
 
     /// その段を含むか。
@@ -98,14 +109,13 @@ impl TransitionSteps {
     /// 条件に一致する段を遷移順のまま残す。重複が増えないので不変条件は保たれる。
     #[must_use]
     pub fn filter(&self, mut predicate: impl FnMut(TransitionStep) -> bool) -> TransitionSteps {
-        TransitionSteps {
-            items: self
-                .items
+        TransitionSteps::of_items(
+            self.items
                 .iter()
                 .filter(|step| predicate(**step))
                 .copied()
                 .collect(),
-        }
+        )
     }
 }
 

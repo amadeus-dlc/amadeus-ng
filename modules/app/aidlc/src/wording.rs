@@ -143,8 +143,8 @@ pub fn unreadable_execution_cursor(cause: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// `next` の逐語 — 21 分岐ラダーが出す文言 (ピン `3c3146cf` の `aidlc-orchestrate.ts` と
-// `tests/golden/upstream-3c3146cf/cli/` が正本。旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
+// `next` の逐語。現行受入は `tests/golden/upstream-a277af21/cli/`（2.7.1）。
+// 旧実装由来の文言も残るため、移行状況はU2のCLI比較証跡と各契約テストで確認する。
 //
 // b44 でクエリ側 (`NextUseCase::wording`) からここへ移した。**行の `kind` に従って描くのは
 // 出す側の仕事**であり、クエリ側は綴り (`decision_kind` 等) を運ぶだけである
@@ -280,7 +280,18 @@ Nothing is lost: the intent is saved on disk and resumes on the next `next`."
     }
 }
 
-/// コスト節 (upstream `costClause` `:669-676` 逐語)。括弧は呼出側が付ける。
+/// 誕生 print の読み上げ 1 行 (upstream `createPrintDirective` `aidlc-orchestrate.ts:1676-1678`
+/// @a277af21 逐語)。コスト節が無い scope (グリッド列なし) は件数なしの形になる。
+#[must_use]
+pub fn birth_narration(scope: &str, clause: Option<&str>) -> String {
+    match clause {
+        Some(clause) => format!("Setting up a {scope} workflow for this: {clause}."),
+        None => format!("Setting up a {scope} workflow for this."),
+    }
+}
+
+/// コスト節 (upstream `costClause` `aidlc-orchestrate.ts:1389-1396` @a277af21 逐語)。括弧は
+/// 呼出側が付ける。
 ///
 /// 4 つの数はいずれも `read_definition_scope` の列であり、ここでは並べるだけである
 /// (集約が数え、RMU が行に書いた)。
@@ -317,10 +328,12 @@ pub fn no_stage_in_phase(phase: &str) -> String {
     format!("No in-scope stage found for phase \"{phase}\".")
 }
 
-/// 分岐 7 — jump の解決命令 (state あり)。
+/// 分岐 7 — jump の実行命令 (state あり。upstream `emitJumpDirective` `:6640-6642` 逐語)。
 #[must_use]
-pub fn resolve_jump(spelled: &str) -> String {
-    format!("Run `{spelled}`.")
+pub fn execute_jump(spelled: &str) -> String {
+    format!(
+        "Run `{spelled}` to perform the jump, then re-run `next` to continue from the jump target."
+    )
 }
 
 /// 分岐 5 — scope 変更の名指し (upstream `:3056` 逐語)。
@@ -382,12 +395,27 @@ This is a terminal utility, NOT workflow work: do NOT run `next` and do NOT adva
     )
 }
 
-/// 分岐 6 — 再開メニュー。
+/// write-audit-logのheartbeatディレクトリ障害だけ、承認済みの処理系差分で描く。
+/// 他の対象・他のIOエラーへこの比較例外を広げない。
 #[must_use]
-pub fn resume_menu(stage: &str) -> String {
-    format!(
-        "An existing workflow was found (currently at \"{stage}\"). How would you like to proceed? Resume from last checkpoint, redo the current stage, jump to a stage, or start fresh."
-    )
+pub fn hook_heartbeat_failure(
+    error: &core_read_model_updater::orchestration::JournalReadError,
+    hook: &str,
+    expected_path: &std::path::Path,
+) -> String {
+    if let core_read_model_updater::orchestration::JournalReadError::Io {
+        kind: std::io::ErrorKind::IsADirectory,
+        path: Some(path),
+    } = error
+        && hook == "write-audit-log"
+        && path == expected_path
+    {
+        return format!(
+            "EISDIR: illegal operation on a directory, open '{}'",
+            path.display()
+        );
+    }
+    error.to_string()
 }
 
 /// 分岐 9c — 稼働中の自由記述。
@@ -425,13 +453,53 @@ pub fn workflow_complete(stage: &str, scope: &str) -> String {
     )
 }
 
-/// `stage-graph.json` が読めないときの逐語文言 (12 §4 #1)。
+/// `stage-graph.json` が読めないときの逐語文言。
 ///
-/// ピン留めソース採取で逐語確認済み (`aidlc-lib.ts:8565-8570` @3c3146cf)。
+/// 固定コミット `a277af21` の `aidlc-lib.ts` (`loadStageGraph` の throw) と同じ綴り。この
+/// 文言を含む 2.7.1 の採取ケースは無い (`tests/golden/upstream-a277af21/cli/` 28 ケースに
+/// 該当なし) ので、ソース読みだけが根拠である。
 #[must_use]
 pub fn stage_graph_not_readable(path: &str, cause: &str) -> String {
     format!(
         "Stage graph not readable at {path}: {cause}. Reinstall the framework or re-run setup to restore the data file."
+    )
+}
+
+/// 規則配送が要る規則ファイルを読めない (upstream
+/// `hooks/aidlc-deliver-stage-rules.ts` が使う `tools/aidlc-steering.ts:101-102`)。
+///
+/// `cause` は読めなかった理由の材料である。upstream は Node の `errorMessage(error)`
+/// （`ENOENT: no such file or directory, open '<abs>'` 形）を置くが、こちらは Rust の
+/// `io::Error` の綴りになる。**丸括弧の中だけが違い、前後は逐語である**。
+#[must_use]
+pub fn dispatch_rule_unreadable(rel: &str, cause: &str) -> String {
+    format!(
+        "Cannot load required stage rule \"{rel}\" ({cause}). \
+         The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again."
+    )
+}
+
+/// 規則束が大きすぎて brief へ付けられない (upstream
+/// `hooks/aidlc-deliver-stage-rules.ts:347-352`)。
+#[must_use]
+pub fn dispatch_rules_oversize(bytes: usize, cap: usize) -> String {
+    format!(
+        "[aidlc] This stage's rule files add up to {bytes} bytes, exceeding the safe \
+         {cap}-byte output limit for attaching them to a subagent brief. The subagent was not \
+         started, and nothing partial was written. Shorten or split the rule files for the \
+         active stage, then start the subagent again."
+    )
+}
+
+/// 同じ上限超過を、規則を自前で先読みするハーネス向けに助言として出す (upstream
+/// `hooks/aidlc-deliver-stage-rules.ts:338-342`)。
+#[must_use]
+pub fn dispatch_rules_oversize_advisory(bytes: usize, cap: usize) -> String {
+    format!(
+        "[aidlc] Advisory: this stage's rule files add up to {bytes} bytes, which exceeds the safe \
+         {cap}-byte limit for attaching them to a subagent brief. Nothing partial was written. \
+         This harness loads the same rule files itself, through its own active-memory preload \
+         fallback, so the work continues without them attached."
     )
 }
 
@@ -460,10 +528,28 @@ pub const STALE_CONTINUATION: &str = "This stage or its rules changed while they
 /// 存在しない部の要求。
 pub const PART_NOT_EXIST: &str = "This request asks for a part of the stage rules that does not exist. Run a fresh `next` to restart delivery from part 1.";
 
+/// 消費済みトークンの再提示（upstream `aidlc-orchestrate.ts:8488` の `superseded`）。
+///
+/// 継続トークンは**単回使用**である（upstream 2.6.51）。1 度後続を発行したトークンは
+/// 現行ではなくなり、再提示は後続の繰り返しではなく拒否になる。
+pub const CONTINUATION_TOKEN_SUPERSEDED: &str = "This continuation token is no longer current for this workflow. Run a fresh `next`; do not reuse an earlier token.";
+
+/// 準備中に作業文脈が動いた（upstream `aidlc-orchestrate.ts:8489` の `drift`）。
+///
+/// 継続を組み立てている間に intent・プロジェクト・状態・ハーネスのいずれかが
+/// 入れ替わった。組み立て済みの結果は使わせない。
+pub const CONTINUATION_CONTEXT_CHANGED: &str = "The active workflow context changed while this continuation was prepared. Run a fresh `next`; do not use the prepared result.";
+
+/// カーソル調整のロック競合（upstream `aidlc-orchestrate.ts:8493` 付近）。
+///
+/// 文言が主張するのは「**この呼び出しはカーソルを動かしていない**」ことである。
+/// したがって競合時は publish を行わない。
+pub const CONTINUATION_COORDINATION_BUSY: &str = "Continuation coordination is busy. This call did not commit a cursor change. Retry the current token; if it is reported superseded, run a fresh `next`.";
+
 // ---------------------------------------------------------------------------
-// `report` の逐語 — 13 段ガードが出す文言 (逐語はピン `3c3146cf` の
-// `aidlc-orchestrate.ts handleReport` / `handleResumeReport` / `aidlc-lib.ts` が正本。
-// 旧契約マップ docs/specs/research/ は 2026-09-07 に削除した)。
+// `report` の逐語 — 13 段ガードが出す文言 (正本は固定コミット `a277af21` の
+// `aidlc-orchestrate.ts handleReport` / `handleResumeReport` / `aidlc-lib.ts`。採取済みの
+// 逐語は `tests/golden/upstream-a277af21/cli/report/*/stdout.json` が持つ)。
 // ---------------------------------------------------------------------------
 
 /// 段 1 — 版が読めない状態ファイル (upstream `aidlc-lib.ts:10628-10634` 逐語)。
@@ -603,17 +689,13 @@ pub const RESUME_WITHOUT_STATE: &str =
 pub const RESUME_WITHOUT_CURRENT_STAGE: &str =
     "State file has no Current Stage field - cannot resume from the last checkpoint.";
 
-/// 段 4 の選択肢 2 — やり直し (upstream `:5428` 逐語)。
-///
-/// 命令の綴りは**逸脱台帳 #1 の写像**である。upstream は
-/// `bun <harness>/tools/aidlc-jump.ts execute --target …` を名指すが、こちらはマルチコールの
-/// 正準形 `aidlc-jump` を名指す（`next/stage-jump-print` と同じ扱い —
-/// `cli_golden_test.rs` の「駆動できないケース」を参照）。
+/// 段 4 の選択肢 2 — やり直し (upstream `:7528` @a277af21 逐語。命令の綴りは配布入口形
+/// `bun .claude/tools/aidlc-jump.ts execute …` — Step 8 裁定 Q1 = A)。
 #[must_use]
 pub fn resume_redo(stage: &str, scope: &str) -> String {
     format!(
-        "Redo accepted at \"{stage}\". Run `aidlc-jump execute --target {stage} --direction redo \
---scope {scope}` to reset the current stage, then re-run `next` to start it over."
+        "Redo accepted at \"{stage}\". Run `bun .claude/tools/aidlc-jump.ts execute --target {stage} \
+--direction redo --scope {scope}` to reset the current stage, then re-run `next` to start it over."
     )
 }
 
@@ -793,7 +875,7 @@ pub fn committed_transition(subs: &str, stage: &str, scope: &str) -> String {
 /// no-op — 既に開いているゲート (upstream `:5701` 逐語)。
 #[must_use]
 pub fn already_awaiting_approval(stage: &str) -> String {
-    format!("Stage \"{stage}\" is already awaiting approval.")
+    format!("Stage \"{stage}\" is already awaiting approval; gate evidence revalidated.")
 }
 
 /// no-op — カーソルが先へ移った通過済みステージ (upstream `:5855-5856` 逐語)。
@@ -846,18 +928,6 @@ pub fn unknown_log_subcommand(given: Option<&str>) -> String {
     format!(
         "Unknown subcommand: {}. Valid: decision, answer, link, review",
         given.unwrap_or("undefined")
-    )
-}
-
-/// 認識はするが**この build に無い**記録動詞（own wording）。
-///
-/// upstream に対応する逐語は無い — あちらは 4 動詞すべてを持つ。b46 が導入した
-/// 「not wired in this build」の言い回しに揃えてある（[`transition_not_wired`] と同型）。
-#[must_use]
-pub fn log_verb_not_wired(verb: &str) -> String {
-    format!(
-        "Cannot record a {verb} event: the aidlc-log {verb} verb is not wired in this build. \
-Only `review` is available."
     )
 }
 
@@ -992,8 +1062,7 @@ verdict; surface them at the gate instead."
 
 /// 受領証の記録に失敗した（own wording — 中継形）。
 ///
-/// upstream は `emitError` が `ERROR_LOGGED` 行を描いてから stderr に出すが、本 build は
-/// その行を描かない（既存の拒否と同じ扱い、逸脱台帳）。
+/// log面の共通終了処理が、この診断をERROR_LOGGEDへ記録してJSONのstderrへ包む。
 #[must_use]
 pub fn review_log_failed(stage: &str, detail: &str) -> String {
     let detail = detail.trim();
@@ -1026,7 +1095,7 @@ practices-event, practices-promote, fork, merge, park, unpark",
 /// 認識はするが**この build に無い**状態動詞（own wording）。
 ///
 /// upstream に対応する逐語は無い — あちらは 25 動詞すべてを持つ。b46 が導入した
-/// 「not wired in this build」の言い回しに揃えてある（[`log_verb_not_wired`] と同型）。
+/// 「not wired in this build」の言い回しに揃えてある（[`transition_not_wired`] と同型）。
 #[must_use]
 pub fn state_verb_not_wired(verb: &str) -> String {
     format!(
@@ -1192,8 +1261,8 @@ pub const SET_AUTONOMY_WITHOUT_INTENT: &str =
 /// 状態ファイルに欄が無い（upstream `setFieldStrict` の throw を `handleSetAutonomy`
 /// `:840` が `State update failed: <message>` に包んだ形の逐語）。
 ///
-/// 逸脱台帳 #2 の M12 修正により誕生が欄を書くので、到達するのは手編集で欄を消したときだけ
-/// である。
+/// 誕生 (`intent-create`) が欄を書くので、到達するのは手編集で欄を消したときだけである
+/// (2.7.1 採取 `cli/set-autonomy/state-field-absent` と同じ前提)。
 #[must_use]
 pub fn state_field_not_found(field: &str) -> String {
     format!(
@@ -1212,6 +1281,277 @@ pub const HUMAN_PRESENCE_REQUIRED: &str = "Refusing to switch Construction to au
 #[must_use]
 pub fn switch_autonomy_failed(detail: &str) -> String {
     format!("Failed to switch autonomy: {detail}")
+}
+
+/// 凍結の拒否理由 (upstream `hooks/aidlc-review-freeze.ts` `blockReason`)。
+///
+/// 対象・ステージ (per-unit なら Unit) を名指し、代替経路を 2 つ示す — ゲートで引用する、
+/// または差し戻しを記録して改訂を解禁する。末尾の `guidance` は
+/// [`review_freeze_recovery`] が組む。
+#[must_use]
+pub fn review_freeze_blocked(
+    target: &str,
+    stage: &str,
+    unit: Option<&str>,
+    guidance: &str,
+) -> String {
+    let scope = unit.map_or_else(
+        || format!("stage \"{stage}\""),
+        |unit| format!("stage \"{stage}\" unit \"{unit}\""),
+    );
+    format!(
+        "review-freeze: \"{target}\" is this stage's output document for {scope}, and its \
+latest review is final. Writing it now would make that review no longer cover the document. \
+If this is a reviewer suggestion, quote it at the gate instead of applying it. {guidance}"
+    )
+}
+
+/// 読み取り範囲の拒否理由 (upstream `aidlc-reviewer-scope.ts` `blockReason`)。
+///
+/// 自分で説明し、行き先を示す文面である — 範囲・越えた綴り・正規の代替を名指すので、
+/// レビュアーは同じ呼出しを繰り返さずに自分で直せる。
+#[must_use]
+pub fn reviewer_scope_blocked(target: &str, unit: &str) -> String {
+    format!(
+        "This review cannot open \"{target}\" because it belongs to another unit; the current \
+review covers {unit}. Use the files supplied with the review and the files under this unit's \
+construction path. If the design depends on another unit, note that integration point in the \
+findings instead of opening its files. Write {unit} literally in shell paths because variables \
+cannot be checked, and keep searches inside the current unit."
+    )
+}
+
+/// 凍結を解く経路の案内 (upstream `aidlc-lib.ts:16737` `recoveryGuidance`)。
+///
+/// upstream は状態ファイルの checkbox 行を読むが、こちらは同じ値を持つ集約の投影材料
+/// (実効プランと checkbox) を受ける — 状態ファイルはその投影であり、材料としては同じである。
+#[must_use]
+pub fn review_freeze_recovery(
+    stage: &str,
+    checkbox: core_command_domain::workspace::CheckboxState,
+    skipped_by_plan: bool,
+) -> String {
+    use core_command_domain::workspace::CheckboxState;
+    if skipped_by_plan {
+        return format!(
+            "This stage is excluded from the current plan; change to a scope that includes it \
+with /aidlc --scope <scope>, then restart {stage}."
+        );
+    }
+    // upstream `recoveryGuidance` の逐語 5 文への全域写像である。3 述語では
+    // Completed / Skipped / Revising を撃ち分けられず、撃ち分ける分類をドメインへ足すと
+    // Published Language の文言選択がドメインへ漏れる。
+    // amadeus-lint: allow(checkbox-vocabulary) — 逐語文言への全域写像であり分類の再実装ではない
+    match checkbox {
+        CheckboxState::InProgress | CheckboxState::AwaitingApproval => {
+            "To change this document, tell me what should change and I'll record your Request \
+Changes decision (this works before the gate opens); that unlocks the file for revision and a \
+fresh review."
+                .to_string()
+        }
+        CheckboxState::Revising => format!(
+            "This stage is mid-revision; the way to restart it cleanly is a redo jump: \
+/aidlc --stage {stage} (your recorded answers survive; you will re-confirm the summary once)."
+        ),
+        CheckboxState::Completed => format!(
+            "This stage is already approved; restore the reviewed source state, or jump back \
+with /aidlc --stage {stage} to redo it."
+        ),
+        CheckboxState::Pending | CheckboxState::Skipped => format!(
+            "Restart this stage with /aidlc --stage {stage}; the recorded answers survive, and \
+the stage will ask for confirmation again."
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// §13 学びの儀式（固定本家 2.7.1 `a277af21` `tools/aidlc-learnings.ts`）
+// ---------------------------------------------------------------------------
+
+/// `surface` の使い方（同 `:151`）。
+pub const LEARNINGS_SURFACE_USAGE: &str =
+    "Usage: aidlc-learnings.ts surface --slug <stage-slug> [--project-dir <path>]";
+
+/// `persist` の使い方（同 `:689-692`）。
+pub const LEARNINGS_PERSIST_USAGE: &str = "Usage: aidlc-learnings.ts persist --slug <stage-slug> --selections-json <path> [--project-dir <path>]";
+
+/// 状態ファイルに `Current Stage` が無い（同 `:288`）。
+pub const LEARNINGS_NO_CURRENT_STAGE: &str = "state file has no Current Stage field";
+
+/// `--help` の本文（同 `:1098-1116`）。
+pub const LEARNINGS_HELP: &str = "aidlc-learnings.ts — §13 learning-gate tool (tool-as-actor).
+
+Subcommands:
+  surface --slug <stage-slug> [--project-dir <path>]
+      Read memory.md for the active stage; emit structured candidates
+      (Interpretations/Deviations/Tradeoffs) + parked open questions.
+  persist --slug <stage-slug> --selections-json <path> [--project-dir <path>]
+      Write confirmed learnings as practices under the routed heading in
+      {project,team}.md (the relocated method files) and/or scaffold + bind
+      a project-tier sensor manifest; emit RULE_LEARNED / SENSOR_PROPOSED
+      under one withAuditLock.
+  --help";
+
+/// 学びの面の未知動詞（同 `:1140`）。
+#[must_use]
+pub fn unknown_learnings_subcommand(given: Option<&str>) -> String {
+    format!(
+        "Unknown subcommand: {}. Run aidlc-learnings.ts --help for usage.",
+        given.unwrap_or("(none)")
+    )
+}
+
+/// 状態を読めない（同 `:311`）。
+#[must_use]
+pub fn learnings_unreadable_state(cause: &str) -> String {
+    format!("could not read state: {cause}")
+}
+
+/// 現在位置と `--slug` の食い違い（同 `:291`）。
+#[must_use]
+pub fn learnings_slug_is_not_current(requested: &str, current: &str) -> String {
+    format!("slug mismatch: requested \"{requested}\" but Current Stage is \"{current}\"")
+}
+
+/// 複数の記録があるのに有効なカーソルが無い（同 `:226-231`）。
+#[must_use]
+pub fn learnings_ambiguous_intent(space: &str) -> String {
+    format!(
+        "cannot resolve the active intent unambiguously in space \"{space}\": multiple intent \
+records exist with no valid active-intent cursor. Set aidlc/spaces/{space}/intents/\
+active-intent to the intended record, then retry."
+    )
+}
+
+/// runtime-graph.json が無い（同 `:255`）。
+#[must_use]
+pub fn learnings_runtime_graph_missing(path: &str) -> String {
+    format!("runtime-graph.json not found: {path}")
+}
+
+/// runtime-graph.json が壊れている（同 `:261`）。
+#[must_use]
+pub fn learnings_runtime_graph_malformed(cause: &str) -> String {
+    format!("runtime-graph.json is malformed: {cause}")
+}
+
+/// runtime-graph.json に `stages` 配列が無い（同 `:264,268`）。
+pub const LEARNINGS_RUNTIME_GRAPH_NO_STAGES: &str =
+    "runtime-graph.json is malformed: missing stages array";
+
+/// runtime-graph.json にその stage の行が無い（同 `:279`）。
+#[must_use]
+pub fn learnings_stage_not_in_graph(slug: &str) -> String {
+    format!("stage \"{slug}\" not found in runtime-graph.json")
+}
+
+/// その stage の行に `memory_path` が無い（同 `:319`）。
+#[must_use]
+pub fn learnings_stage_without_memory_path(slug: &str) -> String {
+    format!("stage \"{slug}\" has no memory_path in runtime-graph.json")
+}
+
+/// 選択ファイルが無い（同 `:470`）。
+#[must_use]
+pub fn learnings_selections_not_found(path: &str) -> String {
+    format!("selections-json not found: {path}")
+}
+
+/// 選択ファイルが JSON として読めない（同 `:476`）。
+#[must_use]
+pub fn learnings_selections_malformed(cause: &str) -> String {
+    format!("selections-json is malformed: {cause}")
+}
+
+/// 選択ファイルの骨格違反（同 `:479,513`）。
+pub const LEARNINGS_SELECTIONS_SHAPE: &str =
+    "selections-json is malformed: expected { stage_slug, space, intent, selections[] }";
+
+/// `space` の欄が無い・文字列でない（同 `:485`）。
+pub const LEARNINGS_SELECTIONS_NO_SPACE: &str =
+    "selections-json is malformed: missing or non-string space (bind it from surface's output)";
+
+/// `space` が空間名の文法に合わない（同 `:489-491`）。
+pub const LEARNINGS_SELECTIONS_BAD_SPACE: &str = "selections-json is malformed: space must be a lowercase slug beginning with a letter \
+and containing only lowercase letters, digits, or hyphens (bind it from surface's output)";
+
+/// `intent` が文字列でも null でもない（同 `:495`）。
+pub const LEARNINGS_SELECTIONS_BAD_INTENT_TYPE: &str =
+    "selections-json is malformed: intent must be a string or null (bind it from surface's output)";
+
+/// `intent` が記録ディレクトリ名でない（同 `:506-508`）。
+pub const LEARNINGS_SELECTIONS_BAD_INTENT: &str = "selections-json is malformed: intent must be a non-empty record-directory name without \
+path separators or \"..\" (bind it from surface's output)";
+
+/// 選択の要素がオブジェクトでない（同 `:426`）。
+pub const LEARNINGS_SELECTION_NOT_OBJECT: &str =
+    "selections-json malformed: each selection must be an object";
+
+/// 選択に `candidate_id` が無い（同 `:431`）。
+pub const LEARNINGS_SELECTION_NO_CANDIDATE_ID: &str =
+    "selections-json malformed: selection missing candidate_id";
+
+/// 学びの選択に `heading` / `text` が無い（同 `:463`）。
+pub const LEARNINGS_SELECTION_NO_HEADING_OR_TEXT: &str =
+    "selections-json malformed: learning selection needs heading + text";
+
+/// `candidate_id` が監査行の 1 ラベル 1 行を壊す（**この実装の自己防衛**）。
+#[must_use]
+pub fn learnings_selection_bad_candidate_id(given: &str) -> String {
+    format!("selections-json malformed: candidate_id must be one label on one line: {given:?}")
+}
+
+/// `--slug` と選択ファイルの食い違い（同 `:698`）。
+#[must_use]
+pub fn learnings_persist_slug_mismatch(surfaced: &str, requested: &str) -> String {
+    format!(
+        "slug mismatch: selections were surfaced for \"{surfaced}\" but persist requested \"{requested}\""
+    )
+}
+
+/// 固定した space が無い（同 `:722-725`）。
+#[must_use]
+pub fn learnings_missing_space(space: &str) -> String {
+    format!(
+        "cannot persist selections for missing space \"{space}\". Re-run the stage's surface step \
+and regenerate the selections file, then retry."
+    )
+}
+
+/// 固定した記録が無い（同 `:746-750`）。
+#[must_use]
+pub fn learnings_missing_intent(intent: &str, space: &str) -> String {
+    format!(
+        "cannot persist selections for missing intent record \"{intent}\" in space \"{space}\". \
+Re-run the stage's surface step and regenerate the selections file, then retry."
+    )
+}
+
+/// この build に無いセンサーの選択（**自己防衛拒否** — 本家 `:874` 以降は範囲外）。
+pub const LEARNINGS_SENSOR_NOT_WIRED: &str = "This build persists learnings only: the sensor selection type is not wired. \
+Remove the sensor selections and retry.";
+
+/// 記録に結び付かない選択（**自己防衛拒否** — 平置きレイアウトはこの build に無い）。
+pub const LEARNINGS_UNSCOPED_NOT_WIRED: &str = "This build has no flat workspace layout: a selections file must name its intent record. \
+Re-run the stage's surface step and regenerate the selections file, then retry.";
+
+/// 記録が無いので学びを並べられない（**自己防衛拒否**）。
+pub const LEARNINGS_WITHOUT_INTENT: &str =
+    "No intent record is active: run /aidlc first, then re-run the learnings step.";
+
+/// メモリ層の正本が揃っていない（**自己防衛拒否** — 投影は 2 本揃って初めて書ける）。
+#[must_use]
+pub fn learnings_method_files_missing(path: &str) -> String {
+    format!(
+        "cannot persist selections: the method file {path} does not exist. \
+Restore the space's memory layer, then retry."
+    )
+}
+
+/// 学びの記録に失敗した（材料は連鎖のまま出す）。
+#[must_use]
+pub fn learnings_persist_failed(cause: &str) -> String {
+    format!("persist failed: {cause}")
 }
 
 #[cfg(test)]
@@ -1599,8 +1939,8 @@ An unattended autonomous run has no human to resume it and must keep moving - do
     #[test]
     fn the_unpark_wording_names_the_command_before_the_retry() {
         assert_eq!(
-            unpark_then_resume("aidlc-orchestrate unpark"),
-            "This workflow is parked. Run `aidlc-orchestrate unpark` to clear the park marker, \
+            unpark_then_resume("bun .claude/tools/aidlc-state.ts unpark"),
+            "This workflow is parked. Run `bun .claude/tools/aidlc-state.ts unpark` to clear the park marker, \
 then re-run `next --resume` to continue."
         );
     }
@@ -1741,6 +2081,147 @@ Reinstall the framework or re-run setup to restore the data file."
             read_model_unreadable("/w/aidlc/spaces/default/read-model.sqlite3", "unreadable"),
             "Read model not readable at /w/aidlc/spaces/default/read-model.sqlite3: unreadable. \
 Start a workflow (intent-create) to build it, then run `next` again."
+        );
+    }
+
+    /// 拒否理由は対象・ステージ・Unit と代替経路を逐語で運ぶ。
+    #[test]
+    fn the_freeze_reason_names_the_scope_and_both_sanctioned_routes() {
+        assert_eq!(
+            review_freeze_blocked("a/requirements.md", "requirements-analysis", None, "G."),
+            "review-freeze: \"a/requirements.md\" is this stage's output document for stage \
+\"requirements-analysis\", and its latest review is final. Writing it now would make that review \
+no longer cover the document. If this is a reviewer suggestion, quote it at the gate instead of \
+applying it. G."
+        );
+        assert!(
+            review_freeze_blocked("b.md", "code-generation", Some("u2"), "G.")
+                .contains("stage \"code-generation\" unit \"u2\""),
+            "per-unit の拒否は Unit も名指す"
+        );
+    }
+
+    /// 固定 2.7.1 の `blockReason` が実際に返した逐語と 1 バイトも違わないこと。
+    #[test]
+    fn the_reviewer_scope_reason_matches_every_captured_upstream_string() {
+        let golden: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tests/golden/upstream-a277af21/reviewer-scope/cases.json"
+        ))
+        .unwrap();
+        let unit = golden
+            .pointer("/dispatch/unit")
+            .and_then(serde_json::Value::as_str)
+            .unwrap();
+        let reasons = golden
+            .get("block_reasons")
+            .and_then(serde_json::Value::as_array)
+            .unwrap();
+        assert_eq!(reasons.len(), 3, "採取した文面が減っている");
+        for reason in reasons {
+            let target = reason
+                .get("target")
+                .and_then(serde_json::Value::as_str)
+                .unwrap();
+            let expected = reason
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .unwrap();
+            assert_eq!(
+                reviewer_scope_blocked(target, unit),
+                expected,
+                "target={target}"
+            );
+        }
+    }
+
+    /// 案内は checkbox と実効プランで分かれる。
+    #[test]
+    fn the_freeze_recovery_guidance_follows_the_checkbox_and_the_plan() {
+        use core_command_domain::workspace::CheckboxState;
+        assert!(
+            review_freeze_recovery("x", CheckboxState::InProgress, true)
+                .starts_with("This stage is excluded from the current plan;"),
+            "SKIP は checkbox より先に効く"
+        );
+        assert!(
+            review_freeze_recovery("x", CheckboxState::InProgress, false)
+                .starts_with("To change this document, tell me what should change")
+        );
+        assert!(
+            review_freeze_recovery("x", CheckboxState::AwaitingApproval, false)
+                == review_freeze_recovery("x", CheckboxState::InProgress, false)
+        );
+        assert!(review_freeze_recovery("x", CheckboxState::Revising, false).contains("redo jump"));
+        assert!(
+            review_freeze_recovery("x", CheckboxState::Completed, false)
+                .starts_with("This stage is already approved;")
+        );
+        for state in [CheckboxState::Pending, CheckboxState::Skipped] {
+            assert!(
+                review_freeze_recovery("x", state, false).starts_with("Restart this stage with")
+            );
+        }
+    }
+
+    /// 学びの面の文言は本家 `aidlc-learnings.ts` の逐語である。
+    #[test]
+    fn the_learnings_wordings_are_verbatim() {
+        assert_eq!(
+            unknown_learnings_subcommand(Some("frob")),
+            "Unknown subcommand: frob. Run aidlc-learnings.ts --help for usage."
+        );
+        assert_eq!(
+            unknown_learnings_subcommand(None),
+            "Unknown subcommand: (none). Run aidlc-learnings.ts --help for usage."
+        );
+        assert_eq!(
+            learnings_unreadable_state("EACCES"),
+            "could not read state: EACCES"
+        );
+        assert_eq!(
+            learnings_runtime_graph_malformed("expected value"),
+            "runtime-graph.json is malformed: expected value"
+        );
+        assert_eq!(
+            learnings_stage_without_memory_path("intent-capture"),
+            "stage \"intent-capture\" has no memory_path in runtime-graph.json"
+        );
+        assert_eq!(
+            learnings_selection_bad_candidate_id("a\nb"),
+            "selections-json malformed: candidate_id must be one label on one line: \"a\\nb\""
+        );
+        assert_eq!(learnings_persist_failed("locked"), "persist failed: locked");
+        assert_eq!(
+            learnings_ambiguous_intent("team-b"),
+            "cannot resolve the active intent unambiguously in space \"team-b\": multiple intent records exist with no valid active-intent cursor. Set aidlc/spaces/team-b/intents/active-intent to the intended record, then retry."
+        );
+    }
+
+    /// heartbeat の EISDIR 描画は write-audit-log の同じパスだけに限り、他は原文のまま。
+    #[test]
+    fn the_heartbeat_eisdir_rendering_is_limited_to_the_matching_hook_and_path() {
+        use core_read_model_updater::orchestration::JournalReadError;
+        let path = std::path::Path::new("/w/.aidlc-hooks-health/write-audit-log.last");
+        let directory = JournalReadError::Io {
+            kind: std::io::ErrorKind::IsADirectory,
+            path: Some(path.to_path_buf()),
+        };
+        assert_eq!(
+            hook_heartbeat_failure(&directory, "write-audit-log", path),
+            "EISDIR: illegal operation on a directory, open '/w/.aidlc-hooks-health/write-audit-log.last'"
+        );
+        assert_eq!(
+            hook_heartbeat_failure(&directory, "session-end", path),
+            directory.to_string(),
+            "別のフックは原文のまま"
+        );
+        let other = JournalReadError::Io {
+            kind: std::io::ErrorKind::PermissionDenied,
+            path: Some(path.to_path_buf()),
+        };
+        assert_eq!(
+            hook_heartbeat_failure(&other, "write-audit-log", path),
+            other.to_string()
         );
     }
 }

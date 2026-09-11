@@ -298,6 +298,81 @@ async fn repeated_next_calls_reuse_one_key() {
     assert_eq!(first, second);
 }
 
+/// 同じトークンを 2 回提示すると 2 回目は拒否される（upstream 2.6.51 — 単回使用）。
+///
+/// 1 回目の `continue` が後続を発行した時点でそのトークンは消費済みになる。
+/// 再提示は「後続を繰り返す」のではなく `superseded` の逐語で拒否される。
+#[tokio::test]
+async fn a_reused_continuation_token_is_refused() {
+    let workspace = Workspace::create();
+    workspace.mint().await;
+    let project = workspace.project_dir().to_string_lossy().into_owned();
+
+    let first = invoke(&workspace, &["next", "--project-dir", &project]).await;
+    let token = string_of(&directive_of(&first), "continue_token");
+
+    // 1 回目の continue — 後続の部が届き、このトークンは消費される。
+    let second = invoke(&workspace, &["continue", &token, "--project-dir", &project]).await;
+    assert_eq!(
+        string_of(&directive_of(&second), "kind"),
+        "load-steering",
+        "1 回目は通る"
+    );
+
+    // 2 回目 — 同じトークンは既に現行ではない。
+    let third = invoke(&workspace, &["continue", &token, "--project-dir", &project]).await;
+    let directive = directive_of(&third);
+
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "This continuation token is no longer current for this workflow. Run a fresh `next`; do not reuse an earlier token."
+    );
+}
+
+/// 調整のロックが競合すると拒否し、**カーソルは動かさない**（逐語の主張そのもの）。
+///
+/// 「この呼び出しはカーソルを動かしていない」は文言が負う約束なので、marker が
+/// 1 バイトも動いていないことまで固定する。
+#[tokio::test]
+async fn a_contended_cursor_refuses_without_moving_it() {
+    let workspace = Workspace::create();
+    workspace.mint().await;
+    let project = workspace.project_dir().to_string_lossy().into_owned();
+
+    let first = invoke(&workspace, &["next", "--project-dir", &project]).await;
+    let token = string_of(&directive_of(&first), "continue_token");
+
+    let marker = workspace.record_dir().join(".aidlc-active-directive.json");
+    let before = fs::read(&marker).expect("next が marker を残す");
+
+    // 調整のロックを外から握ったまま continue を通す。
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(workspace.path("aidlc/.aidlc-runtime.lock"))
+        .expect("ロックの土台");
+    let held = core_infrastructure::ExclusiveFileLock::acquire(file, std::time::Duration::ZERO)
+        .expect("ロックを握る");
+
+    let second = invoke(&workspace, &["continue", &token, "--project-dir", &project]).await;
+    let directive = directive_of(&second);
+
+    assert_eq!(string_of(&directive, "kind"), "error");
+    assert_eq!(
+        string_of(&directive, "message"),
+        "Continuation coordination is busy. This call did not commit a cursor change. Retry the current token; if it is reported superseded, run a fresh `next`."
+    );
+    assert_eq!(
+        fs::read(&marker).expect("marker"),
+        before,
+        "カーソルは動いていない"
+    );
+    drop(held);
+}
+
 /// 未知動詞は**自己防衛拒否** — stdout へは何も出さず、stderr と exit 1（2 層の出口）。
 #[tokio::test]
 async fn an_unknown_verb_is_refused_on_stderr_with_a_nonzero_exit() {
