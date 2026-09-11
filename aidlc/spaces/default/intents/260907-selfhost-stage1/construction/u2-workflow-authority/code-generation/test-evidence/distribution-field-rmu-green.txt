@@ -1,0 +1,23 @@
+   Compiling core-read-model-updater v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/read-model-updater)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.17s
+     Running unittests src/lib.rs (target/debug/deps/core_read_model_updater-c50f196d5d1c642e)
+
+running 15 tests
+test orchestration::dto::definition_content_dto::tests::the_declaration_survives_the_round_trip ... ok
+test orchestration::dto::definition_content_dto::tests::the_sensor_reference_survives_the_round_trip ... ok
+test orchestration::dto::definition_content_dto::tests::an_unknown_rule_scope_spelling_is_refused ... ok
+test orchestration::dto::definition_content_dto::tests::an_unknown_project_type_spelling_is_refused ... ok
+test orchestration::dto::definition_content_dto::tests::the_rule_survives_the_round_trip ... ok
+test orchestration::dto::definition_content_dto::tests::the_absent_match_pattern_stays_absent ... ok
+test orchestration::dto::definition_content_dto::tests::a_grammar_violating_identifier_is_refused ... ok
+test orchestration::dto::definition_content_dto::tests::an_empty_scope_name_is_refused_as_malformed ... ok
+test orchestration::dto::definition_content_dto::tests::every_optional_scope_field_survives_the_round_trip ... ok
+test orchestration::dto::definition_content_dto::tests::an_unknown_scope_metadata_spelling_is_refused_field_by_field ... ok
+test orchestration::dto::definition_content_dto::tests::an_unknown_stage_spelling_is_refused_field_by_field ... ok
+test orchestration::dto::definition_content_dto::tests::a_grid_cell_that_cannot_be_carried_into_the_domain_is_refused ... ok
+test orchestration::dto::definition_content_dto::tests::every_optional_stage_field_survives_the_round_trip ... ok
+test orchestration::dto::definition_content_dto::tests::the_three_inputs_survive_the_round_trip ... ok
+test orchestration::dto::definition_content_dto::tests::a_graph_that_breaks_its_invariant_is_refused_as_an_invariant_violation ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 293 filtered out; finished in 0.00s
+

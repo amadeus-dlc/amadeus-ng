@@ -1,0 +1,19 @@
+{
+  "binary": "/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/target/debug/aidlc",
+  "observations": [
+    {
+      "id": "counter-directory/1",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "counter_is_directory": true
+    },
+    {
+      "id": "counter-directory/2",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "counter_is_directory": true
+    }
+  ]
+}

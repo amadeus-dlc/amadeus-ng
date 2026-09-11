@@ -1,0 +1,19 @@
+case	match	side	exit	stdout_bytes	stdout_sha256	stderr
+# body length that makes upstream stdout exactly 524288 bytes: 523686
+under-by-one	same	upstream	0	524287	60f06bfd5bae0b4a	-
+under-by-one	same	rust	0	524287	60f06bfd5bae0b4a	-
+exactly-at-the-limit	same	upstream	0	524288	0eba1b66969598f6	-
+exactly-at-the-limit	same	rust	0	524288	0eba1b66969598f6	-
+over-by-one	same	upstream	2	0	-	[aidlc] This stage's rule files add up to 524289 bytes, exceeding the safe 524288-byte output limit for attaching them to a subagent brief. The subagent was not started, and nothing partial was written. Shorten or split the rule files for the active stage, then start the subagent again.
+over-by-one	same	rust	2	0	-	[aidlc] This stage's rule files add up to 524289 bytes, exceeding the safe 524288-byte output limit for attaching them to a subagent brief. The subagent was not started, and nothing partial was written. Shorten or split the rule files for the active stage, then start the subagent again.
+fallback-over-by-one	same	upstream	3	0	-	[aidlc] Advisory: this stage's rule files add up to 524289 bytes, which exceeds the safe 524288-byte limit for attaching them to a subagent brief. Nothing partial was written. This harness loads the same rule files itself, through its own active-memory preload fallback, so the work continues without them attached.
+fallback-over-by-one	same	rust	3	0	-	[aidlc] Advisory: this stage's rule files add up to 524289 bytes, which exceeds the safe 524288-byte limit for attaching them to a subagent brief. Nothing partial was written. This harness loads the same rule files itself, through its own active-memory preload fallback, so the work continues without them attached.
+fallback-exactly-at-the-limit	same	upstream	0	524288	0eba1b66969598f6	-
+fallback-exactly-at-the-limit	same	rust	0	524288	0eba1b66969598f6	-
+required-rule-missing	stderr-only	upstream	2	0	-	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (ENOENT: no such file or directory, open '/private/tmp/claude-501/-Users-j5ik2o-orca-workspaces-amadeus-ng-stage1/8f466f39-1de4-4b36-90eb-8d6e51b03145/scratchpad/closeout/boundary/aidlc/spaces/default/memory/org.md'). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+required-rule-missing	stderr-only	rust	2	0	-	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (No such file or directory (os error 2)). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+required-rule-not-utf8	stderr-only	upstream	2	0	-	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (Invalid byte sequence). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+required-rule-not-utf8	stderr-only	rust	2	0	-	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (invalid utf-8 sequence of 1 bytes from index 0). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+required-rule-with-an-encoded-surrogate	stderr-only	upstream	2	0	-	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (Invalid byte sequence). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+required-rule-with-an-encoded-surrogate	stderr-only	rust	2	0	-	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (invalid utf-8 sequence of 1 bytes from index 8). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+# same=5 stderr-only=3 differ=0 total=8

@@ -1,0 +1,9 @@
+    Checking serde_json v1.0.151
+    Checking core-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/infrastructure)
+    Checking event-store-adapter-rs v3.0.0
+    Checking core-command-domain v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/domain)
+    Checking harness-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/infrastructure)
+    Checking core-command-use-case v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/use-case)
+    Checking core-command-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/interface-adapter)
+    Checking harness-claude v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/claude)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.21s

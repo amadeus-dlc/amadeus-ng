@@ -1,0 +1,53 @@
+[
+  { "id": "65-fixture-block-matches-the-upstream-capture", "project": "fixture", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "BASE /stages/construction/code-generation.md" } } },
+
+  { "id": "66-harness-present-but-rules-missing-is-exit-2-on-both-sides", "project": "norules-with-harness", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work on intent-capture now" } } },
+
+  { "id": "67-bom-prefixed-rule-file", "project": "bom", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "BASE /stages/construction/code-generation.md" } } },
+
+  { "id": "68-control-characters-in-a-rule-file", "project": "ctrl", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "BASE /stages/construction/code-generation.md" } } },
+
+  { "id": "69-numbers-and-non-bmp-text-pass-through-the-envelope", "project": "ws", "raw": "{\"tool_name\":\"Task\",\"tool_input\":{\"subagent_type\":\"aidlc-developer-agent\",\"prompt\":\"work \\ud83d\\ude00 \\u2028x\",\"n1\":1e21,\"n2\":-0,\"n3\":1.0,\"n4\":12345678901234567890,\"n5\":0.1,\"n6\":1e-7,\"n7\":123456789012,\"n8\":-1.5e300,\"nested\":{\"a\":[1,2,{\"b\":null}],\"t\":true,\"e\":\"\\u0001\\u001f\\u007f\"}}}", "input": null },
+
+  { "id": "70-duplicate-keys-take-the-last-value", "project": "ws", "raw": "{\"tool_name\":\"Write\",\"tool_name\":\"Task\",\"tool_input\":{\"prompt\":\"first\",\"subagent_type\":\"aidlc-developer-agent\",\"prompt\":\"second\"}}", "input": null },
+
+  { "id": "71-items-with-only-non-text-entries-still-join-with-newlines", "project": "ws", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "items": [ { "type": "image" }, { "type": "image" } ] } } },
+
+  { "id": "72-tool-name-not-a-string", "project": "ws", "raw": "{\"tool_name\":7,\"tool_input\":{\"subagent_type\":\"aidlc-developer-agent\",\"prompt\":\"work\"}}", "input": null },
+
+  { "id": "73-tool-input-is-a-string", "project": "ws", "input": { "tool_name": "Task", "tool_input": "x" } },
+
+  { "id": "74-tool-input-is-null", "project": "ws", "input": { "tool_name": "Task", "tool_input": null } },
+
+  { "id": "75-subagent-entry-key-order-is-kept", "project": "ws", "input": { "tool_name": "subagent", "tool_input": { "stages": [ { "prompt_template": "x/stages/inception/domain-design.md", "role": "aidlc-developer-agent", "z": 1 } ], "tail": true } } },
+
+  { "id": "76-current-stage-separated-by-a-tab", "project": "tabstage", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work on intent-capture now" } } },
+
+  { "id": "77-current-stage-without-a-space-after-the-colon", "project": "nospace", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work on intent-capture now" } } },
+
+  { "id": "78-state-file-without-a-current-stage-line", "project": "nostage", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work on intent-capture now" } } },
+
+  { "id": "79-active-intent-cursor-names-an-absent-record", "project": "dangling", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work on intent-capture now" } } },
+
+  { "id": "80-rules-dir-override-env", "project": "ws", "env": { "AIDLC_RULES_DIR": "{ROOT}/fixture/aidlc/spaces/default/memory" }, "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "BASE /stages/construction/code-generation.md" } } },
+
+  { "id": "81-explicit-path-inside-items", "project": "ws", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "items": [ { "type": "text", "text": "see x/stages/ideation/intent-capture.md" } ] } } },
+
+  { "id": "82-subagent-second-entry-unreadable-rule-stops-everything", "project": "fixture", "input": { "tool_name": "subagent", "tool_input": { "stages": [ { "role": "aidlc-developer-agent", "prompt_template": "x/stages/construction/code-generation.md" }, { "role": "aidlc-quality-agent", "prompt_template": "x/stages/ideation/intent-capture.md" } ] } } },
+
+  { "id": "83-body-field-order-is-by-name-not-by-key-position", "project": "ws", "input": { "tool_name": "Task", "tool_input": { "message": "", "subagent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "84-empty-prompt-does-not-fall-through-to-message", "project": "ws", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "", "message": "work" } } },
+
+  { "id": "85-non-string-agent-field-first-stops-the-lookup", "project": "ws", "input": { "tool_name": "Task", "tool_input": { "subagent_type": 7, "role": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "86-preload-fallback-env-does-nothing-under-the-limit", "project": "ws", "env": { "AIDLC_DISPATCH_RULES_PRELOAD_FALLBACK": "1" }, "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "work" } } },
+
+  { "id": "87-non-ascii-brief-with-a-slug-mention", "project": "stateless", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "意図を捉える intent-capture の作業を進める。" } } },
+
+  { "id": "88-non-ascii-brief-with-an-explicit-path", "project": "ws", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "設計書 x/stages/inception/domain-design.md日本語 を読む" } } },
+
+  { "id": "89-explicit-path-followed-by-a-word-char-does-not-match", "project": "ws", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "see x/stages/inception/domain-design.md_v2 then work on intent-capture" } } },
+
+  { "id": "90-two-leading-boms-keep-the-second-one", "project": "bom2", "input": { "tool_name": "Task", "tool_input": { "subagent_type": "aidlc-developer-agent", "prompt": "BASE /stages/construction/code-generation.md" } } }
+]

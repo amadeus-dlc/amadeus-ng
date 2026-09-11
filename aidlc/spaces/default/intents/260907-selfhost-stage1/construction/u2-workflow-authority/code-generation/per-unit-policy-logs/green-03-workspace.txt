@@ -1,0 +1,590 @@
+    Blocking waiting for file lock on artifact directory
+   Compiling core-command-domain v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/domain)
+   Compiling harness-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/infrastructure)
+   Compiling core-command-use-case v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/use-case)
+   Compiling core-read-model-updater v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/read-model-updater)
+   Compiling core-command-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/interface-adapter)
+   Compiling core-query-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/query/interface-adapter)
+   Compiling harness-claude v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/claude)
+   Compiling aidlc v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/app/aidlc)
+warning: unused import: `core_infrastructure::collections::FirstClassCollection`
+  --> modules/harness/claude/src/reviewer_dispatch_record.rs:50:9
+   |
+50 |     use core_infrastructure::collections::FirstClassCollection;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `core_infrastructure::collections::FirstClassCollection`
+   --> modules/harness/claude/src/reviewer_scope_envelope.rs:212:9
+    |
+212 |     use core_infrastructure::collections::FirstClassCollection;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `harness-claude` (lib test) generated 2 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 25s
+     Running unittests src/lib.rs (target/debug/deps/aidlc-ac295f7aa459fcad)
+
+running 313 tests
+test cli::promote_args::tests::an_empty_argument_list_yields_the_default ... ok
+test cli::promote_args::tests::an_omitted_affirming_user_reads_as_unknown ... ok
+test cli::learnings_args::tests::the_two_flags_are_folded_in_any_order ... ok
+test cli::learnings_args::tests::unknown_flags_are_ignored ... ok
+test cli::learnings_args::tests::a_flag_without_a_value_is_dropped ... ok
+test cli::promote_args::tests::a_flag_swallows_the_next_token_even_when_it_looks_like_a_flag ... ok
+test cli::promote_args::tests::the_four_flags_take_the_next_token_as_their_value ... ok
+test cli::promote_args::tests::a_trailing_flag_without_a_value_is_dropped ... ok
+test cli::promote_args::tests::positional_tokens_and_unknown_flags_are_ignored ... ok
+test cli::request::tests::continue_takes_its_token_as_a_positional_argument ... ok
+test cli::invocation::tests::a_project_dir_after_the_literal_marker_stays_in_the_arguments ... ok
+test cli::request::tests::an_unknown_report_flag_does_not_swallow_the_next_token ... ok
+test cli::invocation::tests::the_project_dir_flag_is_stripped_before_the_subcommand_is_read ... ok
+test cli::request::tests::report_collects_every_flag_it_understands ... ok
+test cli::request::tests::next_collects_the_flags_the_ladder_understands ... ok
+test cli::request::tests::report_without_an_explicit_stage_carries_none ... ok
+test cli::request::tests::new_intent_carries_the_description_in_its_own_slot ... ok
+test cli::request::tests::free_text_becomes_the_freeform_description ... ok
+test cli::request::tests::intent_create_is_not_reachable_from_the_engine_face ... ok
+test cli::request::tests::an_unknown_engine_verb_is_reported_with_the_given_word ... ok
+test cli::request::tests::practices_promote_is_not_reachable_from_the_engine_face ... ok
+test cli::request::tests::continue_with_the_wrong_argument_count_yields_an_empty_token ... ok
+test cli::request::tests::review_without_a_value_is_a_parse_error ... ok
+test cli::request::tests::an_unknown_utility_verb_carries_the_given_word ... ok
+test cli::request::tests::next_preserves_leading_workspace_noun_and_following_tokens ... ok
+test cli::face::tests::the_launch_name_selects_the_tool_face ... ok
+test cli::request::tests::an_unknown_intent_create_flag_does_not_swallow_the_next_token ... ok
+test cli::request::tests::intent_create_is_reached_through_the_utility_face ... ok
+test cli::request::tests::only_a_leading_compose_token_is_the_verb ... ok
+test cli::request::tests::intent_create_accepts_the_equals_form_upstream_emits ... ok
+test cli::request::tests::set_autonomy_is_not_reachable_from_the_engine_face ... ok
+test cli::request::tests::the_bolt_face_routes_the_wired_verb_and_recognises_the_rest ... ok
+test cli::request::tests::the_four_engine_verbs_route_to_their_requests ... ok
+test cli::request::tests::the_literal_marker_stops_flag_interpretation ... ok
+test cli::request::tests::the_state_face_routes_the_wired_verb_and_recognises_the_rest ... ok
+test cli::review_args::tests::a_boolean_flag_does_not_swallow_the_next_token ... ok
+test cli::review_args::tests::an_empty_argument_list_yields_the_default ... ok
+test cli::review_args::tests::a_value_flag_without_a_value_carries_the_upstream_refusal ... ok
+test cli::review_args::tests::positional_tokens_and_unknown_flags_are_ignored ... ok
+test cli::review_args::tests::the_value_flags_take_their_value_and_the_two_boolean_flags_do_not ... ok
+test cli::set_autonomy_args::tests::a_value_flag_without_a_value_carries_the_upstream_refusal ... ok
+test cli::set_autonomy_args::tests::an_empty_argument_list_yields_the_default ... ok
+test cli::set_autonomy_args::tests::an_unknown_flag_still_swallows_its_value ... ok
+test cli::set_autonomy_args::tests::an_unknown_mode_value_is_carried_verbatim ... ok
+test cli::set_autonomy_args::tests::positional_tokens_are_ignored ... ok
+test cli::set_autonomy_args::tests::the_mode_flag_takes_the_next_token_as_its_value ... ok
+test directive_drawing::tests::a_continue_token_carries_the_unit_the_directive_was_scoped_to ... ok
+test directive_drawing::tests::a_json_column_that_is_not_an_array_is_refused_with_its_value ... ok
+test directive_drawing::tests::a_rules_content_column_that_is_not_an_array_is_refused ... ok
+test directive_drawing::tests::a_rules_content_object_without_both_members_is_refused ... ok
+test directive_drawing::tests::a_rules_content_element_that_is_not_an_object_is_refused ... ok
+test directive_drawing::tests::a_json_array_of_non_strings_is_refused ... ok
+test directive_drawing::tests::a_well_formed_rules_content_column_carries_each_path_and_text ... ok
+test directive_drawing::tests::a_relative_column_is_prefixed_with_the_base_it_belongs_to ... ok
+test execution_cursor::execution_cursor_error::tests::the_error_carries_no_cause_chain ... ok
+test execution_cursor::execution_cursor_error::tests::the_malformed_variant_names_the_path ... ok
+test execution_cursor::execution_cursor_error::tests::the_io_variant_names_the_classification_and_the_path ... ok
+test clone_identity::tests::a_read_only_parent_surfaces_the_write_failure ... ok
+test directive_drawing::tests::a_layout_without_a_record_cannot_assemble_a_run_stage ... ok
+test execution_cursor::tests::a_cursor_whose_lines_are_not_identifiers_is_malformed ... ok
+test execution_cursor::tests::a_cursor_with_a_third_line_is_malformed ... ok
+test execution_cursor::tests::a_cursor_with_only_one_identifier_is_malformed ... ok
+test clone_identity::tests::the_token_is_stable_across_calls ... ok
+test clone_identity::tests::an_existing_token_is_read_rather_than_replaced ... ok
+test execution_cursor::tests::the_pair_is_readable_through_its_accessors ... ok
+test clone_identity::tests::a_name_taken_by_a_directory_fails_loudly ... ok
+test clone_identity::tests::a_malformed_token_is_replaced_by_a_fresh_one ... ok
+test clone_identity::tests::minting_leaves_no_staging_file_behind ... ok
+test execution_cursor::tests::an_absent_record_directory_surfaces_the_io_kind_and_path ... ok
+test clone_identity::tests::minting_creates_a_token_file_and_returns_a_valid_token ... ok
+test execution_cursor::tests::a_trailing_newline_is_optional ... ok
+test directive_drawing::tests::a_single_run_forces_an_ungated_directive_without_a_next_stage ... ok
+test presenter::tests::a_bare_run_stage_omits_the_optional_keys ... ok
+test clone_identity::tests::concurrent_minting_converges_on_one_token ... ok
+test directive_drawing::tests::a_sound_row_assembles_a_run_stage_with_every_optional_field ... ok
+test presenter::tests::a_directive_at_exactly_the_cap_is_emitted ... ok
+test presenter::tests::a_done_directive_always_carries_a_reason_field ... ok
+test presenter::tests::a_new_work_routing_ask_carries_all_four_routing_fields ... ok
+test presenter::tests::a_parked_directive_maps_its_message_onto_the_reason_field ... ok
+test presenter::tests::a_plain_ask_omits_the_new_work_routing_fields ... ok
+test presenter::tests::a_print_directive_carries_its_message_verbatim ... ok
+test presenter::tests::an_error_directive_carries_its_message_verbatim ... ok
+test presenter::tests::a_run_stage_renders_every_contract_key ... ok
+test presenter::tests::an_unresolved_gate_is_the_sentinel_string ... ok
+test record_name::tests::a_blank_label_falls_through_to_the_description ... ok
+test record_name::tests::a_label_with_no_alphanumerics_falls_back ... ok
+test record_name::tests::a_long_description_is_truncated_within_the_name_limit ... ok
+test record_name::tests::punctuation_and_case_are_folded_into_kebab ... ok
+test record_name::tests::the_first_record_name_has_no_identifier_suffix ... ok
+test record_name::tests::the_label_becomes_the_readable_middle_segment ... ok
+test presenter::tests::an_oversize_directive_is_refused_rather_than_half_emitted ... ok
+test execution_cursor::tests::an_absent_cursor_is_none_rather_than_an_error ... ok
+test directive_drawing::tests::every_closed_vocabulary_column_is_refused_with_its_own_name ... ok
+test directive_drawing::tests::an_unreadable_relative_path_column_stops_the_run_stage_assembly ... ok
+test record_name::tests::without_a_label_the_description_is_truncated_into_one ... ok
+test directive_drawing::tests::a_part_index_outside_the_one_based_range_is_refused ... ok
+test record_name::tests::without_either_a_fallback_label_is_used ... ok
+test presenter::tests::the_oversize_error_names_the_byte_count ... ok
+test runtime::continuation_cursor::tests::a_malformed_marker_is_not_parsed ... ok
+test runtime::continuation_cursor::tests::a_marker_from_another_context_is_not_superseded ... ok
+test runtime::continuation_cursor::tests::a_missing_marker_permits_one_recovery_continuation ... ok
+test runtime::continuation_cursor::tests::a_settled_run_stage_supersedes_the_token ... ok
+test runtime::continuation_cursor::tests::a_state_that_disappeared_while_preparing_is_context_changed ... ok
+test runtime::continuation_cursor::tests::a_state_that_moved_while_preparing_is_context_changed ... ok
+test runtime::continuation_cursor::tests::a_token_that_is_no_longer_current_is_superseded ... ok
+test runtime::continuation_cursor::tests::a_v1_marker_is_not_an_exact_context ... ok
+test runtime::continuation_cursor::tests::an_intent_that_moved_while_preparing_is_context_changed ... ok
+test runtime::continuation_cursor::tests::every_refusal_carries_its_upstream_wording ... ok
+test runtime::continuation_cursor::tests::the_current_token_is_current ... ok
+test runtime::learnings::tests::the_phase_is_the_third_segment_from_the_end_of_the_memory_path ... ok
+test layout::tests::a_fresh_workspace_resolves_to_the_default_space_with_no_record ... ok
+test runtime::learnings::tests::the_state_field_reads_the_value_after_the_label ... ok
+test runtime::runtime_graph::tests::the_compile_s_own_rows_are_not_transitions ... ok
+test runtime::runtime_graph::tests::a_transition_in_the_last_three_blocks_fires_the_compile ... ok
+test runtime::runtime_graph::tests::a_transition_pushed_out_of_the_tail_does_not_fire ... ok
+test runtime::tests::a_blank_explicit_stage_reads_as_absent ... ok
+test execution_cursor::tests::an_unreadable_cursor_is_an_io_failure_rather_than_absent ... ok
+test runtime::tests::a_non_partial_mint_failure_keeps_the_plain_diagnostic ... ok
+test runtime::tests::a_park_failure_outside_the_two_verbatim_forms_is_relayed_as_material ... ok
+test runtime::tests::a_park_failure_relays_its_source_chain_into_the_detail ... ok
+test layout::tests::the_active_space_cursor_selects_the_space ... ok
+test execution_cursor::tests::a_written_cursor_reads_back_as_the_same_pair ... ok
+test runtime::log_failure::tests::project_redaction_uses_the_upstream_trailing_boundary ... ok
+test execution_cursor::tests::the_written_bytes_are_two_lines_in_a_fixed_order ... ok
+test runtime::tests::a_partial_mint_failure_names_the_orphan_and_the_recovery_path ... ok
+test runtime::tests::a_refused_transition_is_relayed_with_the_step_that_failed ... ok
+test runtime::tests::a_rehydration_failure_falls_back_to_the_relay_form ... ok
+test runtime::tests::a_slug_the_definition_does_not_know_reads_as_no_declared_reviewer ... ok
+test runtime::log_failure::tests::project_redaction_also_recognizes_the_resolved_directory ... ok
+test layout::tests::the_cursor_round_trips_through_disk ... ok
+test execution_cursor::tests::writing_twice_leaves_the_latest_pair ... ok
+test layout::tests::a_blank_cursor_is_treated_as_absent ... ok
+test runtime::tests::a_wording_that_already_carries_its_cause_is_not_written_twice ... ok
+test layout::tests::the_active_intent_cursor_names_the_record_directory ... ok
+test runtime::tests::a_continue_without_a_key_fails_closed ... ok
+test runtime::tests::a_record_directory_that_cannot_be_created_stops_the_mint ... ok
+test runtime::tests::an_unwired_step_is_named_rather_than_re_read ... ok
+test runtime::tests::an_unreadable_host_falls_back_through_the_shard_name ... ok
+test runtime::tests::each_gate_verdict_has_its_own_precondition_wording ... ok
+test runtime::tests::every_commit_outcome_renders_its_directive ... ok
+test runtime::tests::every_no_op_renders_its_directive ... ok
+test runtime::tests::every_report_refusal_renders_its_upstream_wording ... ok
+test runtime::tests::a_first_next_that_cannot_open_the_store_reports_the_failure ... ok
+test runtime::tests::an_unknown_result_is_emitted_as_a_business_error ... ok
+test runtime::tests::a_first_next_under_an_invalid_active_space_is_refused_by_name ... ok
+test runtime::tests::minting_with_an_unknown_review_class_is_refused_before_anything_is_written ... ok
+test runtime::tests::an_unreadable_compiled_definition_stops_the_mint ... ok
+test runtime::tests::the_diagnostic_walks_the_chain_to_the_material_at_the_end ... ok
+test runtime::tests::the_human_presence_guard_is_on_unless_the_environment_switches_it_off ... ok
+test runtime::tests::the_iteration_grammar_matches_the_upstream_regexp ... ok
+test runtime::tests::the_key_failures_map_to_three_distinct_wordings ... ok
+test runtime::tests::the_mint_failure_reaches_the_material_the_repository_hid ... ok
+test runtime::tests::minting_without_a_scope_names_the_missing_flag ... ok
+test runtime::tests::the_observed_host_composes_the_real_shard_name ... ok
+test runtime::tests::the_review_class_folds_to_the_closed_set ... ok
+test runtime::tests::the_review_log_line_adds_the_retry_only_for_a_retry ... ok
+test runtime::tests::the_review_refusal_falls_back_to_the_relay_form_for_anything_else ... ok
+test runtime::tests::the_running_machine_reports_a_host ... ok
+test runtime::tests::the_two_aggregate_refusals_map_onto_the_upstream_verbatim ... ok
+test runtime::tests::a_cursor_that_cannot_be_set_is_refused ... ok
+test runtime::tests::minting_an_intent_with_a_scope_the_definition_does_not_declare_is_refused ... ok
+test runtime::tests::an_execution_cursor_that_cannot_be_written_is_refused ... ok
+test steering::tests::continue_never_mints_but_next_does ... ok
+test steering::tests::the_key_is_stable_across_resolutions_of_the_same_workspace ... ok
+test steering::tests::with_a_state_file_the_key_lives_beside_it_in_the_record_dir ... ok
+test steering::tests::with_no_record_at_all_the_key_lives_in_the_session_runtime ... ok
+test source_fingerprint::tests::source_fingerprint_matches_the_fixed_upstream_observation ... ok
+test steering::tests::without_a_state_file_the_key_lives_in_the_clone_local_session_runtime ... ok
+test runtime::tests::a_state_scaffold_that_cannot_be_written_is_refused ... ok
+test source_baseline::tests::captured_listings_match_fixed_upstream_bytes ... ok
+test runtime::tests::a_definition_table_broken_after_recovery_keeps_the_promotions_read_error ... ok
+test runtime::tests::a_state_file_replaced_after_recovery_keeps_its_path_and_cause ... ok
+test runtime::tests::a_park_marker_that_was_not_projected_is_a_self_defence_refusal ... ok
+test turn::tests::a_failed_jump_lookup_is_reported_as_a_read_failure ... ok
+test turn::tests::a_jump_refused_as_an_invalid_target_names_the_initialization_guard ... ok
+test runtime::tests::a_blocked_store_stops_the_catch_up_before_reading ... ok
+test runtime::tests::a_read_table_broken_after_recovery_stops_resume_and_stance ... ok
+test runtime::tests::a_report_against_an_unopenable_event_store_is_refused ... ok
+test runtime::tests::a_store_blocked_after_recovery_is_named_by_the_late_query ... ok
+test turn::tests::a_missing_jump_row_uses_the_absence_wording_the_caller_supplies ... ok
+test turn::tests::a_parked_answer_names_the_stage_it_stopped_at ... ok
+test turn::tests::a_parked_answer_with_an_unreadable_slug_is_refused ... ok
+test runtime::tests::an_unwritable_projection_prevents_the_report_commit ... ok
+test runtime::tests::the_working_directory_is_the_workspace_root_when_no_project_dir_is_given ... ok
+test turn::tests::a_read_failure_carries_only_its_classification_and_place ... ok
+test runtime::tests::the_records_double_is_transparent_when_no_step_is_injected ... ok
+test turn::tests::a_bare_next_delivers_the_next_stage_from_its_first_part ... ok
+test turn::tests::a_continue_refuses_an_unreadable_next_part ... ok
+test runtime::tests::reports_refuse_a_corrupt_aggregate_snapshot_without_mutation ... ok
+test turn::tests::a_jump_without_a_stage_or_a_phase_is_refused ... ok
+test turn::tests::a_continue_without_a_record_cannot_rebuild_the_run_stage ... ok
+test turn::tests::a_keyword_hit_asks_to_confirm_that_scope_with_its_cost ... ok
+test turn::tests::a_keyword_in_the_free_text_resolves_the_scope ... ok
+test turn::tests::a_long_free_text_suppresses_keyword_inference ... ok
+test turn::tests::a_cursor_without_a_projected_definition_names_the_stage_graph_file ... ok
+test turn::tests::a_positional_scope_name_births_that_scope ... ok
+test turn::tests::a_cost_clause_needs_all_four_columns ... ok
+test turn::tests::a_delivery_without_a_record_reports_that_it_cannot_assemble_the_run_stage ... ok
+test turn::tests::a_recoverable_skip_inconsistency_names_the_recovery_command ... ok
+test turn::tests::a_recoverable_skip_with_an_unreadable_slug_is_refused ... ok
+test turn::tests::a_parked_execution_stops_the_bare_next_at_its_stage ... ok
+test turn::tests::a_run_stage_answer_without_its_row_is_refused_as_an_unknown_stage ... ok
+test turn::tests::a_resume_on_a_parked_workflow_names_the_unpark_command_first ... ok
+test turn::tests::a_scope_row_whose_name_is_not_a_slug_is_refused ... ok
+test turn::tests::a_state_scope_that_the_definition_does_not_declare_is_refused ... ok
+test turn::tests::an_accepted_jump_names_the_resolve_command ... ok
+test turn::tests::an_accepted_jump_to_an_unreadable_slug_is_refused ... ok
+test turn::tests::a_scope_without_grid_columns_births_without_a_cost_clause ... ok
+test turn::tests::a_stateless_jump_into_initialization_is_refused ... ok
+test turn::tests::an_invalid_active_space_stops_the_turn_before_the_store_is_opened ... ok
+test turn::tests::a_stateless_jump_to_an_unknown_stage_is_refused ... ok
+test turn::tests::a_spelling_the_ladder_already_consumed_is_reported_as_an_internal_fault ... ok
+test turn::tests::a_stateless_phase_jump_into_an_empty_phase_is_refused ... ok
+test turn::tests::an_unopenable_store_is_reported_with_its_path_and_classification ... ok
+test turn::tests::a_stage_whose_bundle_is_not_packed_yet_is_delivered_bare ... ok
+test runtime::tests::specialized_reports_surface_publication_failure_after_the_event_commit ... ok
+test turn::tests::a_stateless_phase_jump_delivers_the_entry_stage_of_that_phase ... ok
+test turn::tests::a_stateless_stage_jump_delivers_an_isolated_run_stage ... ok
+test turn::tests::a_terminal_continue_refuses_an_unreadable_ledger ... ok
+test turn::tests::a_token_asking_for_a_part_beyond_the_plan_is_refused ... ok
+test turn::tests::a_token_that_has_received_every_part_closes_with_the_terminal_run_stage ... ok
+test turn::tests::a_token_whose_state_binding_no_longer_matches_says_the_position_moved_on ... ok
+test turn::tests::a_token_with_a_drifted_binding_is_refused_as_stale ... ok
+test turn::tests::an_environment_default_scope_outside_the_definition_is_refused_by_name ... ok
+test turn::tests::a_turn_that_cannot_read_the_definition_reports_a_read_failure ... ok
+test turn::tests::an_unnamed_birth_turn_reports_that_there_is_no_state ... ok
+test turn::tests::an_unnamed_turn_falls_back_to_the_built_in_default_scope ... ok
+test turn::tests::an_empty_plan_delivers_a_run_stage_carrying_only_its_ledger ... ok
+test turn::tests::an_unreadable_cost_lookup_stops_the_mint_print ... ok
+test turn::tests::an_unreadable_answer_table_stops_the_ladder_after_the_definition ... ok
+test turn::tests::an_unreadable_birth_scope_lookup_is_a_read_failure ... ok
+test turn::tests::an_unreadable_continuation_lookup_is_a_read_failure ... ok
+test turn::tests::an_unreadable_delivered_paths_column_is_reported_with_its_value ... ok
+test turn::tests::any_other_jump_refusal_names_the_target_stage ... ok
+test turn::tests::an_unreadable_inference_on_new_work_routing_is_a_read_failure ... ok
+test turn::tests::continue_reports_the_same_unopenable_store ... ok
+test turn::tests::an_unreadable_isolated_run_stage_lookup_is_a_read_failure ... ok
+test turn::tests::continue_without_a_verified_token_fails_closed ... ok
+test turn::tests::an_unreadable_keyword_table_stops_the_inference ... ok
+test turn::tests::an_unreadable_keyword_table_stops_the_scope_ladder ... ok
+test turn::tests::an_unreadable_phase_entry_lookup_is_a_read_failure ... ok
+test turn::tests::an_unreadable_rules_content_column_stops_the_steering_chain ... ok
+test turn::tests::an_unreadable_scope_catalog_stops_the_environment_default_check ... ok
+test turn::tests::an_unreadable_scope_catalog_stops_the_explicit_scope_check ... ok
+test turn::tests::next_applies_the_pre_guard_itself ... ok
+test turn::tests::an_unreadable_scope_catalog_stops_the_state_scope_check ... ok
+test turn::tests::an_unreadable_single_lookup_is_a_read_failure ... ok
+test turn::tests::an_unreadable_scope_change_lookup_is_a_read_failure ... ok
+test turn::tests::the_pre_guard_closes_a_kiro_latched_bare_next_without_a_reason ... ok
+test turn::tests::the_pre_guard_has_no_answer_for_an_ordinary_request ... ok
+test turn::tests::the_pre_guard_names_the_read_only_utility_by_its_cli_spelling ... ok
+test turn::tests::the_pre_guard_passes_noun_tokens_through_verbatim ... ok
+test turn::tests::the_pre_guard_refuses_review_combined_with_any_other_mode ... ok
+test turn::tests::the_pre_guard_refuses_stage_and_phase_together ... ok
+test turn::tests::the_pre_guard_relays_a_parse_error_before_anything_else ... ok
+test turn::tests::the_request_kind_is_decided_by_the_flags_alone ... ok
+test turn::tests::the_row_gate_maps_onto_the_wire_spelling ... ok
+test turn::tests::birthing_an_unreadable_scope_name_is_refused ... ok
+test wording::tests::a_rejected_transition_carries_its_detail ... ok
+test wording::tests::the_bolt_face_wordings_are_verbatim ... ok
+test wording::tests::the_budget_refusal_switches_its_tail_at_a_budget_of_one ... ok
+test wording::tests::the_compose_offer_wording_carries_the_text_and_the_stock_examples ... ok
+test wording::tests::the_cost_clause_omits_the_per_unit_phrase_when_no_stage_repeats ... ok
+test wording::tests::the_cost_clause_switches_between_the_singular_and_plural_per_unit_phrase ... ok
+test wording::tests::the_empty_phase_wording_names_the_phase ... ok
+test wording::tests::the_failure_line_is_prefixed_with_the_tool_name ... ok
+test wording::tests::the_flag_grammar_refusals_are_verbatim ... ok
+test wording::tests::the_freeze_reason_names_the_scope_and_both_sanctioned_routes ... ok
+test wording::tests::the_freeze_recovery_guidance_follows_the_checkbox_and_the_plan ... ok
+test wording::tests::the_inconsistent_skip_wording_quotes_the_checkbox_spelling ... ok
+test wording::tests::the_invalid_active_space_wording_names_the_cursor_file ... ok
+test wording::tests::the_invalid_env_scope_wording_names_the_environment_variable ... ok
+test wording::tests::the_key_file_wordings_end_with_their_recovery_instruction ... ok
+test wording::tests::the_key_file_wordings_quote_the_path ... ok
+test wording::tests::the_out_of_sequence_refusal_names_both_ordinals ... ok
+test wording::tests::the_oversize_refusal_names_the_cap_in_bytes ... ok
+test wording::tests::the_park_refusals_are_relayed_verbatim_inside_the_wrapper ... ok
+test wording::tests::the_parked_wording_names_the_stage_and_the_resume_spelling ... ok
+test wording::tests::the_promotion_failures_are_wrapped_in_the_upstream_prefix ... ok
+test wording::tests::the_read_model_wording_carries_both_the_path_and_the_cause ... ok
+test wording::tests::the_read_only_wording_forbids_advancing_the_workflow ... ok
+test wording::tests::the_recover_skip_wording_names_the_stage_and_the_recovery_command ... ok
+test wording::tests::the_review_log_failure_closes_with_a_period_when_there_is_no_material ... ok
+test wording::tests::the_reviewer_mismatch_names_both_the_given_and_the_declared_agent ... ok
+test wording::tests::the_reviewer_precondition_is_the_upstream_state_refusal_verbatim ... ok
+test wording::tests::the_reviewer_scope_reason_matches_every_captured_upstream_string ... ok
+test wording::tests::the_scope_confirm_wording_appends_the_cost_clause_with_a_dash ... ok
+test wording::tests::the_stage_graph_wording_carries_both_the_path_and_the_cause ... ok
+test wording::tests::the_terminal_utility_wording_differs_from_the_read_only_one_by_a_single_word ... ok
+test wording::tests::the_two_b47_failure_lines_close_with_a_period_when_there_is_no_material ... ok
+test wording::tests::the_unknown_log_subcommand_line_names_the_given_verb_or_undefined ... ok
+test wording::tests::the_unknown_review_class_wording_is_verbatim ... ok
+test wording::tests::the_unknown_scope_wording_lists_the_valid_scopes_in_the_given_order ... ok
+test wording::tests::the_unknown_state_subcommand_line_names_the_given_verb_or_undefined ... ok
+test wording::tests::the_unknown_subcommand_line_names_the_given_verb_or_none ... ok
+test wording::tests::the_unmatched_request_refusal_differs_between_the_verdict_and_the_retry_form ... ok
+test wording::tests::the_unpark_wording_names_the_command_before_the_retry ... ok
+test wording::tests::the_unreadable_execution_cursor_wording_carries_its_cause_and_the_recovery ... ok
+test turn::tests::an_unreadable_steering_lookup_is_a_read_failure ... ok
+test turn::tests::an_unreadable_state_binding_lookup_on_continue_is_a_read_failure ... ok
+test turn::tests::an_unreadable_stock_lookup_is_a_read_failure ... ok
+test turn::tests::an_unrecoverable_skip_inconsistency_quotes_the_cursor_state ... ok
+test turn::tests::free_text_that_matches_nothing_offers_compose_with_the_stock_examples ... ok
+test turn::tests::naming_the_scope_the_state_already_carries_is_not_a_change ... ok
+test turn::tests::neither_a_definition_nor_a_cursor_is_reported_as_no_state ... ok
+test turn::tests::new_intent_carries_its_description_into_the_mint_command ... ok
+test validation_basis::tests::captured_input_boundary_matches_fixed_upstream_validation_fields ... ok
+test turn::tests::records_without_a_cursor_ask_which_intent_to_activate ... ok
+test turn::tests::single_with_an_unknown_stage_is_refused ... ok
+test turn::tests::single_without_a_stage_is_refused ... ok
+test turn::tests::new_work_routing_falls_back_to_the_resolved_scope_when_no_keyword_hits ... ok
+test turn::tests::the_environment_default_scope_is_the_last_candidate_before_the_built_in_default ... ok
+test turn::tests::new_work_routing_proposes_the_scope_the_keyword_names ... ok
+
+test result: ok. 313 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.31s
+
+     Running unittests src/main.rs (target/debug/deps/aidlc-3986ca031e995b95)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/claude_hook_contract.rs (target/debug/deps/claude_hook_contract-1390f4c265cc2b1a)
+
+running 10 tests
+test invalid_state_guard_envelopes_match_fixed_source ... ok
+test main_state_guard_matches_fixed_shell_boundaries ... ok
+test delegated_state_guard_matches_fixed_shell_boundaries ... ok
+test state_guard_ignores_invalid_utf8_stdin_without_initialization ... ok
+test heartbeat_directory_failure_preserves_public_files_and_reports_eisdir ... ok
+test state_transition_guard_matches_the_four_fixed_upstream_boundaries ... ok
+test write_audit_hook_records_a_heartbeat_in_the_shared_runtime_store ... ok
+test continue_hook_without_workflow_allows_stop_after_recording_health ... ok
+test write_audit_hook_projects_created_updated_and_drop_via_events ... ok
+test native_intent_create_then_artifact_hook_uses_the_event_pipeline ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.93s
+
+     Running tests/cli_golden_test.rs (target/debug/deps/cli_golden_test-db91848309df310c)
+
+running 10 tests
+test the_cli_corpus_uses_the_approved_upstream_revision ... ok
+test the_invalid_continuation_token_is_byte_identical_to_the_recorded_case ... ok
+test rejecting_a_gate_matches_the_recorded_reply_after_slug_substitution ... ok
+test the_parked_directive_is_byte_identical_to_the_recorded_case ... ok
+test opening_a_gate_matches_the_recorded_reply_after_slug_substitution ... ok
+test reopening_an_awaiting_gate_matches_the_revalidated_reply_after_slug_substitution ... ok
+test revising_a_gate_matches_the_recorded_reply_after_slug_substitution ... ok
+test the_load_steering_keys_match_the_recorded_case ... ok
+test the_terminal_run_stage_keys_and_persona_match_the_recorded_case ... ok
+test approving_a_gate_matches_the_recorded_reply_after_slug_substitution ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.53s
+
+     Running tests/crash_reconstruction_test.rs (target/debug/deps/crash_reconstruction_test-b72295de9679f91a)
+
+running 5 tests
+test a_new_connection_after_a_crash_reconstructs_the_same_aggregate ... ok
+test the_store_survives_being_opened_and_closed_repeatedly ... ok
+test a_new_connection_after_a_crash_reads_the_whole_journal ... ok
+test writing_resumes_from_the_persisted_version_after_a_crash ... ok
+test a_transaction_abandoned_by_a_crash_leaves_nothing_behind ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/diagnostic_record_contract.rs (target/debug/deps/diagnostic_record_contract-02bbf5edd5dee82a)
+
+running 7 tests
+test an_unknown_execution_is_not_created_by_recording_a_diagnostic ... ok
+test a_diagnostic_check_appends_one_fact_to_the_existing_execution ... ok
+test a_storage_failure_is_returned_without_a_successful_diagnostic_fact ... ok
+test repeated_diagnostics_keep_distinct_facts_and_actual_failure_counts ... ok
+test projection_appends_the_c7_audit_bytes_without_changing_workflow_state ... ok
+test diagnosing_a_parked_workflow_does_not_resume_it ... ok
+test failed_projection_retries_the_saved_fact_without_duplicate_audit ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.53s
+
+     Running tests/directive_context_contract.rs (target/debug/deps/directive_context_contract-9ec96b55f0bdfea4)
+
+running 3 tests
+test recovery_resets_shared_challenges_only_when_the_source_committed_invalidation ... ok
+test context_invalidation_projects_error_and_preserves_the_original_source_authority_revision ... ok
+test foreign_empty_missing_or_stale_contexts_leave_both_stores_unchanged ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/dispatch_rules_contract.rs (target/debug/deps/dispatch_rules_contract-a3176379400b416b)
+
+running 14 tests
+test the_team_template_is_dropped_because_it_carries_no_rule ... ok
+test an_explicit_stage_path_outranks_the_current_stage ... ok
+test a_dispatch_to_an_aidlc_agent_receives_the_bundle_upstream_produced ... ok
+test a_rule_file_that_is_not_utf8_stops_the_dispatch_too ... ok
+test a_rule_file_that_cannot_be_read_stops_the_dispatch_with_the_upstream_wording ... ok
+test a_subagent_dispatch_augments_each_stage_entry_with_its_own_bundle ... ok
+test the_current_stage_outranks_a_slug_merely_mentioned_in_the_brief ... ok
+test a_dispatch_never_writes_anything_into_the_workspace ... ok
+test a_brief_that_already_carries_the_exact_bundle_is_left_alone ... ok
+test a_dispatch_that_is_not_a_delegated_aidlc_agent_passes_untouched ... ok
+test a_path_the_graph_does_not_know_falls_back_to_the_current_stage ... ok
+test every_separator_shape_the_upstream_matcher_reads_resolves_the_same_stage ... ok
+test without_a_current_stage_a_single_slug_mention_binds_and_two_bind_nothing ... ok
+test the_output_limit_admits_the_exact_boundary_and_refuses_one_byte_past_it ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running tests/fold_usage_contract.rs (target/debug/deps/fold_usage_contract-44dfbf64b97348bc)
+
+running 1 test
+test the_fold_usage_hook_records_the_session_and_transcript_pointers ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/hook_first_drop_contract.rs (target/debug/deps/hook_first_drop_contract-99c428fda1a87535)
+
+running 1 test
+test an_unknown_session_stamp_records_the_first_drop_without_a_heartbeat ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/intent_lifecycle.rs (target/debug/deps/intent_lifecycle-9f987d7ddbcf19bc)
+
+running 123 tests
+test a_cold_log_refusal_does_not_create_an_execution_or_an_audit ... ok
+test a_first_next_that_cannot_open_the_store_reports_the_failure ... ok
+test a_definition_that_cannot_be_read_stops_the_mint ... ok
+test a_corrupt_definition_names_the_file_and_the_reason_in_the_diagnostic ... ok
+test a_projection_that_cannot_run_after_the_write_is_refused ... ok
+test a_graph_without_practices_discovery_refuses_the_promotion ... ok
+test a_projection_that_cannot_run_after_the_park_is_refused ... ok
+test a_promotion_without_an_active_intent_is_refused ... ok
+test a_record_directory_that_cannot_be_created_is_refused ... ok
+test a_fresh_human_turn_grants_autonomy_and_lands_on_both_faces ... ok
+test a_promotion_against_an_absent_execution_relays_the_repository_failure ... ok
+test a_promotion_names_the_unreadable_read_model_instead_of_an_absent_stage ... ok
+test a_de_escalation_needs_no_human_turn ... ok
+test a_human_turn_older_than_the_last_gate_resolution_is_refused ... ok
+test a_promotion_on_a_broken_execution_cursor_names_the_medium_failure ... ok
+test a_conditional_stage_is_routed_forward_by_a_skipped_report ... ok
+test a_resume_result_with_a_stage_is_refused ... ok
+test a_resume_result_without_a_state_file_is_refused ... ok
+test a_resume_result_without_the_humans_choice_is_refused ... ok
+test a_log_refusal_records_the_failed_command_without_advancing_the_workflow ... ok
+test a_log_refusal_keeps_its_diagnostic_when_audit_publication_fails ... ok
+test a_committed_report_survives_publication_failure_and_is_recovered_once ... ok
+test a_gate_rejection_floors_the_receipt_and_the_promotion_must_be_replayed ... ok
+test a_rejection_without_feedback_is_refused ... ok
+test a_restoration_failure_prevents_the_autonomy_switch_from_being_recorded ... ok
+test a_record_failure_is_relayed_as_material_on_the_single_face ... ok
+test a_gate_rejection_resets_the_attempt_and_the_receipt_must_be_recorded_again ... ok
+test a_review_without_an_active_intent_is_refused ... ok
+test a_restoration_failure_prevents_the_promotion_from_being_recorded ... ok
+test a_resume_whose_read_model_cannot_be_read_names_the_store ... ok
+test a_restoration_failure_prevents_the_stance_from_being_recorded ... ok
+test a_resume_with_a_broken_execution_cursor_names_the_cursor ... ok
+test a_resume_whose_store_cannot_be_opened_names_the_store ... ok
+test a_single_report_without_an_intent_record_names_the_missing_cursor ... ok
+test a_resume_without_a_resolvable_cursor_is_refused ... ok
+test a_review_on_a_broken_execution_cursor_names_the_medium_failure ... ok
+test a_gated_stage_walks_through_rejection_and_revision_before_it_is_approved ... ok
+test a_review_override_reaches_the_projected_state_file ... ok
+test a_repeated_awaiting_approval_report_is_an_idempotent_print ... ok
+test a_review_under_an_invalid_active_space_is_refused_before_the_store ... ok
+test a_stage_value_that_is_not_a_slug_is_refused ... ok
+test a_review_stage_outside_the_slug_grammar_reads_as_no_declared_reviewer ... ok
+test a_revising_stage_cannot_be_reported_as_a_forward_completion ... ok
+test a_single_report_with_a_malformed_stage_is_unknown ... ok
+test a_scope_cap_of_none_waives_the_receipt_entirely ... ok
+test a_skeleton_stance_report_names_the_unreadable_read_model ... ok
+test a_second_mint_does_not_write_the_definition_again ... ok
+test a_retry_pending_request_reports_the_retry_and_does_not_spend_the_budget ... ok
+test an_invalid_active_space_is_refused_rather_than_defaulted ... ok
+test an_oversize_directive_is_refused_instead_of_emitted ... ok
+test an_unknown_review_class_is_refused_verbatim ... ok
+test an_unknown_utility_verb_is_refused_on_stderr ... ok
+test an_unopenable_store_is_refused ... ok
+test a_second_promotion_does_not_duplicate_the_stamped_rules ... ok
+test a_skeleton_stance_report_without_a_projected_execution_is_refused ... ok
+test a_skeleton_stance_report_without_an_execution_cursor_is_refused ... ok
+test a_stage_outside_the_plan_is_refused_with_the_same_wording ... ok
+test a_promotion_surfaces_every_medium_failure ... ok
+test a_zero_byte_state_file_is_refused_as_an_unreadable_version ... ok
+test a_state_file_without_the_autonomy_field_is_refused_verbatim ... ok
+test a_switch_against_an_absent_execution_relays_the_repository_failure ... ok
+test an_escalation_without_a_human_turn_is_refused_verbatim ... ok
+test creating_an_intent_without_a_scope_is_refused ... ok
+test a_skeleton_stance_report_surfaces_every_medium_failure ... ok
+test an_empty_iteration_is_outside_the_positive_integer_grammar ... ok
+test an_unknown_result_is_refused_verbatim ... ok
+test minting_with_a_scope_the_definition_does_not_declare_is_refused ... ok
+test an_unreadable_state_file_is_reported_with_its_place_and_cause ... ok
+test an_unreadable_steering_key_stops_continue_too ... ok
+test an_unreadable_steering_key_stops_next_with_its_wording ... ok
+test approving_a_reviewer_bearing_stage_without_a_receipt_is_refused_verbatim ... ok
+test approving_practices_discovery_without_a_promotion_is_refused_verbatim ... ok
+test an_adversarial_not_ready_only_becomes_terminal_at_the_iteration_cap ... ok
+test an_advisory_pass_is_terminal_at_the_first_verdict ... ok
+test approving_an_unopened_gate_needs_the_explicit_stage_and_then_recovers_it ... ok
+test creating_an_intent_projects_both_read_model_faces ... ok
+test parking_without_an_execution_is_refused ... ok
+test a_single_report_surfaces_every_medium_failure ... ok
+test minting_writes_the_execution_cursor_into_the_record ... ok
+test each_gate_verdict_refuses_with_its_own_precondition_wording ... ok
+test completed_validation_keeps_the_observed_artifact_bytes_after_files_change ... ok
+test completing_the_last_gate_projects_the_workflow_completion_and_folds_a_re_report ... ok
+test reporting_an_unknown_result_is_refused ... ok
+test reporting_before_any_intent_exists_is_refused ... ok
+test reporting_without_a_result_is_refused ... ok
+test switching_before_any_intent_exists_is_refused ... ok
+test next_rejects_a_corrupt_restoration_plan_without_recreating_files ... ok
+test parking_against_a_broken_execution_cursor_is_refused ... ok
+test next_runs_against_the_freshly_created_intent ... ok
+test parking_against_an_unopenable_event_store_is_refused ... ok
+test parking_an_autonomous_run_is_refused_verbatim ... ok
+test reporting_a_stage_that_is_not_the_cursor_is_rejected ... ok
+test the_log_face_refuses_unknown_verbs_and_missing_required_arguments ... ok
+test parking_a_completed_workflow_is_refused_verbatim ... ok
+test next_single_refuses_five_ways_and_emits_an_isolated_run_stage ... ok
+test parking_stamps_the_marker_and_projects_both_faces ... ok
+test next_restores_missing_projection_files_without_repeating_audit ... ok
+test reporting_against_a_broken_execution_cursor_is_refused ... ok
+test report_starts_workspace_stage_with_the_report_time_source_baseline ... ok
+test reporting_a_verdict_commits_and_projects ... ok
+test switching_against_a_broken_execution_cursor_is_refused ... ok
+test switching_names_the_unreadable_state_file_instead_of_an_absent_field ... ok
+test switching_under_an_invalid_active_space_is_refused_by_name ... ok
+test the_bolt_face_refuses_unknown_and_unwired_verbs_on_stderr ... ok
+test the_state_face_refuses_unknown_and_unwired_verbs ... ok
+test the_four_resume_choices_route_and_anything_else_is_refused ... ok
+test the_mode_flag_refusals_are_verbatim ... ok
+test the_human_presence_guard_refuses_a_blank_approval ... ok
+test the_birth_print_names_a_command_the_receiving_surface_accepts ... ok
+test the_forward_table_refuses_a_pending_stage_and_folds_a_stale_re_report ... ok
+test the_promotion_refusals_are_verbatim ... ok
+test the_scope_configuration_flags_reach_the_projected_state_file ... ok
+test the_skeleton_stance_report_validates_its_value_and_the_current_stage ... ok
+test the_promotion_writes_the_memory_layer_and_opens_the_gate ... ok
+test the_review_round_trip_lets_the_gate_be_approved_and_records_both_rows ... ok
+test the_state_version_guard_refuses_every_report_path ... ok
+test the_review_refusals_are_verbatim ... ok
+test the_working_directory_is_the_workspace_root_when_no_project_dir_is_given ... ok
+test the_skipped_arm_refuses_each_missing_condition_verbatim ... ok
+test the_switch_is_accepted_while_the_workflow_is_parked ... ok
+test the_single_run_starts_then_completes_without_advancing_the_main_workflow ... ok
+test the_skeleton_gate_round_trip_turns_unresolved_into_a_determined_gate ... ok
+test the_review_syntax_guards_refuse_in_the_upstream_order ... ok
+
+test result: ok. 123 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.26s
+
+     Running tests/journal_protocol_conformance.rs (target/debug/deps/journal_protocol_conformance-f103b1acd4dd9c21)
+
+running 5 tests
+test both_sides_write_the_definition_payload_with_the_same_bytes ... ok
+test every_execution_variant_written_by_the_command_side_is_read_back_by_the_projection ... ok
+test the_intent_stream_written_by_the_command_side_keeps_every_optional_request_member ... ok
+test the_definition_stream_written_by_the_command_side_is_read_back_by_the_projection ... ok
+test the_store_conforms_to_every_committed_journal_protocol_trace ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.89s
+
+     Running tests/jump_contract.rs (target/debug/deps/jump_contract-f6a93e3292a4690c)

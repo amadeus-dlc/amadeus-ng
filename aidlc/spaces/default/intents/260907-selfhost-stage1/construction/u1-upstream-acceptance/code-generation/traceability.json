@@ -1,0 +1,38 @@
+{
+  "stage": "code-generation",
+  "unit": "u1-upstream-acceptance",
+  "upstream_ids": [
+    "FR1",
+    "NFR1",
+    "NFR2",
+    "NFR3",
+    "NFR4"
+  ],
+  "coverage": [
+    {
+      "id": "FR1",
+      "status": "OK",
+      "target": "scripts/goldens/upstream-source.ts"
+    },
+    {
+      "id": "NFR1",
+      "status": "OK",
+      "target": "scripts/goldens/verify-corpus.ts"
+    },
+    {
+      "id": "NFR2",
+      "status": "OK",
+      "target": "scripts/goldens/capture-corpus.test.ts"
+    },
+    {
+      "id": "NFR3",
+      "status": "OK",
+      "target": ".github/workflows/ci.yml"
+    },
+    {
+      "id": "NFR4",
+      "status": "OK",
+      "target": "scripts/goldens/capture-stage1.ts"
+    }
+  ]
+}

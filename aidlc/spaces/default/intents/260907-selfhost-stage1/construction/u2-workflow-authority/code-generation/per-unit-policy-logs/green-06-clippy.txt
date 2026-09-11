@@ -1,0 +1,43 @@
+    Blocking waiting for file lock on build directory
+    Checking core-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/infrastructure)
+    Checking core-command-domain v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/domain)
+    Checking harness-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/infrastructure)
+    Checking core-query-use-case v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/query/use-case)
+    Checking core-query-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/query/interface-adapter)
+    Checking core-command-use-case v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/use-case)
+    Checking core-read-model-updater v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/read-model-updater)
+    Checking core-command-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/interface-adapter)
+    Checking harness-claude v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/claude)
+    Checking aidlc v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/app/aidlc)
+error: use of a disallowed method `serde_json::to_string`
+   --> modules/app/aidlc/tests/dispatch_rules_contract.rs:144:19
+    |
+144 |     let escaped = serde_json::to_string(prompt).unwrap();
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: 契約 JSON の直列化は canon_json::serialize 経由 (BR1.7 / ADR 0001 決定 5)
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#disallowed_methods
+    = note: `-D clippy::disallowed-methods` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::disallowed_methods)]`
+
+error: use of a disallowed method `serde_json::to_string`
+   --> modules/app/aidlc/tests/dispatch_rules_contract.rs:214:19
+    |
+214 |     let escaped = serde_json::to_string(&expected_prompt).unwrap();
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: 契約 JSON の直列化は canon_json::serialize 経由 (BR1.7 / ADR 0001 決定 5)
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#disallowed_methods
+
+error: could not compile `aidlc` (test "dispatch_rules_contract") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: `panic` should not be present in production code
+   --> modules/app/aidlc/tests/fold_usage_contract.rs:197:21
+    |
+197 |                     panic!("{id}: {relative} を読めない: {error}");
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#panic
+    = note: requested on the command line with `-D clippy::panic`
+
+error: could not compile `aidlc` (test "fold_usage_contract") due to 1 previous error

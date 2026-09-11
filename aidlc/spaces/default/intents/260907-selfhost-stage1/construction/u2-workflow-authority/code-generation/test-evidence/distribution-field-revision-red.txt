@@ -1,0 +1,24 @@
+   Compiling core-command-domain v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/domain)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.69s
+     Running unittests src/lib.rs (target/debug/deps/core_command_domain-d33b72eeaf2627a6)
+
+running 1 test
+test workflow_definition::definition_revision::content_tests::review_owner_and_sensor_metadata_each_change_the_content_revision ... FAILED
+
+failures:
+
+---- workflow_definition::definition_revision::content_tests::review_owner_and_sensor_metadata_each_change_the_content_revision stdout ----
+
+thread 'workflow_definition::definition_revision::content_tests::review_owner_and_sensor_metadata_each_change_the_content_revision' (302265444) panicked at modules/core/command/domain/src/workflow_definition/definition_revision.rs:463:13:
+assertion `left != right` failed
+  left: DefinitionRevision("sha256:4f9b92d8e5da7212838a950812bb2108940369fbd1b73f2617166bfa14a51ec9")
+ right: DefinitionRevision("sha256:4f9b92d8e5da7212838a950812bb2108940369fbd1b73f2617166bfa14a51ec9")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    workflow_definition::definition_revision::content_tests::review_owner_and_sensor_metadata_each_change_the_content_revision
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 711 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p core-command-domain --lib`

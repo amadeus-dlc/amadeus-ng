@@ -1,0 +1,12 @@
+id	match	up_exit	rs_exit	up_changed	rs_changed	blocks(up/rs)	up_sha256	rs_sha256
+1-first-call-appends	same	0	0	changed	changed	1/1	51d5ea3e16ad4e36	51d5ea3e16ad4e36
+# appended block bytes: 27565
+# block starts with: "\n\n<!"
+# block ends with: "1934eb1827909747700e -->"
+2-exact-block-present-suffix	same	0	0	unchanged	unchanged	0/0	-	-
+3-exact-block-present-middle	same	0	0	unchanged	unchanged	0/0	-	-
+4-block-with-one-byte-changed	same	0	0	changed	changed	2/2	2e28ffc8d414b207	2e28ffc8d414b207
+5-block-truncated-by-one-char	same	0	0	changed	changed	2/2	86984c95550b943e	86984c95550b943e
+6-two-copies-of-the-exact-block	same	0	0	unchanged	unchanged	0/0	-	-
+7-block-of-another-stage-is-not-this-bundle	same	0	0	changed	changed	2/2	727a8adf145fb256	727a8adf145fb256
+# same=7 differ=0 total=7

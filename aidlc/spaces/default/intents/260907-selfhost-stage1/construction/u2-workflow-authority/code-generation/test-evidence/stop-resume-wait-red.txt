@@ -1,0 +1,27 @@
+   Compiling core-command-domain v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/domain)
+   Compiling core-command-use-case v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/use-case)
+   Compiling core-command-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/interface-adapter)
+   Compiling harness-claude v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/claude)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.13s
+     Running tests/stop_resume_wait_contract.rs (target/debug/deps/stop_resume_wait_contract-964d46d3c1e2365b)
+
+running 1 test
+test shared_resume_wait_matches_the_fixed_marker_validation ... FAILED
+
+failures:
+
+---- shared_resume_wait_matches_the_fixed_marker_validation stdout ----
+
+thread 'shared_resume_wait_matches_the_fixed_marker_validation' (303778897) panicked at modules/harness/claude/tests/stop_resume_wait_contract.rs:23:9:
+assertion `left == right` failed: valid-shared-wait
+  left: false
+ right: true
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    shared_resume_wait_matches_the_fixed_marker_validation
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p harness-claude --test stop_resume_wait_contract`

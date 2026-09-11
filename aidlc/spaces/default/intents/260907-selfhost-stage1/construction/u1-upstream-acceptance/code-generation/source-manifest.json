@@ -1,0 +1,109 @@
+{
+  "stage": "code-generation",
+  "unit": "u1-upstream-acceptance",
+  "version": 1,
+  "writes": [
+    {
+      "path": "scripts/goldens/capture-cli.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-corpus.test.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-doctor.test.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-doctor.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-extensions.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-hash-canonical.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-learnings.test.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-learnings.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-observation.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-source.test.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-stage1.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-supplemental.ts"
+    },
+    {
+      "path": "scripts/goldens/compare-corpus.test.ts"
+    },
+    {
+      "path": "scripts/goldens/corpus-normalization.ts"
+    },
+    {
+      "path": "scripts/goldens/normalization.json"
+    },
+    {
+      "path": "scripts/goldens/prepare-corpus.ts"
+    },
+    {
+      "path": "scripts/goldens/recapture-cli.sh"
+    },
+    {
+      "path": "scripts/goldens/recapture-hash-canonical.sh"
+    },
+    {
+      "path": "scripts/goldens/upstream-manifest.sha256"
+    },
+    {
+      "path": "scripts/goldens/upstream-source.ts"
+    },
+    {
+      "path": "scripts/goldens/verify-corpus.ts"
+    },
+    {
+      "path": ".github/workflows/ci.yml"
+    },
+    {
+      "path": "tests/golden/upstream-a277af21/"
+    },
+    {
+      "path": ".claude/hooks/aidlc-record-human-turn.ts"
+    },
+    {
+      "path": ".codex/hooks/aidlc-record-human-turn.ts"
+    },
+    {
+      "path": ".kimi-code/hooks/aidlc-record-human-turn.ts"
+    },
+    {
+      "path": "scripts/aidlc-plan-progress.test.ts"
+    },
+    {
+      "path": "scripts/aidlc-sync/patches/numeric-human-response.patch"
+    },
+    {
+      "path": "scripts/aidlc-sync/installed.json"
+    },
+    {
+      "path": "scripts/aidlc-traceability.test.ts"
+    },
+    {
+      "path": "scripts/aidlc-sync/patches/traceability-unit-requirements.patch"
+    },
+    {
+      "path": ".codex/tools/aidlc-sensor-traceability.ts"
+    },
+    {
+      "path": ".claude/tools/aidlc-sensor-traceability.ts"
+    },
+    {
+      "path": ".kimi-code/tools/aidlc-sensor-traceability.ts"
+    }
+  ]
+}

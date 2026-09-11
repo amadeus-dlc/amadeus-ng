@@ -1,0 +1,62 @@
+{
+  "stage": "code-generation",
+  "unit": "u2-workflow-authority",
+  "upstream_ids": [
+    "FR1",
+    "FR2",
+    "FR3",
+    "FR4",
+    "FR7",
+    "NFR1",
+    "NFR2",
+    "NFR3",
+    "NFR4"
+  ],
+  "coverage": [
+    {
+      "id": "FR1",
+      "status": "OK",
+      "target": "modules/app/aidlc/tests/upstream_271_contract.rs"
+    },
+    {
+      "id": "FR2",
+      "status": "OK",
+      "target": "modules/app/aidlc/src/runtime.rs"
+    },
+    {
+      "id": "FR3",
+      "status": "OK",
+      "target": "modules/app/aidlc/tests/claude_hook_contract.rs"
+    },
+    {
+      "id": "FR4",
+      "status": "OK",
+      "target": "modules/app/aidlc/src/runtime/learnings.rs"
+    },
+    {
+      "id": "FR7",
+      "status": "Deferred",
+      "target": "modules/app/aidlc/tests/upstream_271_contract.rs"
+    },
+    {
+      "id": "NFR1",
+      "status": "OK",
+      "target": "modules/core/read-model-updater/tests/audit_block_golden_test.rs"
+    },
+    {
+      "id": "NFR2",
+      "status": "OK",
+      "target": "formal/orchestration/engine_loop.qnt"
+    },
+    {
+      "id": "NFR3",
+      "status": "OK",
+      "target": ".github/workflows/ci.yml"
+    },
+    {
+      "id": "NFR4",
+      "status": "OK",
+      "target": "modules/app/aidlc/src/wording.rs"
+    }
+  ]
+}

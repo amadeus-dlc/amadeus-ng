@@ -1,0 +1,24 @@
+   Compiling core-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/infrastructure)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.63s
+     Running tests/golden_corpus_read.rs (target/debug/deps/golden_corpus_read-bd400b83975f7915)
+
+running 1 test
+test previously_missing_paths_have_verified_supplemental_observations ... FAILED
+
+failures:
+
+---- previously_missing_paths_have_verified_supplemental_observations stdout ----
+
+thread 'previously_missing_paths_have_verified_supplemental_observations' (302052378) panicked at modules/core/infrastructure/tests/golden_corpus_read.rs:496:5:
+assertion `left == right` failed
+  left: Some("3c3146cfd7cef33020d48e8d48d4e80d0f8c2820")
+ right: Some("a277af218f0df7f325d3b8be7b6d90fce2c5bd40")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    previously_missing_paths_have_verified_supplemental_observations
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p core-infrastructure --test golden_corpus_read`

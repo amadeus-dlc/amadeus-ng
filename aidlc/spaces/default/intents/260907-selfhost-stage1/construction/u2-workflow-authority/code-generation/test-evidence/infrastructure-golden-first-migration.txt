@@ -1,0 +1,42 @@
+   Compiling core-infrastructure v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/infrastructure)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.61s
+     Running tests/golden_corpus_read.rs (target/debug/deps/golden_corpus_read-bd400b83975f7915)
+
+running 14 tests
+test a_complete_corpus_can_have_no_missing_cases ... ok
+test line_diff_points_at_the_lines_that_differ ... ok
+test an_outstanding_case_must_still_explain_its_reason - should panic ... ok
+test missing_cases_are_recorded_with_a_reason ... ok
+test previously_missing_paths_have_verified_supplemental_observations ... ok
+test the_br2_4_range_is_covered ... ok
+test hook_cases_cover_their_applicable_outcomes ... ok
+test the_normalization_rules_load_from_the_corpus ... ok
+test normalization_preserves_stable_record_names_and_upstream_pins ... ok
+test every_hook_case_is_readable ... ok
+test both_families_carry_their_provenance ... ok
+test normalization_replaces_every_environment_specific_value ... FAILED
+test every_cli_case_is_readable ... ok
+test normalization_is_a_fixpoint_over_the_captured_corpus ... ok
+
+failures:
+
+---- normalization_replaces_every_environment_specific_value stdout ----
+
+thread 'normalization_replaces_every_environment_specific_value' (302040514) panicked at modules/core/infrastructure/tests/golden_corpus_read.rs:361:5:
+セッション ID が残っている:
+- **Start Date**: <TS>
+- **Project Root**: <ROOT>
+shard <CLONE>
+path aidlc/spaces/default/intents/<TS>-golden/inception
+bare <TS>-golden
+session 11111111-2222-4333-8444-555555555555
+token AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDDEEEEEEEEEEFFFFFFFFFFGGGGGGGGGGHHHHHHHHHHIIIIIIIIIIJJJJJJJJJJKKKKKKKKKKLLLLLLLLLLMMMMMMMMMMNNNNNNNNNNOOOOOOOOOOPPPPPPPPPPQQQQQQQQQQRRRRRRRRRRSSSSSSSSSSTTTTTTTTTT
+
+
+
+failures:
+    normalization_replaces_every_environment_specific_value
+
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p core-infrastructure --test golden_corpus_read`

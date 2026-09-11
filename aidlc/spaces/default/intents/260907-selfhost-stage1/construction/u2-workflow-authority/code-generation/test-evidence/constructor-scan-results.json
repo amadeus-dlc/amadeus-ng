@@ -1,0 +1,5919 @@
+{
+  "method": "syn AST、同ファイル内の実structの構築とDefault derive。enum、Clone/Deserialize、未展開macroは数えない。production/testの分類後、候補を手読みにより確認。",
+  "sources": [
+    "modules/",
+    "tools/lint/src/",
+    "tests/support/"
+  ],
+  "struct_count": 651,
+  "remaining_duplicates": [],
+  "constructions": [
+    {
+      "path": "modules/app/aidlc/src/cli/intent_create_args.rs",
+      "type": "IntentCreateArgs",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/app/aidlc/src/cli/intent_create_args.rs:3",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/cli/interaction_args.rs",
+      "type": "InteractionArgs",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/app/aidlc/src/cli/interaction_args.rs:4",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/cli/invocation.rs",
+      "type": "Invocation",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/cli/invocation.rs:33",
+          "function": "strip_global_flags"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/cli/promote_args.rs",
+      "type": "PromoteArgs",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/app/aidlc/src/cli/promote_args.rs:3",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/cli/report_args.rs",
+      "type": "ReportArgs",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/app/aidlc/src/cli/report_args.rs:3",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/cli/review_args.rs",
+      "type": "ReviewArgs",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/app/aidlc/src/cli/review_args.rs:3",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/cli/set_autonomy_args.rs",
+      "type": "SetAutonomyArgs",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/app/aidlc/src/cli/set_autonomy_args.rs:3",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/execution_cursor.rs",
+      "type": "ExecutionCursor",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/execution_cursor.rs:50",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/layout.rs",
+      "type": "Layout",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/layout.rs:30",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/oversize_directive.rs",
+      "type": "OversizeDirective",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/oversize_directive.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/presenter.rs",
+      "type": "Presenter",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/presenter.rs:79",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime.rs",
+      "type": "Completion",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/runtime.rs:87",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime/plan_approval.rs",
+      "type": "PlanApprovalAccess",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/runtime/plan_approval.rs:40",
+          "function": "open"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/source_fingerprint.rs",
+      "type": "Scan",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/app/aidlc/src/source_fingerprint.rs:30",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/steering.rs",
+      "type": "SteeringKey",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/steering.rs:61",
+          "function": "resolve"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/turn.rs",
+      "type": "Turn",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/turn.rs:155",
+          "function": "open"
+        }
+      ]
+    },
+    {
+      "path": "modules/app/aidlc/src/workspace_scanner.rs",
+      "type": "WorkspaceScanner",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/app/aidlc/src/workspace_scanner.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/active_directive.rs",
+      "type": "ActiveDirective",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/active_directive.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/answer_id.rs",
+      "type": "AnswerId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/answer_id.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/answer_request.rs",
+      "type": "AnswerRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/answer_request.rs:54",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/artifact_paths.rs",
+      "type": "ArtifactPaths",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/artifact_paths.rs:24",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/code_generation_approval.rs",
+      "type": "CodeGenerationApproval",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/code_generation_approval.rs:34",
+          "function": "evaluate"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/code_generation_authority.rs",
+      "type": "CodeGenerationAuthority",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/code_generation_authority.rs:25",
+          "function": "of_values"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/code_generation_run_floor.rs",
+      "type": "CodeGenerationRunFloor",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/code_generation_run_floor.rs:26",
+          "function": "of_counts"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/decision_prompt.rs",
+      "type": "DecisionPrompt",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/decision_prompt.rs:30",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/directive_publication.rs",
+      "type": "DirectivePublication",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/directive_publication.rs:32",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/embedded_testing_contract.rs",
+      "type": "EmbeddedTestingContract",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/embedded_testing_contract.rs:46",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent.rs",
+      "type": "Intent",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent.rs:314",
+          "function": "from"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_event/created.rs",
+      "type": "Created",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_event/created.rs:42",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_event_id.rs",
+      "type": "IntentEventId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_event_id.rs:26",
+          "function": "of_uuid"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution.rs",
+      "type": "IntentExecution",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution.rs:347",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_error.rs",
+      "type": "IntentExecutionError",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_error.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/answer_recorded.rs",
+      "type": "AnswerRecorded",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/answer_recorded.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/autonomy_mode_set.rs",
+      "type": "AutonomyModeSet",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/autonomy_mode_set.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/decision_recorded.rs",
+      "type": "DecisionRecorded",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/decision_recorded.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/directive_issued.rs",
+      "type": "DirectiveIssued",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/directive_issued.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/gate_approved.rs",
+      "type": "GateApproved",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/gate_approved.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/gate_opened.rs",
+      "type": "GateOpened",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/gate_opened.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/gate_rejected.rs",
+      "type": "GateRejected",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/gate_rejected.rs:28",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/jumped.rs",
+      "type": "Jumped",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/jumped.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/parked.rs",
+      "type": "Parked",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/parked.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/plan_answer_logged.rs",
+      "type": "PlanAnswerLogged",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/plan_answer_logged.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/practices_affirmed.rs",
+      "type": "PracticesAffirmed",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/practices_affirmed.rs:36",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/prompt_observed.rs",
+      "type": "PromptObserved",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/prompt_observed.rs:40",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/recomposed.rs",
+      "type": "Recomposed",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/recomposed.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/reported.rs",
+      "type": "Reported",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/reported.rs:31",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/review_completed.rs",
+      "type": "ReviewCompleted",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/review_completed.rs:37",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/review_requested.rs",
+      "type": "ReviewRequested",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/review_requested.rs:33",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/single_stage_run_committed.rs",
+      "type": "SingleStageRunCommitted",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/single_stage_run_committed.rs:28",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/skeleton_stance_recorded.rs",
+      "type": "SkeletonStanceRecorded",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/skeleton_stance_recorded.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/stage_revised.rs",
+      "type": "StageRevised",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/stage_revised.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/stage_skipped.rs",
+      "type": "StageSkipped",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/stage_skipped.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/started.rs",
+      "type": "Started",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/started.rs:38",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event/unparked.rs",
+      "type": "Unparked",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event/unparked.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_event_id.rs",
+      "type": "IntentExecutionEventId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_event_id.rs:26",
+          "function": "of_uuid"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution_id.rs",
+      "type": "IntentExecutionId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_execution_id.rs:46",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_id.rs",
+      "type": "IntentId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_id.rs:45",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_record_name.rs",
+      "type": "IntentRecordName",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/intent_record_name.rs:15",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/interaction_state.rs",
+      "type": "InteractionState",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/interaction_state.rs:52",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/invalid_mode_arg.rs",
+      "type": "InvalidModeArg",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/invalid_mode_arg.rs:15",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/next_request.rs",
+      "type": "NextRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/next_request.rs:29",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/pending_decisions.rs",
+      "type": "PendingDecisions",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/pending_decisions.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/pending_iterations.rs",
+      "type": "PendingIterations",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/pending_iterations.rs:28",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/pending_summary_decisions.rs",
+      "type": "PendingSummaryDecisions",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/pending_summary_decisions.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/phase_boundary.rs",
+      "type": "PhaseBoundary",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/phase_boundary.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_answer.rs",
+      "type": "PlanAnswer",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_answer.rs:42",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_answer_input.rs",
+      "type": "PlanAnswerInput",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_answer_input.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_answers.rs",
+      "type": "PlanAnswers",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_answers.rs:17",
+          "function": "of_entries"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_applied_operations.rs",
+      "type": "PlanAppliedOperations",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_applied_operations.rs:17",
+          "function": "of_entries"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_documents.rs",
+      "type": "PlanApprovalDocuments",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_documents.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_error.rs",
+      "type": "PlanApprovalError",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_error.rs:9",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_answer_aborted.rs",
+      "type": "PlanAnswerAborted",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_answer_aborted.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_answer_completed.rs",
+      "type": "PlanAnswerCompleted",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_answer_completed.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_answer_recorded.rs",
+      "type": "PlanAnswerRecorded",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_answer_recorded.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_challenge_issued.rs",
+      "type": "PlanChallengeIssued",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_challenge_issued.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_generation_certified.rs",
+      "type": "PlanGenerationCertified",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_generation_certified.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_generation_requested.rs",
+      "type": "PlanGenerationRequested",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_generation_requested.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_generation_revoked.rs",
+      "type": "PlanGenerationRevoked",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_generation_revoked.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_invalidation_prepared.rs",
+      "type": "PlanInvalidationPrepared",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_invalidation_prepared.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_invalidation_resolved.rs",
+      "type": "PlanInvalidationResolved",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_invalidation_resolved.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_response_observed.rs",
+      "type": "PlanResponseObserved",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_response_observed.rs:28",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_response_prepared.rs",
+      "type": "PlanResponsePrepared",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_response_prepared.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_runtime_created.rs",
+      "type": "PlanRuntimeCreated",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event/plan_runtime_created.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_event_id.rs",
+      "type": "PlanApprovalEventId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_event_id.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_evidence.rs",
+      "type": "PlanApprovalEvidence",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_evidence.rs:51",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_input.rs",
+      "type": "PlanApprovalInput",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_input.rs:35",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_operation_id.rs",
+      "type": "PlanApprovalOperationId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_operation_id.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_origin.rs",
+      "type": "PlanApprovalOrigin",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_origin.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_receipt.rs",
+      "type": "PlanApprovalReceipt",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_receipt.rs:35",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_approval_runtime.rs",
+      "type": "PlanApprovalRuntime",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_approval_runtime.rs:482",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_challenge.rs",
+      "type": "PlanChallenge",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_challenge.rs:71",
+          "function": "issue"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_challenge_occurrence.rs",
+      "type": "PlanChallengeOccurrence",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_challenge_occurrence.rs:39",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_challenges.rs",
+      "type": "PlanChallenges",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_challenges.rs:17",
+          "function": "of_entries"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_decision_evidence.rs",
+      "type": "PlanDecisionEvidence",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_decision_evidence.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_generation.rs",
+      "type": "PlanGeneration",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_generation.rs:60",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_generations.rs",
+      "type": "PlanGenerations",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_generations.rs:17",
+          "function": "of_entries"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_human_response.rs",
+      "type": "PlanHumanResponse",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_human_response.rs:30",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_invalidation.rs",
+      "type": "PlanInvalidation",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_invalidation.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_invalidations.rs",
+      "type": "PlanInvalidations",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_invalidations.rs:17",
+          "function": "of_entries"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_offered_options.rs",
+      "type": "PlanOfferedOptions",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_offered_options.rs:22",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_pending_responses.rs",
+      "type": "PlanPendingResponses",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_pending_responses.rs:19",
+          "function": "of_entries"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_questions.rs",
+      "type": "PlanQuestions",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_questions.rs:70",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_receipts.rs",
+      "type": "PlanReceipts",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_receipts.rs:17",
+          "function": "of_entries"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_response_preparation.rs",
+      "type": "PlanResponsePreparation",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_response_preparation.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_session.rs",
+      "type": "PlanSession",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_session.rs:36",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/plan_target.rs",
+      "type": "PlanTarget",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/plan_target.rs:11",
+          "function": "of_unit"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/report_id.rs",
+      "type": "ReportId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/report_id.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/report_request.rs",
+      "type": "ReportRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/report_request.rs:37",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/review_attempt.rs",
+      "type": "ReviewAttempt",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/review_attempt.rs:46",
+          "function": "restored"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/review_closure.rs",
+      "type": "ReviewClosure",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/review_closure.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/review_closures.rs",
+      "type": "ReviewClosures",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/review_closures.rs:30",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_display.rs",
+      "type": "StageDisplay",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_display.rs:49",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_entries.rs",
+      "type": "StageEntries",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_entries.rs:65",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_entry.rs",
+      "type": "StageEntry",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_entry.rs:37",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_index.rs",
+      "type": "StageIndex",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_index.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_index_set.rs",
+      "type": "StageIndexSet",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_index_set.rs:31",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_key.rs",
+      "type": "StageKey",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_key.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_slot.rs",
+      "type": "StageSlot",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_slot.rs:151",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_slots.rs",
+      "type": "StageSlots",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_slots.rs:92",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/stage_slug_set.rs",
+      "type": "StageSlugSet",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/stage_slug_set.rs:36",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/start_request.rs",
+      "type": "StartRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/start_request.rs:56",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/state_binding.rs",
+      "type": "StateBinding",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/state_binding.rs:16",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/summary_evidence.rs",
+      "type": "SummaryEvidence",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/summary_evidence.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/summary_questions.rs",
+      "type": "SummaryQuestions",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/summary_questions.rs:52",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/summary_questions/containers.rs",
+      "type": "Containers",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/summary_questions/containers.rs:17",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/summary_questions/visibility.rs",
+      "type": "InlineVisibility",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/core/command/domain/src/orchestration/summary_questions/visibility.rs:219",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/testing_context.rs",
+      "type": "TestingContext",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/testing_context.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/testing_posture.rs",
+      "type": "TestingPosture",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/testing_posture.rs:85",
+          "function": "resolve"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/testing_posture/classification.rs",
+      "type": "Classification",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/testing_posture/classification.rs:13",
+          "function": "of_values"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/testing_posture/markdown.rs",
+      "type": "Comments",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/core/command/domain/src/orchestration/testing_posture/markdown.rs:33",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/testing_posture/markdown.rs",
+      "type": "Fence",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/testing_posture/markdown.rs:22",
+          "function": "opening"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/testing_posture_error.rs",
+      "type": "TestingPostureError",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/testing_posture_error.rs:9",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/testing_sections.rs",
+      "type": "TestingSections",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/testing_sections.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/transition_steps.rs",
+      "type": "TransitionSteps",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/transition_steps.rs:27",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/unknown_review_verdict.rs",
+      "type": "UnknownReviewVerdict",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/unknown_review_verdict.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/unknown_stance.rs",
+      "type": "UnknownStance",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/unknown_stance.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/unknown_verdict.rs",
+      "type": "UnknownVerdict",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/orchestration/unknown_verdict.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/workspace_scan.rs",
+      "type": "WorkspaceScan",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/orchestration/workspace_scan.rs:45",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/compiled_definition.rs",
+      "type": "CompiledDefinition",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/compiled_definition.rs:281",
+          "function": "from"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/compiled_definition_event/compiled.rs",
+      "type": "Compiled",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/compiled_definition_event/compiled.rs:35",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/compiled_definition_event/plugin_selection_applied.rs",
+      "type": "PluginSelectionApplied",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/compiled_definition_event/plugin_selection_applied.rs:28",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/compiled_definition_event/recompiled.rs",
+      "type": "Recompiled",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/compiled_definition_event/recompiled.rs:32",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/compiled_definition_event/scope_registered.rs",
+      "type": "ScopeRegistered",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/compiled_definition_event/scope_registered.rs:32",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/compiled_definition_event_id.rs",
+      "type": "CompiledDefinitionEventId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/compiled_definition_event_id.rs:27",
+          "function": "of_uuid"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/compiled_definition_id.rs",
+      "type": "CompiledDefinitionId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/compiled_definition_id.rs:36",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/consume_decl.rs",
+      "type": "ConsumeDecl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/consume_decl.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/definition_revision.rs",
+      "type": "DefinitionRevision",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/definition_revision.rs:104",
+          "function": "of_rendered"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/lineage_mismatch.rs",
+      "type": "LineageMismatch",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/lineage_mismatch.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/review_policy.rs",
+      "type": "ReviewPolicy",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/review_policy.rs:36",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/rule_in_context.rs",
+      "type": "RuleInContext",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/rule_in_context.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/scope_cost.rs",
+      "type": "ScopeCost",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/scope_cost.rs:25",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/scope_grid.rs",
+      "type": "ScopeGrid",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/scope_grid.rs:105",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/scope_metadata.rs",
+      "type": "ScopeMetadata",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/scope_metadata.rs:32",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/scope_slug.rs",
+      "type": "ScopeSlug",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/scope_slug.rs:30",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/sensor_ref.rs",
+      "type": "SensorRef",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/sensor_ref.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/stage_graph.rs",
+      "type": "StageGraph",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/stage_graph.rs:25",
+          "function": "of_nodes"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/stage_node/stage_node_builder.rs",
+      "type": "StageNodeBuilder",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/stage_node/stage_node_builder.rs:34",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/stage_number.rs",
+      "type": "StageNumber",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/stage_number.rs:40",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/stage_route.rs",
+      "type": "StageRoute",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/stage_route.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/stage_slug.rs",
+      "type": "StageSlug",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/stage_slug.rs:37",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_brownfield_greenfield.rs",
+      "type": "UnknownBrownfieldGreenfield",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_brownfield_greenfield.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_execution_kind.rs",
+      "type": "UnknownExecutionKind",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_execution_kind.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_phase.rs",
+      "type": "UnknownPhase",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_phase.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_review_cap.rs",
+      "type": "UnknownReviewCap",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_review_cap.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_review_class.rs",
+      "type": "UnknownReviewClass",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_review_class.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_rule_scope.rs",
+      "type": "UnknownRuleScope",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_rule_scope.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_scope.rs",
+      "type": "UnknownScope",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_scope.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_skeleton_default.rs",
+      "type": "UnknownSkeletonDefault",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_skeleton_default.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_stage.rs",
+      "type": "UnknownStage",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_stage.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/unknown_stage_mode.rs",
+      "type": "UnknownStageMode",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/unknown_stage_mode.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/workflow_definition.rs",
+      "type": "WorkflowDefinition",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/workflow_definition.rs:543",
+          "function": "from"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/workflow_definition_event/defined.rs",
+      "type": "Defined",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/workflow_definition_event/defined.rs:35",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/workflow_definition_event/redefined.rs",
+      "type": "Redefined",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workflow_definition/workflow_definition_event/redefined.rs:36",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/workflow_definition_event_id.rs",
+      "type": "WorkflowDefinitionEventId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/workflow_definition_event_id.rs:27",
+          "function": "of_uuid"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workflow_definition/workflow_definition_id.rs",
+      "type": "WorkflowDefinitionId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workflow_definition/workflow_definition_id.rs:32",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/audit_event_record.rs",
+      "type": "AuditEventRecord",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/audit_event_record.rs:92",
+          "function": "record_of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/audit_field_key.rs",
+      "type": "AuditFieldKey",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/audit_field_key.rs:45",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/audit_field_value.rs",
+      "type": "AuditFieldValue",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/audit_field_value.rs:38",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/audit_fields.rs",
+      "type": "AuditFields",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/audit_fields.rs:89",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/bolt_refs.rs",
+      "type": "BoltRefs",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/bolt_refs.rs:26",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/checkbox_entry.rs",
+      "type": "CheckboxEntry",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/checkbox_entry.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/checkboxes.rs",
+      "type": "Checkboxes",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/checkboxes.rs:35",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/clone_id.rs",
+      "type": "CloneId",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/clone_id.rs:30",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/heading_not_found.rs",
+      "type": "HeadingNotFound",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/heading_not_found.rs:15",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/human_turns.rs",
+      "type": "HumanTurns",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/human_turns.rs:61",
+          "function": "find_in"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/intent_dir_name.rs",
+      "type": "IntentDirName",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/intent_dir_name.rs:68",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/ordered_audit_events.rs",
+      "type": "OrderedAuditEvents",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/ordered_audit_events.rs:37",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/practices_promotion.rs",
+      "type": "PracticesPromotion",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/practices_promotion.rs:50",
+          "function": "of_rules"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/promoted_section.rs",
+      "type": "PromotedSection",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/promoted_section.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/promoted_sections.rs",
+      "type": "PromotedSections",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/promoted_sections.rs:28",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/rule_lines.rs",
+      "type": "RuleLines",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/rule_lines.rs:24",
+          "function": "of_items"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/shard_name.rs",
+      "type": "ShardName",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/shard_name.rs:17",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/space_name.rs",
+      "type": "SpaceName",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/space_name.rs:22",
+          "function": "of_name"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/state_field_value.rs",
+      "type": "StateFieldValue",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/state_field_value.rs:30",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/state_version_classification.rs",
+      "type": "StateVersionClassification",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/state_version_classification.rs:22",
+          "function": "of_kind"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/store_path.rs",
+      "type": "StorePath",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/domain/src/workspace/store_path.rs:27",
+          "function": "of_path"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/unsafe_line_char.rs",
+      "type": "UnsafeLineChar",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/domain/src/workspace/unsafe_line_char.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/fake_clock.rs",
+      "type": "FakeClock",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/fake_clock.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs",
+      "type": "CompiledDefinitionRepositoryImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs:421",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs",
+      "type": "ConsumeEmitDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs:838",
+          "function": "emit_graph"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs",
+      "type": "RuleInContextEmitDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs:860",
+          "function": "emit_graph"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs",
+      "type": "ScopeColumnEmitDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs:902",
+          "function": "serialize"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs",
+      "type": "ScopeGridEmitDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs:886",
+          "function": "emit_grid"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs",
+      "type": "ScopeStagesEmitDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs:903",
+          "function": "serialize"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs",
+      "type": "SensorRefEmitDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs:868",
+          "function": "emit_graph"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs",
+      "type": "StageNodeEmitDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/compiled_definition_repository_impl.rs:818",
+          "function": "emit_graph"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/active_directive_dto.rs",
+      "type": "ActiveDirectiveDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/active_directive_dto.rs:36",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/answer_recorded_dto.rs",
+      "type": "AnswerRecordedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/answer_recorded_dto.rs:27",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/answer_recorded_dto.rs",
+      "type": "SummaryEvidenceDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/answer_recorded_dto.rs:29",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/created_dto.rs",
+      "type": "CreatedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/created_dto.rs:43",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/decision_recorded_dto.rs",
+      "type": "DecisionRecordedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/decision_recorded_dto.rs:25",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/defined_dto.rs",
+      "type": "DefinedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/defined_dto.rs:31",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/directive_issued_dto.rs",
+      "type": "DirectiveIssuedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/directive_issued_dto.rs:16",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_aggregate_key_dto.rs",
+      "type": "IntentAggregateKeyDto",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_aggregate_key_dto.rs:26",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs",
+      "type": "IntentDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs:107",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs",
+      "type": "RecordNameDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs:59",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs",
+      "type": "StageDisplayDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs:205",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs",
+      "type": "StageEntryDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs:200",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs",
+      "type": "StartRequestDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs:168",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs",
+      "type": "WorkspaceScanDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_dto.rs:236",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_aggregate_key_dto.rs",
+      "type": "IntentExecutionAggregateKeyDto",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_aggregate_key_dto.rs:27",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs",
+      "type": "IntentExecutionDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs:293",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs",
+      "type": "InteractionStateDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs:97",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs",
+      "type": "ReviewAttemptDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs:208",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs",
+      "type": "ReviewClosureDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs:212",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs",
+      "type": "SlotColumns",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs:241",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs",
+      "type": "StageKeyDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/intent_execution_dto.rs:260",
+          "function": "push"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_answer_dto.rs",
+      "type": "PlanAnswerDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_answer_dto.rs:21",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_answer_input_dto.rs",
+      "type": "PlanAnswerInputDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_answer_input_dto.rs:24",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_answer_logged_dto.rs",
+      "type": "PlanAnswerLoggedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_answer_logged_dto.rs:20",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_event_dto.rs",
+      "type": "PlanApprovalEventDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_event_dto.rs:99",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_evidence_dto.rs",
+      "type": "AuthorityDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_evidence_dto.rs:47",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_evidence_dto.rs",
+      "type": "PlanApprovalEvidenceDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_evidence_dto.rs:17",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs",
+      "type": "ChallengeDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs:174",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs",
+      "type": "ChallengeOccurrenceDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs:146",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs",
+      "type": "HumanResponseDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs:204",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs",
+      "type": "InvalidationDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs:229",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs",
+      "type": "PlanApprovalRuntimeDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_dto.rs:35",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_key_dto.rs",
+      "type": "PlanApprovalRuntimeKeyDto",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_approval_runtime_key_dto.rs:12",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_decision_evidence_dto.rs",
+      "type": "PlanDecisionEvidenceDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_decision_evidence_dto.rs:12",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_generation_dto.rs",
+      "type": "PlanGenerationDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_generation_dto.rs:15",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_receipt_dto.rs",
+      "type": "PlanReceiptDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_receipt_dto.rs:20",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/plan_response_preparation_dto.rs",
+      "type": "PlanResponsePreparationDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/plan_response_preparation_dto.rs:21",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/practices_affirmed_dto.rs",
+      "type": "PromotedSectionDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/practices_affirmed_dto.rs:32",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/prompt_observed_dto.rs",
+      "type": "PromptObservedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/prompt_observed_dto.rs:20",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/reported_dto.rs",
+      "type": "ReportedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/reported_dto.rs:99",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/run_floor_dto.rs",
+      "type": "BoundaryDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/run_floor_dto.rs:26",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/run_floor_dto.rs",
+      "type": "RunFloorDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/run_floor_dto.rs:21",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_aggregate_key_dto.rs",
+      "type": "WorkflowDefinitionAggregateKeyDto",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_aggregate_key_dto.rs:25",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs",
+      "type": "ConsumeDeclDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs:389",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs",
+      "type": "DefinitionContentDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs:198",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs",
+      "type": "RuleInContextDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs:413",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs",
+      "type": "ScopeMetadataDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs:443",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs",
+      "type": "SensorRefDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs:429",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs",
+      "type": "StageNodeDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs:269",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs",
+      "type": "WorkflowDefinitionDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_definition_dto.rs:149",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/intent_execution_repository_impl.rs",
+      "type": "IntentExecutionRepositoryImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/intent_execution_repository_impl.rs:140",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/intent_repository_impl.rs",
+      "type": "IntentRepositoryImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/intent_repository_impl.rs:119",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/plan_approval_runtime_repository_impl.rs",
+      "type": "PlanApprovalRuntimeRepositoryImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/plan_approval_runtime_repository_impl.rs:37",
+          "function": "open"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/snapshot_strategy.rs",
+      "type": "SnapshotStrategy",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/snapshot_strategy.rs:20",
+          "function": "every"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/workflow_definition_repository_impl.rs",
+      "type": "WorkflowDefinitionRepositoryImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/interface-adapter/src/orchestration/workflow_definition_repository_impl.rs:135",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/system_clock.rs",
+      "type": "SystemClock",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/core/command/interface-adapter/src/system_clock.rs:7",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/autonomy_switch_request.rs",
+      "type": "AutonomySwitchRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/autonomy_switch_request.rs:28",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/begin_generation_use_case.rs",
+      "type": "BeginGenerationUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/begin_generation_use_case.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/certify_generation_use_case.rs",
+      "type": "CertifyGenerationUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/certify_generation_use_case.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/commit_verdict_use_case.rs",
+      "type": "CommitVerdictUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/commit_verdict_use_case.rs:95",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/complete_plan_answer_use_case.rs",
+      "type": "CompletePlanAnswerUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/complete_plan_answer_use_case.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/complete_plan_response_use_case.rs",
+      "type": "CompletePlanResponseUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/complete_plan_response_use_case.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/create_intent_use_case.rs",
+      "type": "CreateIntentUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/create_intent_use_case.rs:63",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/define_workflow_use_case.rs",
+      "type": "DefineWorkflowUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/define_workflow_use_case.rs:51",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/deliver_plan_answer_use_case.rs",
+      "type": "DeliverPlanAnswerUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/deliver_plan_answer_use_case.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/ensure_plan_approval_runtime_use_case.rs",
+      "type": "EnsurePlanApprovalRuntimeUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/ensure_plan_approval_runtime_use_case.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/issue_directive_use_case.rs",
+      "type": "IssueDirectiveUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/issue_directive_use_case.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/observe_prompt_use_case.rs",
+      "type": "ObservePromptUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/observe_prompt_use_case.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/park_use_case.rs",
+      "type": "ParkUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/park_use_case.rs:54",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/plan_answer_request.rs",
+      "type": "PlanAnswerRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/plan_answer_request.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/plan_decision_request.rs",
+      "type": "PlanDecisionRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/plan_decision_request.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/practices_promotion_request.rs",
+      "type": "PracticesPromotionRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/practices_promotion_request.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/prepare_plan_invalidation_use_case.rs",
+      "type": "PreparePlanInvalidationUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/prepare_plan_invalidation_use_case.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/prepare_plan_response_use_case.rs",
+      "type": "PreparePlanResponseUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/prepare_plan_response_use_case.rs:16",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/promote_practices_use_case.rs",
+      "type": "PromotePracticesUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/promote_practices_use_case.rs:57",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_answer_use_case.rs",
+      "type": "RecordAnswerUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/record_answer_use_case.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_decision_use_case.rs",
+      "type": "RecordDecisionUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/record_decision_use_case.rs:16",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_plan_answer_use_case.rs",
+      "type": "RecordPlanAnswerUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/record_plan_answer_use_case.rs:25",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_plan_decision_use_case.rs",
+      "type": "RecordPlanDecisionUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/record_plan_decision_use_case.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_prepared_plan_response_use_case.rs",
+      "type": "RecordPreparedPlanResponseUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/record_prepared_plan_response_use_case.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_review_use_case.rs",
+      "type": "RecordReviewUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/record_review_use_case.rs:58",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_single_stage_run_use_case.rs",
+      "type": "RecordSingleStageRunUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/record_single_stage_run_use_case.rs:56",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_skeleton_stance_use_case.rs",
+      "type": "RecordSkeletonStanceUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/record_skeleton_stance_use_case.rs:44",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/recover_plan_invalidation_use_case.rs",
+      "type": "RecoverPlanInvalidationUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/recover_plan_invalidation_use_case.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/review_log_request.rs",
+      "type": "ReviewLogRequest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/review_log_request.rs:29",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/switch_autonomy_use_case.rs",
+      "type": "SwitchAutonomyUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/switch_autonomy_use_case.rs:56",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/test_support.rs",
+      "type": "InMemoryCompiledDefinitionRepository",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/test_support.rs:400",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/test_support.rs",
+      "type": "InMemoryIntentExecutionRepository",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/test_support.rs:635",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/test_support.rs",
+      "type": "InMemoryIntentRepository",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/test_support.rs:782",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/test_support.rs",
+      "type": "InMemoryWorkflowDefinitionRepository",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/command/use-case/src/orchestration/test_support.rs:256",
+          "function": "of_store"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/infrastructure/src/canon_json/digest.rs",
+      "type": "Digest",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/infrastructure/src/canon_json/digest.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/infrastructure/src/canon_json/value/object_members.rs",
+      "type": "ObjectMembers",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/infrastructure/src/canon_json/value/object_members.rs:78",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/infrastructure/src/codec.rs",
+      "type": "Envelope",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/infrastructure/src/codec.rs:39",
+          "function": "seal"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/infrastructure/src/collections/collection.rs",
+      "type": "Collection",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/infrastructure/src/collections/collection.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/infrastructure/src/collections/non_empty_collection.rs",
+      "type": "NonEmptyCollection",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/infrastructure/src/collections/non_empty_collection.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/infrastructure/src/exclusive_file_lock.rs",
+      "type": "ExclusiveFileLock",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/infrastructure/src/exclusive_file_lock.rs:17",
+          "function": "acquire"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/infrastructure/src/secret_file.rs",
+      "type": "SecretFile",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/infrastructure/src/secret_file.rs:61",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/answer_result_dao_impl.rs",
+      "type": "AnswerResultDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/answer_result_dao_impl.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/continue_token_dto.rs",
+      "type": "ContinueTokenPayloadDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/continue_token_dto.rs:125",
+          "function": "to_payload_dto"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/definition_dao_impl.rs",
+      "type": "DefinitionDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/definition_dao_impl.rs:28",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/definition_stage_dao_impl.rs",
+      "type": "DefinitionStageDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/definition_stage_dao_impl.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/execution_dao_impl.rs",
+      "type": "ExecutionDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/execution_dao_impl.rs:61",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/initialization_dao_impl.rs",
+      "type": "InitializationDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/initialization_dao_impl.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/intent_record_dao_impl.rs",
+      "type": "IntentRecordDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/intent_record_dao_impl.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/jump_dao_impl.rs",
+      "type": "JumpDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/jump_dao_impl.rs:46",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/jump_phase_dao_impl.rs",
+      "type": "JumpPhaseDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/jump_phase_dao_impl.rs:30",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_definition_dao.rs",
+      "type": "InMemoryDefinitionDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_definition_dao.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_definition_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_definition_dao.rs:44",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_definition_stage_dao.rs",
+      "type": "InMemoryDefinitionStageDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_definition_stage_dao.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_definition_stage_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_definition_stage_dao.rs:43",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_execution_dao.rs",
+      "type": "InMemoryExecutionDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_execution_dao.rs:17",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_jump_dao.rs",
+      "type": "InMemoryJumpDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_jump_dao.rs:25",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_jump_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_jump_dao.rs:38",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_jump_phase_dao.rs",
+      "type": "InMemoryJumpPhaseDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_jump_phase_dao.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_jump_phase_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_jump_phase_dao.rs:40",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_next_answer_dao.rs",
+      "type": "InMemoryNextAnswerDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_next_answer_dao.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_next_answer_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_next_answer_dao.rs:37",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_phase_entry_dao.rs",
+      "type": "InMemoryPhaseEntryDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_phase_entry_dao.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_phase_entry_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_phase_entry_dao.rs:42",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_run_stage_dao.rs",
+      "type": "InMemoryRunStageDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_run_stage_dao.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_scope_change_dao.rs",
+      "type": "InMemoryScopeChangeDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_scope_change_dao.rs:25",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_scope_change_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_scope_change_dao.rs:43",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_scope_dao.rs",
+      "type": "InMemoryScopeDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_scope_dao.rs:25",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_scope_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_scope_dao.rs:38",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_scope_keyword_dao.rs",
+      "type": "InMemoryScopeKeywordDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_scope_keyword_dao.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_scope_keyword_dao.rs",
+      "type": "Row",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_scope_keyword_dao.rs:40",
+          "function": "with_row"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_steering_part_dao.rs",
+      "type": "InMemorySteeringPartDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_steering_part_dao.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/memory/in_memory_steering_plan_dao.rs",
+      "type": "InMemorySteeringPlanDao",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/memory/in_memory_steering_plan_dao.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/next_answer_dao_impl.rs",
+      "type": "NextAnswerDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/next_answer_dao_impl.rs:35",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/phase_entry_dao_impl.rs",
+      "type": "PhaseEntryDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/phase_entry_dao_impl.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/plan_answer_dao_impl.rs",
+      "type": "PlanAnswerDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/plan_answer_dao_impl.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/plan_approval_operation_dao_impl.rs",
+      "type": "PlanApprovalOperationDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/plan_approval_operation_dao_impl.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/plan_fingerprint_dao_impl.rs",
+      "type": "PlanFingerprintDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/plan_fingerprint_dao_impl.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/plan_generation_dao_impl.rs",
+      "type": "PlanGenerationDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/plan_generation_dao_impl.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/read_model_daos.rs",
+      "type": "ReadModelDaos",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/read_model_daos.rs:103",
+          "function": "open"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/read_model_store.rs",
+      "type": "ReadModelStore",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/read_model_store.rs:48",
+          "function": "open"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/report_result_dao_impl.rs",
+      "type": "ReportResultDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/report_result_dao_impl.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/run_stage_dao_impl.rs",
+      "type": "RunStageDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/run_stage_dao_impl.rs:36",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/scope_change_dao_impl.rs",
+      "type": "ScopeChangeDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/scope_change_dao_impl.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/scope_dao_impl.rs",
+      "type": "ScopeDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/scope_dao_impl.rs:39",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/scope_keyword_dao_impl.rs",
+      "type": "ScopeKeywordDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/scope_keyword_dao_impl.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/state_file_dao_impl.rs",
+      "type": "StateFileDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/state_file_dao_impl.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/steering_part_dao_impl.rs",
+      "type": "SteeringPartDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/steering_part_dao_impl.rs:30",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/steering_plan_dao_impl.rs",
+      "type": "SteeringPlanDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/steering_plan_dao_impl.rs:43",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/testing_contract_dao_impl.rs",
+      "type": "TestingContractDaoImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/interface-adapter/src/testing_contract_dao_impl.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/answer_result_use_case.rs",
+      "type": "AnswerResultUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/answer_result_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/ask_directive.rs",
+      "type": "AskDirective",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/ask_directive.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/bindings.rs",
+      "type": "Bindings",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/bindings.rs:30",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/bundle_digest.rs",
+      "type": "BundleDigest",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/bundle_digest.rs:15",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/continuation_view.rs",
+      "type": "ContinuationView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/continuation_view.rs:33",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/continue_token/continue_token_builder.rs",
+      "type": "ContinueTokenBuilder",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/continue_token/continue_token_builder.rs:36",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/directive_digest.rs",
+      "type": "DirectiveDigest",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/directive_digest.rs:15",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_continuation_use_case.rs",
+      "type": "FindContinuationUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_continuation_use_case.rs:39",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_definition_stage_use_case.rs",
+      "type": "FindDefinitionStageUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_definition_stage_use_case.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_definition_use_case.rs",
+      "type": "FindDefinitionUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_definition_use_case.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_execution_use_case.rs",
+      "type": "FindExecutionUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_execution_use_case.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_initialization_use_case.rs",
+      "type": "FindInitializationUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_initialization_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_intent_record_use_case.rs",
+      "type": "FindIntentRecordUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_intent_record_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_jump_use_case.rs",
+      "type": "FindJumpUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_jump_use_case.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_next_answer_use_case.rs",
+      "type": "FindNextAnswerUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_next_answer_use_case.rs:60",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_phase_entry_use_case.rs",
+      "type": "FindPhaseEntryUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_phase_entry_use_case.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_plan_fingerprint_use_case.rs",
+      "type": "FindPlanFingerprintUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_plan_fingerprint_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_run_stage_use_case.rs",
+      "type": "FindRunStageUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_run_stage_use_case.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_scope_change_use_case.rs",
+      "type": "FindScopeChangeUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_scope_change_use_case.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_scope_keyword_use_case.rs",
+      "type": "FindScopeKeywordUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_scope_keyword_use_case.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_scope_use_case.rs",
+      "type": "FindScopeUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_scope_use_case.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_state_file_use_case.rs",
+      "type": "FindStateFileUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_state_file_use_case.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_steering_use_case.rs",
+      "type": "FindSteeringUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_steering_use_case.rs:32",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_testing_contract_use_case.rs",
+      "type": "FindTestingContractUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/find_testing_contract_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/load_steering_directive.rs",
+      "type": "LoadSteeringDirective",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/load_steering_directive.rs:56",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/next_turn_input.rs",
+      "type": "NextTurnInput",
+      "entries": [
+        {
+          "kind": "derived-default",
+          "location": "modules/core/query/use-case/src/orchestration/next_turn_input.rs:16",
+          "function": ""
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/next_turn_view.rs",
+      "type": "NextTurnView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/next_turn_view.rs:45",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/noun_token.rs",
+      "type": "NounToken",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/noun_token.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/part_count.rs",
+      "type": "PartCount",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/part_count.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/part_index.rs",
+      "type": "PartIndex",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/part_index.rs:19",
+          "function": "of_index"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/pipeline_directive.rs",
+      "type": "PipelineDirective",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/pipeline_directive.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/plan_answer_use_case.rs",
+      "type": "PlanAnswerUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/plan_answer_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/plan_approval_operation_use_case.rs",
+      "type": "PlanApprovalOperationUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/plan_approval_operation_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/plan_generation_use_case.rs",
+      "type": "PlanGenerationUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/plan_generation_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/answer_result_view.rs",
+      "type": "AnswerResultView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/answer_result_view.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/initialization_view.rs",
+      "type": "InitializationView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/initialization_view.rs:33",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/intent_record_view.rs",
+      "type": "IntentRecordView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/intent_record_view.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/plan_answer_view.rs",
+      "type": "PlanAnswerView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/plan_answer_view.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/plan_approval_operation_view.rs",
+      "type": "PlanApprovalOperationView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/plan_approval_operation_view.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/plan_fingerprint_view.rs",
+      "type": "PlanFingerprintView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/plan_fingerprint_view.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/plan_generation_view.rs",
+      "type": "PlanGenerationView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/plan_generation_view.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_model_read_error.rs",
+      "type": "ReadModelReadError",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_model_read_error.rs:36",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/definition_stage_view.rs",
+      "type": "DefinitionStageView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/definition_stage_view.rs:27",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/definition_summary_view.rs",
+      "type": "DefinitionSummaryView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/definition_summary_view.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/execution_view.rs",
+      "type": "ExecutionView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/execution_view.rs:53",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/jump_phase_view.rs",
+      "type": "JumpPhaseView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/jump_phase_view.rs:22",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/jump_view.rs",
+      "type": "JumpView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/jump_view.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/next_answer_view.rs",
+      "type": "NextAnswerView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/next_answer_view.rs:48",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/phase_entry_view.rs",
+      "type": "PhaseEntryView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/phase_entry_view.rs:16",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/run_stage_view.rs",
+      "type": "RunStageView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/run_stage_view.rs:93",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/scope_change_view.rs",
+      "type": "ScopeChangeView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/scope_change_view.rs:16",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/scope_view.rs",
+      "type": "ScopeView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/scope_view.rs:45",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/steering_part_view.rs",
+      "type": "SteeringPartView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/steering_part_view.rs:25",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/steering_plan_view.rs",
+      "type": "SteeringPlanView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/read_view/steering_plan_view.rs:30",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/report_result_view.rs",
+      "type": "ReportResultView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/report_result_view.rs:25",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/testing_contract_view.rs",
+      "type": "TestingContractView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/port/testing_contract_view.rs:17",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/report_result_use_case.rs",
+      "type": "ReportResultUseCase",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/report_result_use_case.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/route_digest.rs",
+      "type": "RouteDigest",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/route_digest.rs:15",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/rule_content.rs",
+      "type": "RuleContent",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/rule_content.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/run_stage_directive/run_stage_directive_builder.rs",
+      "type": "RunStageDirectiveBuilder",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/run_stage_directive/run_stage_directive_builder.rs:55",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/scope_slug_view.rs",
+      "type": "ScopeSlugView",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/scope_slug_view.rs:31",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/stage_name.rs",
+      "type": "StageName",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/stage_name.rs:22",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/stage_slug_view.rs",
+      "type": "StageSlugView",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/stage_slug_view.rs:28",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/state_binding.rs",
+      "type": "StateBinding",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/state_binding.rs:17",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/state_text_digest.rs",
+      "type": "StateTextDigest",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/state_text_digest.rs:13",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/steering_delivery_view.rs",
+      "type": "SteeringDeliveryView",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/steering_delivery_view.rs:28",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/token_version.rs",
+      "type": "TokenVersion",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/token_version.rs:17",
+          "function": "from_raw"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/unit_name.rs",
+      "type": "UnitName",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/unit_name.rs:30",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/unit_ref.rs",
+      "type": "UnitRef",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/query/use-case/src/orchestration/unit_ref.rs:20",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/unknown_unit_kind.rs",
+      "type": "UnknownUnitKind",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/unknown_unit_kind.rs:18",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/unknown_value.rs",
+      "type": "UnknownValue",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/query/use-case/src/orchestration/unknown_value.rs:17",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/definition_entry.rs",
+      "type": "DefinitionEntry",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/definition_entry.rs:45",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/active_directive_dto.rs",
+      "type": "ActiveDirectiveDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/active_directive_dto.rs:36",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/answer_recorded_dto.rs",
+      "type": "AnswerRecordedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/answer_recorded_dto.rs:27",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/answer_recorded_dto.rs",
+      "type": "SummaryEvidenceDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/answer_recorded_dto.rs:29",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/autonomy_mode_set_dto.rs",
+      "type": "AutonomyModeSetDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/autonomy_mode_set_dto.rs:22",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/decision_recorded_dto.rs",
+      "type": "DecisionRecordedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/decision_recorded_dto.rs:25",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/defined_dto.rs",
+      "type": "DefinedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/defined_dto.rs:28",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs",
+      "type": "ConsumeDeclDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs:317",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs",
+      "type": "DefinitionContentDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs:126",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs",
+      "type": "RuleInContextDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs:341",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs",
+      "type": "ScopeMetadataDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs:372",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs",
+      "type": "SensorRefDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs:357",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs",
+      "type": "StageNodeDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/definition_content_dto.rs:197",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/directive_issued_dto.rs",
+      "type": "DirectiveIssuedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/directive_issued_dto.rs:16",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/gate_approved_dto.rs",
+      "type": "GateApprovedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/gate_approved_dto.rs:22",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/gate_opened_dto.rs",
+      "type": "GateOpenedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/gate_opened_dto.rs:22",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/gate_rejected_dto.rs",
+      "type": "GateRejectedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/gate_rejected_dto.rs:22",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs",
+      "type": "IntentDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs:108",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs",
+      "type": "RecordNameDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs:59",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs",
+      "type": "StageDisplayDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs:197",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs",
+      "type": "StageEntryDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs:192",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs",
+      "type": "StartRequestDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs:113",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs",
+      "type": "WorkspaceScanDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/intent_dto.rs:224",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/jumped_dto.rs",
+      "type": "JumpedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/jumped_dto.rs:21",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/parked_dto.rs",
+      "type": "ParkedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/parked_dto.rs:21",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/plan_answer_input_dto.rs",
+      "type": "PlanAnswerInputDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/plan_answer_input_dto.rs:24",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/plan_answer_logged_dto.rs",
+      "type": "PlanAnswerLoggedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/plan_answer_logged_dto.rs:20",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/plan_approval_evidence_dto.rs",
+      "type": "AuthorityDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/plan_approval_evidence_dto.rs:47",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/plan_approval_evidence_dto.rs",
+      "type": "PlanApprovalEvidenceDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/plan_approval_evidence_dto.rs:17",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/plan_decision_evidence_dto.rs",
+      "type": "PlanDecisionEvidenceDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/plan_decision_evidence_dto.rs:12",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/practices_affirmed_dto.rs",
+      "type": "PracticesAffirmedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/practices_affirmed_dto.rs:44",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/practices_affirmed_dto.rs",
+      "type": "PromotedSectionDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/practices_affirmed_dto.rs:52",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/prompt_observed_dto.rs",
+      "type": "PromptObservedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/prompt_observed_dto.rs:20",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/recomposed_dto.rs",
+      "type": "RecomposedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/recomposed_dto.rs:22",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/redefined_dto.rs",
+      "type": "RedefinedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/redefined_dto.rs:28",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/reported_dto.rs",
+      "type": "ReportedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/reported_dto.rs:99",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/review_completed_dto.rs",
+      "type": "ReviewCompletedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/review_completed_dto.rs:25",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/review_requested_dto.rs",
+      "type": "ReviewRequestedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/review_requested_dto.rs:24",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/single_stage_run_committed_dto.rs",
+      "type": "SingleStageRunCommittedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/single_stage_run_committed_dto.rs:21",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/skeleton_stance_recorded_dto.rs",
+      "type": "SkeletonStanceRecordedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/skeleton_stance_recorded_dto.rs:22",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/stage_revised_dto.rs",
+      "type": "StageRevisedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/stage_revised_dto.rs:21",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/stage_skipped_dto.rs",
+      "type": "StageSkippedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/stage_skipped_dto.rs:22",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/started_dto.rs",
+      "type": "StartedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/started_dto.rs:27",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/dto/unparked_dto.rs",
+      "type": "UnparkedDto",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/dto/unparked_dto.rs:23",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/global_seq_nr.rs",
+      "type": "GlobalSeqNr",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/read-model-updater/src/orchestration/global_seq_nr.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/journal_batch.rs",
+      "type": "JournalBatch",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/journal_batch.rs:44",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/journal_entry.rs",
+      "type": "JournalEntry",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/journal_entry.rs:46",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs",
+      "type": "JournalReaderImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs:239",
+          "function": "open_with_busy_timeout"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs",
+      "type": "JournalRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs:562",
+          "function": "scan_range"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/plan_approval_journal_entry.rs",
+      "type": "PlanApprovalJournalEntry",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/plan_approval_journal_entry.rs:15",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/plan_approval_journal_reader_impl.rs",
+      "type": "PlanApprovalJournalReaderImpl",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/plan_approval_journal_reader_impl.rs:42",
+          "function": "open"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/plan_approval_read_model_updater.rs",
+      "type": "PlanApprovalReadModelUpdater",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/plan_approval_read_model_updater.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/plan_source.rs",
+      "type": "PlanSource",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/plan_source.rs:23",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/projection_name.rs",
+      "type": "ProjectionName",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "modules/core/read-model-updater/src/orchestration/projection_name.rs:49",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/projection_targets.rs",
+      "type": "ProjectionTargets",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/projection_targets.rs:44",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/publication_batch.rs",
+      "type": "PublicationBatch",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/publication_batch.rs:141",
+          "function": "restored"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/publication_file.rs",
+      "type": "PublicationFile",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/publication_file.rs:164",
+          "function": "restored"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/read_model_updater.rs",
+      "type": "ReadModelUpdater",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/read_model_updater.rs:69",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/shared_projection.rs",
+      "type": "Head",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/shared_projection.rs:28",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/steering_source.rs",
+      "type": "SteeringSource",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/orchestration/steering_source.rs:50",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables.rs",
+      "type": "ReadTables",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables.rs:332",
+          "function": "project"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/answer_result_row.rs",
+      "type": "AnswerResultRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/answer_result_row.rs:15",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/definition_row.rs",
+      "type": "DefinitionRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/definition_row.rs:22",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/definition_scope_keyword_row.rs",
+      "type": "DefinitionScopeKeywordRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/definition_scope_keyword_row.rs:30",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/definition_scope_phase_entry_row.rs",
+      "type": "DefinitionScopePhaseEntryRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/definition_scope_phase_entry_row.rs:35",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/definition_scope_row.rs",
+      "type": "DefinitionScopeRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/definition_scope_row.rs:43",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/definition_scope_stage_row.rs",
+      "type": "DefinitionScopeStageRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/definition_scope_stage_row.rs:38",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/definition_stage_row.rs",
+      "type": "DefinitionStageRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/definition_stage_row.rs:65",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/execution_row.rs",
+      "type": "ExecutionRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/execution_row.rs:44",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/execution_stage_row.rs",
+      "type": "ExecutionStageRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/execution_stage_row.rs:42",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/intent_row.rs",
+      "type": "IntentRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/intent_row.rs:40",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/intent_stage_row.rs",
+      "type": "IntentStageRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/intent_stage_row.rs:33",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/memory_rules.rs",
+      "type": "MemoryRules",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/memory_rules.rs:40",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/next_answer_row.rs",
+      "type": "NextAnswerRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/next_answer_row.rs:99",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/next_jump_phase_row.rs",
+      "type": "NextJumpPhaseRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/next_jump_phase_row.rs:32",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/next_jump_row.rs",
+      "type": "NextJumpRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/next_jump_row.rs:41",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/plan_answer_row.rs",
+      "type": "PlanAnswerRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/plan_answer_row.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/plan_approval_file.rs",
+      "type": "PlanApprovalFile",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/plan_approval_file.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/plan_approval_operation_row.rs",
+      "type": "PlanApprovalOperationRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/plan_approval_operation_row.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/plan_approval_tables.rs",
+      "type": "PlanApprovalTables",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/plan_approval_tables.rs:26",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/plan_fingerprint_row.rs",
+      "type": "PlanFingerprintRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/plan_fingerprint_row.rs:70",
+          "function": "project"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/plan_generation_row.rs",
+      "type": "PlanGenerationRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/plan_generation_row.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/report_result_row.rs",
+      "type": "ReportResultRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/report_result_row.rs:61",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/rule_content.rs",
+      "type": "RuleContent",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/rule_content.rs:21",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/run_stage_row.rs",
+      "type": "RunStageRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/run_stage_row.rs:89",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/scope_change_row.rs",
+      "type": "ScopeChangeRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/scope_change_row.rs:37",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/steering_part_row.rs",
+      "type": "SteeringPartRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/steering_part_row.rs:32",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/steering_plan_row.rs",
+      "type": "SteeringPlanRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/steering_plan_row.rs:35",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/steering_tables.rs",
+      "type": "SteeringTables",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/steering_tables.rs:71",
+          "function": "pack"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/testing_contract_row.rs",
+      "type": "TestingContractRow",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/testing_contract_row.rs:19",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/testing_tables.rs",
+      "type": "TestingTables",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/testing_tables.rs:42",
+          "function": "project"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/unsplittable_section.rs",
+      "type": "UnsplittableSection",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/read_tables/unsplittable_section.rs:16",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/workspace/memory_faces.rs",
+      "type": "MemoryFaces",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/workspace/memory_faces.rs:20",
+          "function": "of_contents"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/workspace/read_model.rs",
+      "type": "ReadModel",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/workspace/read_model.rs:38",
+          "function": "of_faces"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/workspace/resolved_plan.rs",
+      "type": "ResolvedPlan",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/workspace/resolved_plan.rs:47",
+          "function": "of"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/workspace/resolved_plan/planned_stage.rs",
+      "type": "PlannedStage",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/workspace/resolved_plan/planned_stage.rs:20",
+          "function": "from_stage_entry"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/workspace/state_file_read_error.rs",
+      "type": "StateFileReadError",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/workspace/state_file_read_error.rs:24",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/core/read-model-updater/src/workspace/state_writers/field_not_found.rs",
+      "type": "FieldNotFound",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/core/read-model-updater/src/workspace/state_writers/field_not_found.rs:14",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/harness/claude/src/human_turn_envelope.rs",
+      "type": "HumanTurnEnvelope",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/harness/claude/src/human_turn_envelope.rs:34",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/harness/claude/src/state_transition_guard.rs",
+      "type": "StateTransitionGuard",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/harness/claude/src/state_transition_guard.rs:11",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/harness/infrastructure/src/heredoc_substitutions.rs",
+      "type": "PendingHeredoc",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/harness/infrastructure/src/heredoc_substitutions.rs:43",
+          "function": "heredoc_substitution_bodies"
+        }
+      ]
+    },
+    {
+      "path": "modules/harness/infrastructure/src/shell_substitutions.rs",
+      "type": "ShellSubstitutions",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/harness/infrastructure/src/shell_substitutions.rs:92",
+          "function": "parse"
+        }
+      ]
+    },
+    {
+      "path": "modules/harness/infrastructure/src/shell_text.rs",
+      "type": "Heredoc",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/harness/infrastructure/src/shell_text.rs:119",
+          "function": "mask_heredocs"
+        }
+      ]
+    },
+    {
+      "path": "modules/harness/infrastructure/src/shell_text.rs",
+      "type": "ShellText",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/harness/infrastructure/src/shell_text.rs:13",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "modules/harness/infrastructure/src/shell_words.rs",
+      "type": "ShellWords",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "modules/harness/infrastructure/src/shell_words.rs:12",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/check.rs",
+      "type": "Finding",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/check.rs:136",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/check.rs",
+      "type": "PatternVariants",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/check.rs:435",
+          "function": "visit_expr_match"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/check.rs",
+      "type": "Visitor",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/check.rs:159",
+          "function": "check_source"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/domain_getter.rs",
+      "type": "DomainIndex",
+      "entries": [
+        {
+          "kind": "tuple-literal",
+          "location": "tools/lint/src/domain_getter.rs:23",
+          "function": "build"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/domain_getter/index.rs",
+      "type": "Definition",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/domain_getter/index.rs:69",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/domain_getter/index.rs",
+      "type": "Index",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/domain_getter/index.rs:88",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/domain_getter/index.rs",
+      "type": "Method",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/domain_getter/index.rs:338",
+          "function": "add_method"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/domain_getter/resolve.rs",
+      "type": "Context",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/domain_getter/resolve.rs:17",
+          "function": "new"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/domain_getter/usage.rs",
+      "type": "Usage",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/domain_getter/usage.rs:19",
+          "function": "check"
+        }
+      ]
+    },
+    {
+      "path": "tools/lint/src/setter_methods.rs",
+      "type": "SetterVisitor",
+      "entries": [
+        {
+          "kind": "literal",
+          "location": "tools/lint/src/setter_methods.rs:8",
+          "function": "check"
+        }
+      ]
+    }
+  ]
+}

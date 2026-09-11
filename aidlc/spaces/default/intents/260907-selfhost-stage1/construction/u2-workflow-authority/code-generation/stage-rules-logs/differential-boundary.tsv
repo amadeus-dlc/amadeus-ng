@@ -1,0 +1,13 @@
+case	side	exit	stdout_bytes	stderr
+under-by-one	upstream	0	524287	-
+under-by-one	rust	0	524287	-
+exactly-at-the-limit	upstream	0	524288	-
+exactly-at-the-limit	rust	0	524288	-
+over-by-one	upstream	2	0	[aidlc] This stage's rule files add up to 524289 bytes, exceeding the safe 524288-byte output limit for attaching them to a subagent brief. The subagent was not started, and nothing partial was written. Shorten or split the rule files for the active stage, then start the subagent again.
+over-by-one	rust	2	0	[aidlc] This stage's rule files add up to 524289 bytes, exceeding the safe 524288-byte output limit for attaching them to a subagent brief. The subagent was not started, and nothing partial was written. Shorten or split the rule files for the active stage, then start the subagent again.
+fallback-over-by-one	upstream	3	0	[aidlc] Advisory: this stage's rule files add up to 524289 bytes, which exceeds the safe 524288-byte limit for attaching them to a subagent brief. Nothing partial was written. This harness loads the same rule files itself, through its own active-memory preload fallback, so the work continues without them attached.
+fallback-over-by-one	rust	3	0	[aidlc] Advisory: this stage's rule files add up to 524289 bytes, which exceeds the safe 524288-byte limit for attaching them to a subagent brief. Nothing partial was written. This harness loads the same rule files itself, through its own active-memory preload fallback, so the work continues without them attached.
+required-rule-missing	upstream	2	0	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (ENOENT: no such file or directory, open '/var/folders/3s/p2xl_vd524b4lk78cb6fz5nh0000gn/T/aidlc-boundary-RtbUeP/aidlc/spaces/default/memory/org.md'). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+required-rule-missing	rust	2	0	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (No such file or directory (os error 2)). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+required-rule-not-utf8	upstream	2	0	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (Invalid byte sequence). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.
+required-rule-not-utf8	rust	2	0	Cannot load required stage rule "aidlc/spaces/default/memory/org.md" (invalid utf-8 sequence of 1 bytes from index 0). The stage has not started. Restore the file or fix its permissions/UTF-8 encoding, then run `next` again.

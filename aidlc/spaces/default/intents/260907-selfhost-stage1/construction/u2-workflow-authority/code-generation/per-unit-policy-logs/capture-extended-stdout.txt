@@ -1,0 +1,295 @@
+[
+  {
+    "case": "A-control/non-per-unit-stage",
+    "scope": "bugfix",
+    "built_by": "upstream",
+    "setup_ok": false,
+    "rows": []
+  },
+  {
+    "case": "A-control/non-per-unit-stage",
+    "scope": "bugfix",
+    "built_by": "rust",
+    "setup_ok": true,
+    "rows": [
+      {
+        "probe": "declared-artifact",
+        "upstream_hook": {
+          "exit": 2,
+          "blocked": true,
+          "freeze_rows": 1
+        },
+        "rust_hook": {
+          "exit": 2,
+          "blocked": true,
+          "freeze_rows": 1
+        },
+        "same": true
+      },
+      {
+        "probe": "undeclared-diary",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      }
+    ]
+  },
+  {
+    "case": "B-zero-unit/stage-level-receipt",
+    "scope": "bugfix",
+    "built_by": "upstream",
+    "setup_ok": true,
+    "rows": [
+      {
+        "probe": "declared-plan",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      },
+      {
+        "probe": "declared-summary",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      },
+      {
+        "probe": "undeclared-diary",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      },
+      {
+        "probe": "unit-path-under-stage-receipt",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      },
+      {
+        "probe": "sibling-unit-under-stage-receipt",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      }
+    ]
+  },
+  {
+    "case": "B-zero-unit/stage-level-receipt",
+    "scope": "bugfix",
+    "built_by": "rust",
+    "setup_ok": true,
+    "rows": [
+      {
+        "probe": "declared-plan",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      },
+      {
+        "probe": "declared-summary",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      },
+      {
+        "probe": "undeclared-diary",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      },
+      {
+        "probe": "unit-path-under-stage-receipt",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 2,
+          "blocked": true,
+          "freeze_rows": 1
+        },
+        "same": false
+      },
+      {
+        "probe": "sibling-unit-under-stage-receipt",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 2,
+          "blocked": true,
+          "freeze_rows": 1
+        },
+        "same": false
+      }
+    ]
+  },
+  {
+    "case": "C-unit/unit-receipt",
+    "scope": "feature",
+    "built_by": "upstream",
+    "setup_ok": true,
+    "rows": [
+      {
+        "probe": "own-unit",
+        "upstream_hook": {
+          "exit": 2,
+          "blocked": true,
+          "freeze_rows": 1
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": false
+      },
+      {
+        "probe": "stage-level",
+        "upstream_hook": {
+          "exit": 2,
+          "blocked": true,
+          "freeze_rows": 1
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": false
+      },
+      {
+        "probe": "sibling-unit",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      }
+    ]
+  },
+  {
+    "case": "D-zero-unit/no-receipt",
+    "scope": "bugfix",
+    "built_by": "upstream",
+    "setup_ok": true,
+    "rows": [
+      {
+        "probe": "declared-plan",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      }
+    ]
+  },
+  {
+    "case": "D-zero-unit/no-receipt",
+    "scope": "bugfix",
+    "built_by": "rust",
+    "setup_ok": true,
+    "rows": [
+      {
+        "probe": "declared-plan",
+        "upstream_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "rust_hook": {
+          "exit": 0,
+          "blocked": false,
+          "freeze_rows": 0
+        },
+        "same": true
+      }
+    ]
+  }
+]

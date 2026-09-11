@@ -1,0 +1,256 @@
+{
+  "unit": "u2-workflow-authority",
+  "status": "in-progress",
+  "description": "Stop/health再開分のファイル断面。共有ファイルには過去のU2差分・他担当の統合済み変更も含む。U2全体の最終source-manifestではない。",
+  "testing_contract": "sha256:d904f82d20fc4ba2d0045d5697ecae08fac96371ae5ab4ab6ec4913ae045ab55",
+  "files": [
+    {
+      "path": "Cargo.lock",
+      "sha256": "9e2ab79cf4533986823f7f86afaf1e365e175c5dd67d735f29a8c7a225fc458f"
+    },
+    {
+      "path": "modules/app/aidlc/Cargo.toml",
+      "sha256": "db0c70596c6752a852817b78eca0f2bcf98d19fccd54c1ab67186af71787a19a"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime.rs",
+      "sha256": "5c960f2624dad5a0e5d3d59bf801010f0ab6fba0c79cdfeed68b824a6db7a9db"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime/continuation.rs",
+      "sha256": "8d46d2fe86e16377ccd245b1a383490034c492b550eef59a16cc52dd4b63a677"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime/plan_approval.rs",
+      "sha256": "068303d76f77701c412c12cec49aeddf6a96d9c95aa3118976e7f8b0ddf07661"
+    },
+    {
+      "path": "modules/app/aidlc/src/wording.rs",
+      "sha256": "5022a2b8d8f117b1bf7527819d9216ef3e0bc04fd37760367e40611d1622d0de"
+    },
+    {
+      "path": "modules/app/aidlc/tests/claude_hook_contract.rs",
+      "sha256": "4043d413b52fdad7d6b0960ca57abbfa0fbdbf50be1c064831fc77d585843135"
+    },
+    {
+      "path": "modules/app/aidlc/tests/upstream_271_contract.rs",
+      "sha256": "f50f2dde73aecf43bed0f9aae1a2b61d361eaddc3b177f4c074635ca31c73615"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/continuation_attempt_id.rs",
+      "sha256": "5050c08c060f76b43ff2c7b8d9f35c63ca10a3543257cf78431380f942bf5e39"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/continuation_error.rs",
+      "sha256": "6cf1fac583883aaf6bccd452b0fe2ebdb0600c5f99ae7cdb303163945f3ffecf"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/continuation_request.rs",
+      "sha256": "272e224a684246c9d9d32bcfd136b80fb554969f35cfb24f585e0f4868929b9f"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/continuation_signature.rs",
+      "sha256": "b23a9f2905ce2d3064397f5283023857aa4cdc91a4fd9138fb7d7d9d7fd2a2b1"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/continuation_wait.rs",
+      "sha256": "7d16e47c74f4713189b7983347528956511bc35019aa29a1fbd03acc8a9772c4"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/intent_execution.rs",
+      "sha256": "dd1c53b2af067646c8f26f36bda7945c4fb8a282dc76efaf2632b7266aaeaa73"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/mod.rs",
+      "sha256": "dc1ec939adc9d6b3107393f6a7ab6a624999b27f96d0e8ee1c7501299e4cd78f"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/workflow_continuation.rs",
+      "sha256": "7a2b681d9920ac1090b63f1305ecc3210253154f1a2d4337f831d4963df76222"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/workflow_continuation_event.rs",
+      "sha256": "57e6f691b9af829c2b4b81cd0fdd218406536e2895b79b06c954164216f77553"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/workflow_continuation_event_id.rs",
+      "sha256": "e3a7ce1eb6086a5bc9cc18980057e39911abfcd01bd4dcfb52adb6740e011d8e"
+    },
+    {
+      "path": "modules/core/command/domain/src/orchestration/workflow_continuation_id.rs",
+      "sha256": "f47d2f1425e9305a9e25fe16d6dccc3a044cdfe2dd31ffb45805d5f62e5b378b"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/checkbox_state.rs",
+      "sha256": "990fc2c62c49332121e176fc6db29aa3d327a1517520968581aea92d83fcc104"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/hook_drop_summary.rs",
+      "sha256": "896f3ff21b90b90846b9ce928c3695a1d5b24a5bdde1b868a5e5579c2ff14bdb"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/hook_health.rs",
+      "sha256": "503be466fdb0286134b7675512dc907f87286b4abea6394b6fd5c4820ab3fc44"
+    },
+    {
+      "path": "modules/core/command/domain/tests/hook_health_contract.rs",
+      "sha256": "5c85477754675cd050ad335cd9503b95c4059a529b63060c59be60ef7f3f7b61"
+    },
+    {
+      "path": "modules/core/command/domain/tests/workflow_continuation_contract.rs",
+      "sha256": "17b297235c5789e5902151466781c9e02dc2b3b442320d57195d7a5c83b6a498"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/mod.rs",
+      "sha256": "7d72d8c376311a8eb0fe0c83c914af50caba0eb24a6d29de96fff06d7531fdad"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_continuation_dto.rs",
+      "sha256": "2de2536a8ad6792ec8614ba776b1d4e30633a4a7ded83107c062eec41ce9c25d"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workflow_continuation_event_dto.rs",
+      "sha256": "9e66196098aa9cdb7ceb3c0b2565c72260e49ee1403768f4e80d72dfa8fe6a16"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/hook_health_repository_impl.rs",
+      "sha256": "5e13afff824d48f38749138c333ac3f2bb9f4d9bb850ab8dd17e3798d8ecb25b"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/mod.rs",
+      "sha256": "9ee2bcee422799b1b253746c1fe25f515b7f91903a398cd9e5f96aaa1d567e0b"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/workflow_continuation_repository_impl.rs",
+      "sha256": "4d8fa02ef0c1a6dcba1ed328b21dec7fb4f19196213095404772b4dd1a671555"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/continuation_command_error.rs",
+      "sha256": "fb921c1c19f2fe5876544f6187b55f0b4bf704a28071ed1208612529f084be1d"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/mod.rs",
+      "sha256": "9703112597ead90290f9c2e6278bc183672a584134e87c04ebc726090990d9d9"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/port/mod.rs",
+      "sha256": "25e5b661050e9e2f7d3a03ef6a461dc33d504a8472f26dcee237aeb756d292ff"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/port/workflow_continuation_repository.rs",
+      "sha256": "7a0e1908659ca12128d5c444465fcfb2930b35e69c734a2cb46956e5031cffff"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/record_continuation_use_case.rs",
+      "sha256": "0a47832fe10a243938f972d6b53830e2e093d96eccd75501053a7d72e9c519b0"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/continuation_result_dao_impl.rs",
+      "sha256": "1717569359b1b33c920f93d7535a1ae8531aef1a2e19f6a0a1287211a0bba103"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/execution_dao_impl.rs",
+      "sha256": "f38124002349e3e4a216e7c13fdb86c6603c0df7c86a6415d32bd617a442c92f"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/lib.rs",
+      "sha256": "1ec51e1e32a66c7673427944b56a201bc90c673bc663c07ee0a2d1902560e834"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/read_model_daos.rs",
+      "sha256": "56cb489ce9e985b2bb1c2fdd9bce8871151a957dda6258411f3a0064fb24345a"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/continuation_result_use_case.rs",
+      "sha256": "8986c9ddeeb3785fed30915df3f27eeae9a7af9a3c805ad188d76c72b22ec784"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/mod.rs",
+      "sha256": "6d6d89b830ef722b918b6c4f6dbd75b84fe381358d41583cc357ed305f092ef5"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/continuation_result_dao.rs",
+      "sha256": "aefacbd04d03100a27f08bf0301d8a07505e3efe7e4a66fad48a7a51f09734cc"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/continuation_result_view.rs",
+      "sha256": "3eaf64587fc323eb0afafae60b294a47351d3cba712a4c8fac7014215187678f"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/mod.rs",
+      "sha256": "a163a9e039cb757c1405649a19291979df7d8d946f12effd92aa82e14968fae1"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/execution_view.rs",
+      "sha256": "90446901b92b16edcadb66516eb5f2340a7a9534f688557118de614250d4b7f9"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/hook_health_reader.rs",
+      "sha256": "44574896bdb260baa87b029c096c7440d886fe2f9d19a7796b0ce764b659cadb"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/mod.rs",
+      "sha256": "c463c818d4e7b29c1998b4af03902aaa1e3217fd1962f9888637424c389a3533"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/workflow_continuation_read_model_updater.rs",
+      "sha256": "b9799ec0cdc037c004e7970815cab9e5eb18295b4d2fb74cc337eb6074c2c162"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/execution_row.rs",
+      "sha256": "2565d2f0e56cecaaebdd0881f8ffdbb9e588bfa1584843627bb48b2d804d1ca6"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/sql.rs",
+      "sha256": "ae7fae5af419729989f3c359e68947f86e26ea7dff4bb33fffc1f2c58ba9e405"
+    },
+    {
+      "path": "scripts/goldens/capture-stop-values.ts",
+      "sha256": "f593465b240e5f4c9337fd9aac45091c058906448d2aa1e245ec13d4aedc5400"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/stop-values.json",
+      "sha256": "b0e1fbb2235cc93b316585aa79808b1cd7c71af9a6ed3dfcab2840ce169436cd"
+    }
+  ],
+  "logs": [
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-active-green-corrected.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-active-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-active-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-approved-plan-regression.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-checkpoint-app-lib.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-checkpoint-cli.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-checkpoint-clippy.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-checkpoint-diff.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-checkpoint-domain.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-checkpoint-fmt.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-checkpoint-health.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-checkpoint-lint.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-cli-regression.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-cold-green-corrected.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-cold-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-cold-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-domain-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-domain-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-domain-regression.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-execution-dao-regression.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-gate-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-gate-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-health-regression.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-independent.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-limit-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-limit-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-probe-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-probe-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-reset-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-reset-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-signature-comparison.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-store-loss-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/stop-store-loss-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/heartbeat-directory-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/heartbeat-directory-red.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/heartbeat-directory-regression.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/hook-health-replay-green.log",
+    "aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/test-evidence/hook-health-replay-red.log"
+  ]
+}
