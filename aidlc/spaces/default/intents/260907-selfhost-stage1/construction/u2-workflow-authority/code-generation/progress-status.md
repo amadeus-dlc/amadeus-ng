@@ -309,3 +309,17 @@ Step 9 の検査はすべて成功。残りは最終成果物（source-manifest 
 - `source-manifest.json` を再生成（1,325 経路。`aidlc/` 配下は記録・規則の除外対象なので申告から外し、`coding-rules/README.md` の更新は code-summary に記す）。
 - `traceability.json` は sensor PASS（gaps 0）、`code-summary.md` は required-sections PASS（H2 6 本）。
 - 差し向け記録を書き、`REVIEW_REQUESTED`（iteration 1）を記録して独立レビュー（adversarial、最大 2 反復）を起票。レビュー中は成果物・manifest・申告ソースに書かない。
+
+#### チェックポイントのコミットと PR（2026-09-12）
+
+利用者の指示で未コミット 2,006 経路を 4 コミット（`feat(u2)` / `test(golden)` / `chore(harness)` / `docs(aidlc)`）に分けて `stage1` へコミットし、`origin/stage1` へ push、B1（U1 + U2）の PR を作成した: [#125](https://github.com/amadeus-dlc/amadeus-ng/pull/125)。独立レビューは進行中で、所見があれば追加コミットで対応する。監査シャードはフックが追記し続けるため、最後にまとめてコミットする。
+
+#### CI の失敗と修正（2026-09-12）
+
+`aidlc-distribution` ジョブが `capture-doctor.test.ts`「初回doctorは生出力を保存し作業記録を生成しない」で失敗。原因は Linux の bun が採取用 HOME の下 `~/.bun/install/cache` に `.pile` を書き、変更ファイルとして観測されたこと（macOS の置き場 `Library` / `.cache` しか除外していなかった）。`capture-observation.ts` で `.bun` も除外し、ローカルで bun テスト 47 件と `verify-corpus` を通して `b35eb913` として push。
+
+#### 独立レビューの結果と再確認（2026-09-12）
+
+- iteration 1: **READY**（Critical / Major なし）。Minor 3 件を提案として記録: R-01 計画 Step 9 のチェック未更新（Unit 完了時に親が更新）、R-02 相対ゲート廃止の memory 正本への未反映（§13 で改訂提案）、R-03 `traceability.json` の FR7（Deferred）target が FR1 と同一ファイル。レビュアーはターン上限で一度止まり、手元の根拠で判定を書くよう再開させて完了。
+- CI 修正（申告ソース `capture-observation.ts`）を作業ツリーへ戻したため受領が失効。stale-receipt 回復レビュー（iteration 2、差分のみ）を起票中。
+- レビュアーが計画ファイル末尾へ `## Review` を追記すると承認指紋が失効する（計画バイトに含まれる）。再発行したディレクティブの下で計画承認を取り直した（指紋 `sha256:608e6bc1…`、利用者 Approve Plan）。iteration 2 の追記後も同じ理由で失効しうるが、以後の作業は記録ディレクトリ内と framework ツールのみ。

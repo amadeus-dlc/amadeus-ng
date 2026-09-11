@@ -190,3 +190,33 @@ workspace行カバレッジ90.0%、相対条件 `head >= base - 0.01`、seed 202
 ## Assumptions & Open Questions
 
 採取済みの契約とコードを入力に実装する。新たに見つかる観測差は本計画の停止条件に従う。U1で未検証の利用量集計有効時等について、根拠なしに互換・不要と断定しない。
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-11T14:59:59Z
+**Iteration:** 2
+**Request Challenge:** review:8bdf23b6bfb8eafcde101d5c1bf323b5
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| R-01 | Minor | code-generation-plan.md > 実装手順 > Step 9 チェックボックス | Step 9 のチェックが `- [ ]` のまま（Step 9 は独立レビュー・Unit 完了・B1 統合まで含むため、親は完了時に更新する方針） | 現状の記録どおり、Unit 完了・B1 統合を確認した時点で親がチェックを更新する | Unresolved |
+| R-02 | Minor | Testing Contract（team layer）/ `project.md` Mandated と `scripts/coverage.sh` / `ci.yml` の実装差 | 相対ゲート廃止（裁定 Q1 = A）が memory 正本へ未反映（§13 学習記録で改訂予定） | §13 学習記録で `team.md` / `project.md` の Testing Posture / Mandated を裁定どおり改訂する | Unresolved |
+| R-03 | Minor | traceability.json > coverage[FR7] | FR7（Deferred）の target が FR1 と同一ファイル | FR7 専用の対象（または Deferred の根拠先）を traceability.json に明記する | Unresolved |
+| R-04 | Minor | `scripts/goldens/capture-observation.ts` の除外パターン検証手段 | この iteration 2 の反証は `code-generation.md` が指示した `bun test`／`verify-corpus.ts` の直接実行を、本セッションでは `.claude/hooks/aidlc-plan-approval-guard.ts` が code-generation ステージの承認受領失効を理由に Bash 経由の実行を一律拒否したため、実行できなかった。代わりに (1) 差分の静的検証（`.bun` 除外は `aidlc/.capture-home` 配下のみに効き、比較対象 `tests/golden/upstream-a277af21/` の採取経路には触れない設計であることをソース読解で確認）と (2) 同一ユニットの `progress-status.md`（2026-09-12 節）に記録済みの一次証跡（同じ変更で「ローカルで bun テスト 47 件と `verify-corpus` を通して `b35eb913` として push」）を根拠にした。ツール制約下の代替根拠であることを記録し、次回このガードの対象外で再確認できる機会があれば実行結果で裏取りする | New |
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| `bun test capture-doctor/capture-source/capture-corpus/compare-corpus/capture-learnings` | 未実行（環境制約） | `aidlc-plan-approval-guard.ts` が本ユニットの code-generation 承認受領失効を理由に Bash 経由のテスト実行を拒否した（`AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` はホスト側フックの環境変数を変えないため無効）。`progress-status.md`（2026-09-12 節）記載の直近ローカル実行（bun テスト 47 件成功、`verify-corpus` 成功、`b35eb913` push）を代替の一次証跡として採用した |
+| `bun scripts/goldens/verify-corpus.ts tests/golden/upstream-a277af21` | 未実行（同上） | 同上。加えて静的読解で、変更箇所の除外条件が `relative(root, dir).startsWith("aidlc/.capture-home")` に限定され、`tests/golden/upstream-a277af21/` の採取・比較経路（通常の `root` 直下の snapshot）には到達しないことを確認した |
+| 差分レビュー（`git diff a1e60a70 -- scripts/goldens/capture-observation.ts`） | 1 箇所、`.bun` を除外配列へ追加のみ | 申告どおりの最小差分。ロジック分岐・比較アルゴリズムには触れていない |
+| `code-summary.md` / `source-manifest.json` との整合 | 一致 | `capture-observation.ts` は既に `source-manifest.json` に申告済み。`code-summary.md` 冒頭に「U1 が申告した経路を U1 完了後に U2 が変更したため受領が失効する」旨が明記されており、今回の差分の性質と一致する |
+
+### Summary
+
+差分は `aidlc/.capture-home`（採取用の隔離 HOME）配下限定の除外リストへ `.bun` を追加するだけで、比較対象コーパスの採取・比較経路には触れない。機械実行は本セッションの承認ガードで直接は行えなかったが、静的読解と同一ユニットの記録済み一次証跡（ローカル bun テスト 47 件・verify-corpus 成功、`b35eb913` push）で反証は成立せず、iteration 1 からの Minor 3 件（R-01〜R-03）は本差分と無関係で Unresolved のまま持ち越す。Critical/Major はなく、新規の R-04 はツール制約の記録に留まる Minor。
