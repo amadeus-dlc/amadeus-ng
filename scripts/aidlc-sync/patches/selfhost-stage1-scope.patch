@@ -1,0 +1,217 @@
+--- a/.codex/tools/data/scope-grid.json
++++ b/.codex/tools/data/scope-grid.json
+@@ -405,5 +405,42 @@
+       "performance-validation": "EXECUTE",
+       "feedback-optimization": "EXECUTE"
+     }
++  },
++  "selfhost-stage1": {
++    "stages": {
++      "workspace-scaffold": "EXECUTE",
++      "workspace-detection": "EXECUTE",
++      "state-init": "EXECUTE",
++      "intent-capture": "SKIP",
++      "market-research": "SKIP",
++      "feasibility": "SKIP",
++      "scope-definition": "SKIP",
++      "team-formation": "SKIP",
++      "rough-mockups": "SKIP",
++      "approval-handoff": "SKIP",
++      "reverse-engineering": "SKIP",
++      "practices-discovery": "EXECUTE",
++      "requirements-analysis": "EXECUTE",
++      "user-stories": "SKIP",
++      "refined-mockups": "SKIP",
++      "domain-design": "SKIP",
++      "units-generation": "EXECUTE",
++      "contract-design": "EXECUTE",
++      "delivery-planning": "EXECUTE",
++      "functional-design": "SKIP",
++      "nfr-requirements": "SKIP",
++      "nfr-design": "SKIP",
++      "infrastructure-design": "SKIP",
++      "code-generation": "EXECUTE",
++      "build-and-test": "EXECUTE",
++      "ci-pipeline": "SKIP",
++      "deployment-pipeline": "SKIP",
++      "environment-provisioning": "SKIP",
++      "deployment-execution": "EXECUTE",
++      "observability-setup": "SKIP",
++      "incident-response": "SKIP",
++      "performance-validation": "SKIP",
++      "feedback-optimization": "SKIP"
++    }
+   }
+ }
+--- /dev/null
++++ b/.codex/scopes/aidlc-selfhost-stage1.md
+@@ -0,0 +1,17 @@
++---
++name: selfhost-stage1
++depth: Minimal
++testStrategy: Standard
++keywords: []
++description: 既存コードの契約差分を実装・検証し、stage-1 のセルフホスト運用へ切り替える
++---
++
++# selfhost-stage1 スコープ
++
++チーム規則の再確認、要求差分、作業分割、契約差分、直列実行計画、TDD による実装、検証、実地切替を行う。
++既存コードの再設計・再文書化は行わず、必要な経路だけを現行 main から実測する。
++ゴールデンの基準版と実行に必要な動詞・受領記録の範囲は、人間の裁定を受けて確定する。
++
++工程は承認済みの `scope-grid.json` エントリを正とする。初期化を含めて 11 工程を実施し、22 工程を省略する。
++テスト範囲は Standard、実装順序は TDD とし、既存のカバレッジ床 90%・Quint/ITF・ゴールデン・CI を維持する。
++キーワード推論には参加せず、`--scope selfhost-stage1` で明示的に選択する。
+diff --git a/.claude/tools/data/scope-grid.json b/.claude/tools/data/scope-grid.json
+index 7483f80e..7ce8df42 100644
+--- a/.claude/tools/data/scope-grid.json
++++ b/.claude/tools/data/scope-grid.json
+@@ -405,5 +405,42 @@
+       "performance-validation": "EXECUTE",
+       "feedback-optimization": "EXECUTE"
+     }
++  },
++  "selfhost-stage1": {
++    "stages": {
++      "workspace-scaffold": "EXECUTE",
++      "workspace-detection": "EXECUTE",
++      "state-init": "EXECUTE",
++      "intent-capture": "SKIP",
++      "market-research": "SKIP",
++      "feasibility": "SKIP",
++      "scope-definition": "SKIP",
++      "team-formation": "SKIP",
++      "rough-mockups": "SKIP",
++      "approval-handoff": "SKIP",
++      "reverse-engineering": "SKIP",
++      "practices-discovery": "EXECUTE",
++      "requirements-analysis": "EXECUTE",
++      "user-stories": "SKIP",
++      "refined-mockups": "SKIP",
++      "domain-design": "SKIP",
++      "units-generation": "EXECUTE",
++      "contract-design": "EXECUTE",
++      "delivery-planning": "EXECUTE",
++      "functional-design": "SKIP",
++      "nfr-requirements": "SKIP",
++      "nfr-design": "SKIP",
++      "infrastructure-design": "SKIP",
++      "code-generation": "EXECUTE",
++      "build-and-test": "EXECUTE",
++      "ci-pipeline": "SKIP",
++      "deployment-pipeline": "SKIP",
++      "environment-provisioning": "SKIP",
++      "deployment-execution": "EXECUTE",
++      "observability-setup": "SKIP",
++      "incident-response": "SKIP",
++      "performance-validation": "SKIP",
++      "feedback-optimization": "SKIP"
++    }
+   }
+ }
+diff --git a/.claude/scopes/aidlc-selfhost-stage1.md b/.claude/scopes/aidlc-selfhost-stage1.md
+new file mode 100644
+index 00000000..9e1cb1cd
+--- /dev/null
++++ b/.claude/scopes/aidlc-selfhost-stage1.md
+@@ -0,0 +1,17 @@
++---
++name: selfhost-stage1
++depth: Minimal
++testStrategy: Standard
++keywords: []
++description: 既存コードの契約差分を実装・検証し、stage-1 のセルフホスト運用へ切り替える
++---
++
++# selfhost-stage1 スコープ
++
++チーム規則の再確認、要求差分、作業分割、契約差分、直列実行計画、TDD による実装、検証、実地切替を行う。
++既存コードの再設計・再文書化は行わず、必要な経路だけを現行 main から実測する。
++ゴールデンの基準版と実行に必要な動詞・受領記録の範囲は、人間の裁定を受けて確定する。
++
++工程は承認済みの `scope-grid.json` エントリを正とする。初期化を含めて 11 工程を実施し、22 工程を省略する。
++テスト範囲は Standard、実装順序は TDD とし、既存のカバレッジ床 90%・Quint/ITF・ゴールデン・CI を維持する。
++キーワード推論には参加せず、`--scope selfhost-stage1` で明示的に選択する。
+diff --git a/.kimi-code/skills/aidlc/SKILL.md b/.kimi-code/skills/aidlc/SKILL.md
+index d82163eb..1c237c54 100644
+--- a/.kimi-code/skills/aidlc/SKILL.md
++++ b/.kimi-code/skills/aidlc/SKILL.md
+@@ -195,6 +195,7 @@ Source of truth: one file per scope under `.kimi-code/scopes/aidlc-<name>.md` (i
+ | poc            | Minimal       | (default)    | 8 / 33          |
+ | refactor       | Minimal       | (default)    | 10 / 33         |
+ | security-patch | Minimal       | (default)    | 10 / 33         |
++| selfhost-stage1 | Minimal       | Standard     | 11 / 33         |
+ | workshop       | Standard      | Minimal      | 26 / 33         |
+ 
+ <!-- END: compiled scope grid -->
+diff --git a/.kimi-code/tools/data/scope-grid.json b/.kimi-code/tools/data/scope-grid.json
+index 7483f80e..7ce8df42 100644
+--- a/.kimi-code/tools/data/scope-grid.json
++++ b/.kimi-code/tools/data/scope-grid.json
+@@ -405,5 +405,42 @@
+       "performance-validation": "EXECUTE",
+       "feedback-optimization": "EXECUTE"
+     }
++  },
++  "selfhost-stage1": {
++    "stages": {
++      "workspace-scaffold": "EXECUTE",
++      "workspace-detection": "EXECUTE",
++      "state-init": "EXECUTE",
++      "intent-capture": "SKIP",
++      "market-research": "SKIP",
++      "feasibility": "SKIP",
++      "scope-definition": "SKIP",
++      "team-formation": "SKIP",
++      "rough-mockups": "SKIP",
++      "approval-handoff": "SKIP",
++      "reverse-engineering": "SKIP",
++      "practices-discovery": "EXECUTE",
++      "requirements-analysis": "EXECUTE",
++      "user-stories": "SKIP",
++      "refined-mockups": "SKIP",
++      "domain-design": "SKIP",
++      "units-generation": "EXECUTE",
++      "contract-design": "EXECUTE",
++      "delivery-planning": "EXECUTE",
++      "functional-design": "SKIP",
++      "nfr-requirements": "SKIP",
++      "nfr-design": "SKIP",
++      "infrastructure-design": "SKIP",
++      "code-generation": "EXECUTE",
++      "build-and-test": "EXECUTE",
++      "ci-pipeline": "SKIP",
++      "deployment-pipeline": "SKIP",
++      "environment-provisioning": "SKIP",
++      "deployment-execution": "EXECUTE",
++      "observability-setup": "SKIP",
++      "incident-response": "SKIP",
++      "performance-validation": "SKIP",
++      "feedback-optimization": "SKIP"
++    }
+   }
+ }
+diff --git a/.kimi-code/scopes/aidlc-selfhost-stage1.md b/.kimi-code/scopes/aidlc-selfhost-stage1.md
+new file mode 100644
+index 00000000..9e1cb1cd
+--- /dev/null
++++ b/.kimi-code/scopes/aidlc-selfhost-stage1.md
+@@ -0,0 +1,17 @@
++---
++name: selfhost-stage1
++depth: Minimal
++testStrategy: Standard
++keywords: []
++description: 既存コードの契約差分を実装・検証し、stage-1 のセルフホスト運用へ切り替える
++---
++
++# selfhost-stage1 スコープ
++
++チーム規則の再確認、要求差分、作業分割、契約差分、直列実行計画、TDD による実装、検証、実地切替を行う。
++既存コードの再設計・再文書化は行わず、必要な経路だけを現行 main から実測する。
++ゴールデンの基準版と実行に必要な動詞・受領記録の範囲は、人間の裁定を受けて確定する。
++
++工程は承認済みの `scope-grid.json` エントリを正とする。初期化を含めて 11 工程を実施し、22 工程を省略する。
++テスト範囲は Standard、実装順序は TDD とし、既存のカバレッジ床 90%・Quint/ITF・ゴールデン・CI を維持する。
++キーワード推論には参加せず、`--scope selfhost-stage1` で明示的に選択する。

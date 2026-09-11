@@ -36,7 +36,13 @@ jobs:
       - name: Verify distribution sync and local patches
         run: bun scripts/aidlc-sync.ts --check
       - name: Test distribution replacement and Codex input rewrites
-        run: bun test ./scripts/aidlc-sync.test.ts ./scripts/aidlc-harness.test.ts ./scripts/aidlc-unit-lifecycle.test.ts ./scripts/aidlc-plan-progress.test.ts ./.codex/hooks/aidlc-codex-adapter.test.ts
+        run: bun test ./scripts/aidlc-sync.test.ts ./scripts/aidlc-harness.test.ts ./scripts/aidlc-unit-lifecycle.test.ts ./scripts/aidlc-plan-progress.test.ts ./scripts/aidlc-shell-redirection.test.ts ./scripts/aidlc-traceability.test.ts ./.codex/hooks/aidlc-codex-adapter.test.ts
+      - name: Fetch pinned upstream acceptance source
+        run: git -C vendor/aidlc-workflows fetch --depth=1 --no-tags https://github.com/awslabs/aidlc-workflows a277af218f0df7f325d3b8be7b6d90fce2c5bd40
+      - name: Test pinned upstream capture and comparison
+        run: bun test ./scripts/goldens/capture-source.test.ts ./scripts/goldens/capture-corpus.test.ts ./scripts/goldens/compare-corpus.test.ts ./scripts/goldens/capture-doctor.test.ts ./scripts/goldens/capture-learnings.test.ts
+      - name: Verify stored upstream acceptance corpus
+        run: bun scripts/goldens/verify-corpus.ts tests/golden/upstream-a277af21
 
   check:
     name: check
@@ -123,10 +129,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # scripts/coverage.sh --base の相対ゲートで base ref の全履歴を worktree
-          # チェックアウトする必要があるため、shallow clone (既定) では不足する。
-          fetch-depth: 0
 
       # cargo-llvm-cov に必要な llvm-tools も rust-toolchain.toml の components で入る。
       - name: Read rust-toolchain.toml
@@ -147,14 +149,9 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
-      - name: Run coverage gate (pull_request — absolute + relative)
-        if: github.event_name == 'pull_request'
-        run: bash scripts/coverage.sh --base "origin/${{ github.base_ref }}"
-
-      # merge_group / workflow_dispatch は比較対象の base ref を持たないため絶対
-      # ゲートのみ。相対ゲートは同じ変更が pull_request 側で通過済み (NFR2.2)。
-      - name: Run coverage gate (merge_group, workflow_dispatch — absolute only)
-        if: github.event_name != 'pull_request'
+      # 相対ゲート (base ref との比較) は 2026-09-11 の裁定で廃止し、絶対床 90% のみ
+      # を全イベントで実行する (U2 code-generation `coverage-gate-questions.md` Q1 = A)。
+      - name: Run coverage gate (absolute floor only)
         run: bash scripts/coverage.sh
 
   # NFR4.1: RustSec advisory DB による依存の脆弱性監査。workspace と detached な

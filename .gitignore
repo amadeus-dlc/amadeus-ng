@@ -57,3 +57,8 @@ aidlc/diagnostics/
 # which was proven to corrupt the multi-line audit blocks) ·
 # aidlc/spaces/*/intents/*/<phase>/<stage>/*.md (artifacts + diary).
 .claude/settings.local.json
+
+# ワークスペース全体の承認イベントと機械ローカルの調整用ファイル。
+aidlc/.aidlc-runtime.sqlite*
+aidlc/.aidlc-runtime.lock
+aidlc/.aidlc-runtime.state.json*
