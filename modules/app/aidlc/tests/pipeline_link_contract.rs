@@ -81,6 +81,8 @@ impl Workspace {
             );
         }
         text = text.replace(root.to_str().unwrap(), "<ROOT>");
+        // macOS では一時ディレクトリの realpath に /private が付く。Linux と揃えるため両側で落とす。
+        text = text.replace("/private<ROOT>", "<ROOT>");
         text.split_inclusive('\n')
             .map(|line| {
                 if line.starts_with("**Timestamp**: ") {
@@ -200,12 +202,12 @@ fn public_link_inputs_and_results_match_fixed_upstream() {
             );
             assert_eq!(
                 workspace.normalise(&String::from_utf8(output.stdout).unwrap()),
-                text(step, "stdout"),
+                text(step, "stdout").replace("/private<ROOT>", "<ROOT>"),
                 "{label}: stdout"
             );
             assert_eq!(
                 workspace.normalise(&String::from_utf8(output.stderr).unwrap()),
-                text(step, "stderr"),
+                text(step, "stderr").replace("/private<ROOT>", "<ROOT>"),
                 "{label}: stderr"
             );
             let after_state = workspace
