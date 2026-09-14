@@ -1,0 +1,8 @@
+# レート制限で拒否されたステップだけ、現在と異なる最初の候補で再実行する。
+# Claude Fable 5.1 のステップが制限に当たったら Claude Opus 5 で再実行し、
+# Claude Opus 5 のステップには切り替え先が無いので従来どおり中断する。
+# 権限不足・データ保持要件・モデル ID エラーなど「使えない」場合は対象外（takt 0.65 に該当機能が無い）。
+rate_limit_fallback:
+  switch_chain:
+    - provider: claude
+      model: claude-opus-5
