@@ -1,0 +1,14 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude"
+  },
+  "fixture_kind": "synthetic-controlled-inputs",
+  "purpose": "U2 群 A (aidlc-state lookup {phase-of,agent-for,validate-stage,next-stage} / aidlc-utility {scope-table,stage-table}) の CLI ゴールデン。stdout バイトと終了コードを upstream 2.7.1 と一致させる。",
+  "capture_method": "固定ピン a277af21 の配布ツリーを `git archive a277af21 dist/claude/.claude` で一時ディレクトリへ展開し、その {aidlc-state.ts, aidlc-utility.ts} を固定フィクスチャ fixture/.claude に対して環境シーム AIDLC_STAGE_GRAPH / AIDLC_SCOPE_GRID / AIDLC_SCOPES_DIR で注入して実行し採取した。展開できなければ採取は失敗する — vendor の作業ツリーへ暗黙に後退しない。再採取は `bun scripts/goldens/capture-workflow-authority.ts`。採取結果は手修正しない。",
+  "fixture_note": "フィクスチャは合成の小さな入力 (4 有効ステージ + 無効 1 / 2 scope) で、実データの版差 (selfhost-stage1 scope の有無等) に依存せず描画フォーマットのバイト一致を検証する。Rust の CLI ゴールデンテスト (modules/app/aidlc/tests/workflow_authority_golden.rs) は同じ fixture/.claude を --project-dir の .claude として読む。",
+  "stderr_note": "失敗経路 (未知 slug 等) は upstream が stdout 空・exit 1・stderr に {\"error\":..} を出す。native は stdout 空・exit 1 を一致させるが、stderr のエンベロープ形式の横断整合は別 Bolt の宿題であり byte 比較しない (modules/app/aidlc/src/wording.rs の unknown_review_class 注記と同じ)。",
+  "why_not_the_vendor_worktree": "vendor/aidlc-workflows の作業ツリーは fork 側の後続コミット 801c5700 を指しており、ピンそのものではない。2026-09-14 以前の採取スクリプトは作業ツリーの dist/claude/.claude/tools を直に実行しながら来歴へ upstream_commit: a277af21 と書いており、ピンとの一致検証を持たなかった (定数を来歴へ書くだけだった)。現在はピンを git archive で実体化して走らせる。なお 801c5700 がピンへ加えた差分は .kimi-code ハーネスの追加 (aidlc-state.ts の HARNESS_DOC_DIRS 1 行、aidlc-lib.ts の KNOWN_HARNESS_DIRS と installedHarnessNameForTarget、aidlc-utility.ts の doctor 側 Kimi 検査) だけで、群 A の 6 動詞 (lookup phase-of / agent-for / validate-stage / next-stage、scope-table、stage-table) の経路には触れていない。実測でも 16 ケースすべてがピンと作業ツリーでバイト一致し、方式変更の前後でゴールデンのバイトは 1 件も変わらなかった (2026-09-14 実測)。"
+}

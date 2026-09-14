@@ -171,46 +171,41 @@ workspace行カバレッジ床90.0%、相対条件 `head >= base - 0.01`、乱�
 
 採取する公開境界と実装順は本計画の承認対象。採取ツリーの件数・SHA-256、2.7.1で変化した出力の一覧は実行で確定し、未測定値を記入しない。上流と契約の意味が食い違う場合は裁定を求める。
 
-
 ## Review
 
 **Verdict:** READY
 **Reviewer:** aidlc-architecture-reviewer-agent
-**Date:** 2026-09-08T01:02:28Z
-**Iteration:** 2
-**Request Challenge:** review:fe7f9a07e1066bb9c2e6e938e62ac4e0
+**Date:** 2026-09-13T06:52:53Z
+**Iteration:** 1
+**Request Challenge:** review:e5feb777ac51a9de3e64048400a1538a
 
 ### Findings
 
 | ID | Severity | Location | Finding | Required action | Status |
-|---|---|---|---|---|---|---|
-| R-01 | Major | aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u1-upstream-acceptance/code-generation/code-generation-plan.md > Step 4（scripts/goldens/corpus-normalization.ts > comparableObservation） | 生観測のinitial_files・changed_files・fixture_changesをbase64からUTF-8文字列へ復号するため、不正UTF-8の異なるバイトを同一視する。独立した2つのobservations.jsonでinitial_filesの同じパスにFFとFEをそれぞれ保存し、各コーパスをsealして比較すると、期待する終了1に対して実際は終了0となった。固定ファイルの不正UTF-8を検出する既存テストは、この観測JSON経路を通らない。 | 3つのファイル面でもバイトを失わない比較にし、それぞれのFF対FEを拒否する回帰テストを追加する。正常UTF-8の時刻・パスの対称正規化は維持し、採取した生バイトを変更しない。 | Resolved |
-| R-02 | Major | aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u1-upstream-acceptance/code-generation/code-generation-plan.md > Step 7（.github/workflows/ci.yml > aidlc-distribution / Checkout with pinned distribution） | 新しい4テストファイルはvendor内の祖先a277af21へgit archiveするが、CIのcheckoutはsubmodules:trueだけでfetch-depthの指定がなく、浅い取得では固定祖先が存在しない。fork tip801c5700をdepth=1で新規取得した隔離リポジトリで同じarchiveを実行すると、終了128・not a tree objectを再現した。既存ローカルの全履歴で成功した42テストではこのCI前提不足を検出できない。 | CIで固定祖先を確実に取得するか、固定元検証済みの資料をテストへ供給する。浅いクローンからの実行を検証し、暗黙のローカル履歴やネットワークなしというテスト前提に依存しない。 | Resolved |
-| R-03 | Major | aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u1-upstream-acceptance/code-generation/code-generation-plan.md > Step 7 / traceability.json | 指定のtraceability検査はexit0でもpass:falseを返し、missing_from_upstream_idsにFR2–FR8の7件を要求する。U1の責任は単位定義どおりFR1の採取・比較とNFR1–NFR4であり、これはU1の実装欠落ではなく自動検査の単位適用範囲の不一致である。現状のまま自動検証済みとして完了できない。 | 要求や単位の割当を変えず、検査が現在の単位へ割り当てられたFR/NFRを検証するよう、正規の同期パッチと回帰テストで是正する。割当済み要求の欠落を引き続き検出し、架空のFR2–FR8対応を足して回避しない。 | Resolved |
+|---|---|---|---|---|---|
+| R-01 | Major | code-generation-plan.md > Step 4（scripts/goldens/corpus-normalization.ts > comparableObservation） | 生観測の initial_files・changed_files・fixture_changes を base64 から UTF-8 文字列へ復号するため、不正 UTF-8 の異なるバイトを同一視する。独立2つの observations.json で同一パスに FF と FE を保存し比較すると、期待 exit 1 に対し実際 exit 0。 | 3 つのファイル面でもバイトを失わない比較にし、それぞれ FF 対 FE を拒否する回帰テストを追加。正常 UTF-8 の時刻・パスの対称正規化は維持し、生バイトを変えない。 | Resolved |
+| R-02 | Major | code-generation-plan.md > Step 7（.github/workflows/ci.yml） | 新4テストは vendor 内の祖先 a277af21 へ git archive するが、CI checkout が submodules:true のみで fetch-depth 未指定。浅い取得では固定祖先が無く exit 128（not a tree object）。 | CI で固定祖先を確実に取得するか、固定元検証済みの資料をテストへ供給。浅いクローンからの実行を検証。 | Resolved |
+| R-03 | Major | code-generation-plan.md > Step 7 / traceability.json | traceability 検査が exit0 でも pass:false を返し FR2–FR8 を要求。U1の責任はFR1・NFR1–NFR4で、これは検査の単位適用範囲の不一致。 | 要求・単位割当を変えず、検査が現単位割当の FR/NFR を検証するよう同期パッチと回帰テストで是正。架空の FR2–FR8 対応を足さない。 | Resolved |
 
-### 解消確認
+R-01は`scripts/goldens/corpus-normalization.ts`の`comparableFile`で再検証した。base64復号後に`Buffer.from(text, "utf8").equals(bytes)`で往復一致を検査し、不一致（不正UTF-8）なら`{ binary_bytes: [...bytes] }`として生バイト配列を保持する実装に是正されている。`compare-corpus.test.ts`にFF/FE個別の回帰テスト（`${face}の不正UTF-8を両辺seal後も区別する`、JSONコンテナ自体が不正UTF-8な場合の拒否テストを含む）が存在し、実行で成功を確認した。`_base64`終端のフィールドはlatin1で復号しており同様にバイト非損失。退行なし。
 
-前回の指摘内容・ID・重大度を保持し、再検証結果で状態を更新した。新たな指摘はない。
+R-02は`.github/workflows/ci.yml`の`aidlc-distribution`ジョブで、`actions/checkout`（`submodules: true`）の直後に`git -C vendor/aidlc-workflows fetch --depth=1 --no-tags https://github.com/awslabs/aidlc-workflows a277af218f0df7f325d3b8be7b6d90fce2c5bd40`を明示的に実行してから`capture-source.test.ts`等と`verify-corpus.ts`を走らせる手順に是正されている。`vendor/aidlc-workflows`のsubmodule URLは`j5ik2o`フォークだが、フェッチ先は本家`awslabs/aidlc-workflows`であり、固定コミットを直接取得する設計で計画の「配布元forkの作業ツリーは採取元として流用しない」という記述と整合する。退行なし。
 
-- R-01: comparableFileはUTF-8への往復が完全一致する場合だけ文字列として扱い、それ以外を数値バイト配列として比較する。3面それぞれで両辺の単体検査は成功し、FF対FEの相互比較だけが終了1となる回帰を実行確認した。readJsonは外側JSONの不正UTF-8も拒否する。既存の時刻・パス正規化、ID取り違え検出、固定文言差分の検査は維持され、保存済みコーパスと新規採取も一致した。
-- R-02: aidlc-distributionの採取関連テストの前に、本家の完全SHAを指定するfetchが置かれた。回帰試験はfork tipだけをdepth1取得した隔離repoでarchiveの失敗を確認し、CIから読み出した取得コマンドの通信先だけをローカルへ置換して実行後、archive成功を検査する。固定元のマニフェスト検証は残り、forkの作業ツリーへ切り替える処理もない。レビューでは実際のGitHub CI全ジョブの成功を主張しない。
-- R-03: FRの検査範囲は対象JSONの自己申告から導かず、DAG・単位定義・割当表の主担当/Directory/支援列から導く。未割当FRの混入、担当FRを宣言とcoverageの両方から削除、未宣言Unit、割当表/DAG欠落、説明欄だけのUnit言及を拒否する回帰が3配布先で成功した。zero-Unitでは全要求を検査し、既存US→ACの経路も保持する。共通NFRは従来どおり要求される。実際のU1の入力を変えず検査が成功し、3配布先の実装ハッシュも一致する。
+R-03は`bun .claude/tools/aidlc-sensor-traceability.ts --output-path <traceability.json>`を実行して`{"pass":true,"gaps":[],"orphans":[],"missing_from_table":[],"missing_from_upstream_ids":[],"invalid_entries":[],"invalid_targets":[],"findings_count":0}`を確認した。`traceability.json`の`upstream_ids`はFR1・NFR1–NFR4のみで、FR2–FR8への架空対応は追加されていない。`scripts/aidlc-traceability.test.ts`と`scripts/aidlc-plan-progress.test.ts`（66 pass / 0 fail）、`bun scripts/aidlc-sync.ts --check`（同期済み）も成功した。退行なし。
+
+新規の Critical/Major な指摘は見つからなかった。
 
 ### Validation Tool Results
 
 | Tool | Result | Interpretation |
 |---|---|---|
-| bun test ./scripts/goldens/capture-source.test.ts ./scripts/goldens/capture-corpus.test.ts ./scripts/goldens/compare-corpus.test.ts ./scripts/goldens/capture-doctor.test.ts ./scripts/goldens/capture-learnings.test.ts ./scripts/aidlc-traceability.test.ts | PASS: 77 tests、358 assertions、失敗0 | 第2回レビューで再実行。上記3指摘の正常/拒否境界を含む。 |
-| bun .codex/tools/aidlc-sensor-traceability.ts --output-path aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u1-upstream-acceptance/code-generation/traceability.json | PASS: pass=true、findings_count=0 | 実際のU1割当とFR1/NFR1–NFR4を照合。 |
-| bun scripts/goldens/verify-corpus.ts tests/golden/upstream-a277af21 /tmp/amadeus-u1-review2-a | PASS | 保存物の全ハッシュ検査と新しい比較器による再採取照合が成功。 |
-| bun scripts/goldens/verify-corpus.ts /tmp/amadeus-u1-review2-a /tmp/amadeus-u1-review2-b | PASS | 独立採取2組を再比較。レビュー自体では全採取をもう一周していない。 |
-| bun scripts/aidlc-sync.ts --check | PASS: コピー0、削除0、保持設定確認0 | 同期パッチ、3配布実装、installed.jsonが整合。 |
-| 3配布先traceability実装のSHA-256 | PASS: 全て85bea6fd7f122fcb63b6de48cb642fd6546197f1a70cc89df247e97fa734feb4 | 同じ修正が適用されている。 |
-| required-sections（code-generation-plan.md） | PASS: h2_count=9、findings_count=0（追記前） | 元の計画本文の構造を確認。 |
-| git diff --check | PASS | 空白差分の問題なし。 |
-
-第1回で確認したlinter/type-checkの対応設定不在を、今回のBun試験で成功へ読み替えていない。Rustの90%床、全CIジョブ、U2のRust適合とCQS是正、U3のNative診断、U4の実地スモークは本レビューの成功宣言に含めない。
+| `bun test ./scripts/goldens/capture-source.test.ts ./scripts/goldens/capture-corpus.test.ts ./scripts/goldens/compare-corpus.test.ts ./scripts/goldens/capture-doctor.test.ts ./scripts/goldens/capture-learnings.test.ts` | PASS: 47 pass, 0 fail, 229 expect() calls | U1の3境界＋doctor/learningsの単体テストは全て成功。 |
+| `bun scripts/goldens/verify-corpus.ts tests/golden/upstream-a277af21` | PASS: 採取コーパスの検証成功 | 保存済みコーパスの整合性検査が成功。 |
+| `bun .claude/tools/aidlc-sensor-traceability.ts --output-path <traceability.json>` | PASS: pass:true, findings_count:0 | traceability.json がFR1・NFR1–NFR4の割当と整合し、R-03の是正が退行していないことを確認。 |
+| `bun scripts/aidlc-sync.ts --check` | PASS: 同期済みです | 記録用フック・センサーの3ハーネス同期パッチが正しく適用されている。 |
+| `bun test ./scripts/aidlc-traceability.test.ts ./scripts/aidlc-plan-progress.test.ts` | PASS: 66 pass, 0 fail, 567 expect() calls | traceabilityセンサーとplan-progressの回帰スイートが成功。 |
+| ファイル存在確認（source-manifest.json 全33パス） | PASS: 全パス存在 | manifestに列挙された全実装・テストファイルが実在する。 |
 
 ### Summary
 
-R-01〜R-03はすべて解消済みで、追加の根拠ある問題は見つからなかった。U1の採取・比較基盤は後続の受入移行へ引き継げる。U1単独の成功をFR1全体やセルフホスト切替の達成とは扱わない。
+Prior findings R-01・R-02・R-03はいずれも実装とテストで裏づけられた形で是正されており、退行は確認されなかった。source-manifestに列挙された全ファイルが実在し、関連するBunテスト・traceabilityセンサー・同期チェックはすべて成功した。U1の責任範囲（FR1・NFR1–NFR4、採取・比較基盤）を超える主張は計画・要約に見られず、U2以降への引継ぎも明記されている。新たなCritical/Major所見はないためREADYとする。

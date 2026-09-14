@@ -35,16 +35,26 @@
 //! 実装ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言である
 //! (`coding-rules/module-visibility.md`)。
 
+mod codekb_scope_dao_impl;
+mod codekb_source_fingerprint_dao_impl;
 mod continue_token_dto;
 mod definition_dao_impl;
 mod definition_stage_dao_impl;
+mod doctor_check_dao_impl;
+mod doctor_environment;
+mod doctor_observation_dao_impl;
+mod doctor_paths;
+mod doctor_report_dao_impl;
 mod execution_dao_impl;
 mod hook_health_dao_impl;
+mod intent_repos_dao_impl;
 mod jump_dao_impl;
 mod jump_phase_dao_impl;
 mod memory;
+mod native_doctor_facts;
 mod next_answer_dao_impl;
 mod phase_entry_dao_impl;
+mod project_description_dao_impl;
 mod read_model_daos;
 mod read_model_failure;
 mod read_model_store;
@@ -52,8 +62,12 @@ mod run_stage_columns;
 mod run_stage_dao_impl;
 mod scope_change_dao_impl;
 mod scope_dao_impl;
+mod scope_grid_dao_impl;
 mod scope_keyword_dao_impl;
+mod scope_metadata_dao_impl;
+mod stage_graph_dao_impl;
 mod state_file_dao_impl;
+mod state_version_classifier;
 mod steering_part_dao_impl;
 mod steering_plan_dao_impl;
 
@@ -80,6 +94,23 @@ pub use steering_plan_dao_impl::SteeringPlanDaoImpl;
 // upstream 互換の人間可読リードモデル (`aidlc-state.md`) を読む実 Gateway。SQLite の
 // `read_*` 表とは別の面なので `ReadModelDaos` の住人ではない (b46)。
 pub use state_file_dao_impl::StateFileDaoImpl;
+
+// 依頼原文サイドカー (`project-description.json`) を読む実 Gateway。状態ファイルと同じ
+// 「upstream 互換・人間可読」の面なので、`ReadModelDaos` の住人ではない (群 B)。
+pub use project_description_dao_impl::ProjectDescriptionDaoImpl;
+
+// codekb の読取面 (群 C) — 走査範囲ブロック・intent 登録簿・作業ツリーの内容指紋。いずれも
+// SQLite の `read_*` 表とは別の面なので `ReadModelDaos` の住人ではない。
+pub use codekb_scope_dao_impl::CodekbScopeDaoImpl;
+pub use codekb_source_fingerprint_dao_impl::CodekbSourceFingerprintDaoImpl;
+pub use intent_repos_dao_impl::IntentReposDaoImpl;
+
+// コンパイル済み定義のファイル面 (`stage-graph.json` / `scope-grid.json` / `scopes/aidlc-*.md`)
+// を読む実 Gateway。SQLite の `read_*` 表とは別の面なので `ReadModelDaos` の住人ではない
+// (`state_file_dao_impl` と同型 — 配布データ置き場を握る)。
+pub use scope_grid_dao_impl::ScopeGridDaoImpl;
+pub use scope_metadata_dao_impl::ScopeMetadataDaoImpl;
+pub use stage_graph_dao_impl::StageGraphDaoImpl;
 
 // テスト用 in-memory 実装 (合成ルートとその周辺のテストが実 I/O 無しで組むための口)。
 pub use memory::{
@@ -130,3 +161,12 @@ pub use pipeline_progress_dao_impl::PipelineProgressDaoImpl;
 
 mod jump_result_dao_impl;
 pub use jump_result_dao_impl::JumpResultDaoImpl;
+
+// 自己診断 (`aidlc --doctor`) の観測 DAO と、その注入物 (U3 / C5・C7)。
+pub use doctor_check_dao_impl::DoctorCheckDaoImpl;
+pub use doctor_environment::DoctorEnvironment;
+pub use doctor_observation_dao_impl::DoctorObservationDaoImpl;
+pub use doctor_paths::DoctorPaths;
+pub use doctor_report_dao_impl::DoctorReportDaoImpl;
+pub use native_doctor_facts::NativeDoctorFacts;
+pub use state_version_classifier::StateVersionClassifier;

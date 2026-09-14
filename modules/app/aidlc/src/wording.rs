@@ -1104,6 +1104,116 @@ Only `practices-promote` is available."
     )
 }
 
+// ---------------------------------------------------------------------------
+// `aidlc-state lookup` — コンパイル済みグラフの読取（群 A / 自己防衛拒否は exit 1）
+// ---------------------------------------------------------------------------
+//
+// 失敗経路は upstream の `error(msg)` に対応する — あちらは同じ文言を `{"error": …}` に
+// 包んで stderr へ出す（[`unknown_review_class`] の注記と同じく、エンベロープ形式の横断整合は
+// 別 Bolt）。ここでは本文言だけを持ち、包み方は自己防衛拒否の共通経路に委ねる。
+
+/// `lookup <sub>` のサブ動詞が無い（upstream `:6352` 逐語 `Usage: aidlc-state.ts lookup <subcommand> [args...]`）。
+pub const LOOKUP_USAGE: &str = "Usage: aidlc-state.ts lookup <subcommand> [args...]";
+
+/// `lookup <sub>` の引数が足りない（upstream の各 `Usage: lookup <sub> …` 逐語）。
+#[must_use]
+pub fn lookup_subcommand_usage(usage: &str) -> String {
+    format!("Usage: lookup {usage}")
+}
+
+/// `resolveStage` が引けなかった（upstream `:6360` 等の逐語 `Unknown stage: <slug>`）。
+#[must_use]
+pub fn lookup_unknown_stage(slug: &str) -> String {
+    format!("Unknown stage: {slug}")
+}
+
+/// 群 A で配線したのは 4 サブ動詞だけ — それ以外はこの build に無い（own wording、exit 1）。
+///
+/// upstream は 8 サブ動詞を持つが、bugfix スモークが踏むのは
+/// `phase-of` / `agent-for` / `validate-stage` / `next-stage` の 4 つで、群 A はそこに限る。
+#[must_use]
+pub fn lookup_subcommand_not_wired(sub: &str) -> String {
+    format!(
+        "Cannot run aidlc-state lookup {sub}: that lookup subcommand is not wired in this build. \
+Available: phase-of, agent-for, validate-stage, next-stage."
+    )
+}
+
+// ---------------------------------------------------------------------------
+// `aidlc-utility project-description` — 依頼原文の正本（群 B / 拒否は exit 1）
+// ---------------------------------------------------------------------------
+//
+// upstream は `readProjectDescriptionAuthority` が投げた `Error` を `die()` が受け、同じ本文を
+// `{"error": …}` に包んで stderr へ出す。ここでは本文言だけを持ち、包み方は自己防衛拒否の
+// 共通経路に委ねる（[`unknown_review_class`] の注記と同じ既知の限界）。
+
+/// 名指しの無い legacy record に `Project` 欄が無い（upstream `aidlc-lib.ts:16408` 逐語）。
+pub const PROJECT_DESCRIPTION_MISSING_FIELD: &str =
+    "legacy aidlc-state.md is missing the Project field";
+
+/// `Project Description Source` が知らない綴りを名指している（同 `:16413` 逐語）。
+#[must_use]
+pub fn project_description_unsupported_source(source: &str) -> String {
+    format!("unsupported Project Description Source {source}")
+}
+
+/// 名指しているサイドカーが無い（同 `:16418` 逐語）。
+pub const PROJECT_DESCRIPTION_SIDECAR_MISSING: &str =
+    "project-description.json is required by aidlc-state.md but missing";
+
+/// サイドカーの読取・復号に失敗した（同 `:16431` 逐語 — 原因は呼出側が組む）。
+#[must_use]
+pub fn project_description_sidecar_failed(cause: &str) -> String {
+    format!("failed to read project-description.json: {cause}")
+}
+
+/// サイドカーが 1 個の文字列ではない（同 `:16427` 逐語。`sidecar_failed` に包まれて出る）。
+pub const PROJECT_DESCRIPTION_NOT_A_STRING: &str =
+    "project description JSON must contain one string";
+
+/// 状態ファイルそのものが引けない（own wording）。
+///
+/// upstream はここで `readFileSync` の Node エラー（`ENOENT: … open '<絶対パス>'`）をそのまま
+/// 出すので、逐語で写せる相手がいない。exit 1 と stdout 空は一致させ、本文だけこちらの言葉に
+/// する（stderr のエンベロープ整合と同じ既知の限界の内側）。
+#[must_use]
+pub fn project_description_state_unreadable(detail: &str) -> String {
+    format!("cannot read the workflow state for the project description: {detail}")
+}
+
+// ---------------------------------------------------------------------------
+// `aidlc-utility codekb-scope-diff` — 呼び出しが成立しない 2 形だけが拒否（群 C）
+// ---------------------------------------------------------------------------
+//
+// **判定は拒否ではない。** `NO_STORE` / `CURRENT` / `STALE` / `UNVERIFIED` / `UNKNOWN_SCOPE` /
+// `COVERS` / `NARROWER` はどれも stdout・exit 0 で返る観測であり、ここには現れない。ここに
+// 在るのは upstream が `die()` する 2 形だけである。
+
+/// `--mint` に `--paths` が無い（upstream `aidlc-utility.ts:6841` 逐語）。
+pub const CODEKB_SCOPE_DIFF_MINT_REQUIRES_PATHS: &str =
+    "codekb-scope-diff --mint: pass --paths <comma-separated repo-relative paths>";
+
+/// `--compare` の指す先が無い（同 `:6880` 逐語）。
+///
+/// 値が空のときに `(missing path)` と描くところまで upstream のままである。
+#[must_use]
+pub fn codekb_scope_diff_compare_not_found(path: &str) -> String {
+    let named = if path.is_empty() {
+        "(missing path)"
+    } else {
+        path
+    };
+    format!("codekb-scope-diff --compare: file not found: {named}")
+}
+
+/// 走査範囲の読取そのものが失敗した（own wording）。
+///
+/// upstream は `readFileSync` の Node エラーをそのまま投げるので、逐語で写せる相手がいない。
+#[must_use]
+pub fn codekb_scope_diff_unreadable(detail: &str) -> String {
+    format!("cannot read the codekb scope of analysis: {detail}")
+}
+
 /// `--team-practices` / `--discovered-rules` が無い（upstream `:3522` 逐語）。
 pub const PROMOTE_USAGE: &str = "Usage: aidlc-state.ts practices-promote --team-practices <path> --discovered-rules <path> [--affirming-user <name>] [--target-dir <path>]";
 
@@ -1552,6 +1662,142 @@ Restore the space's memory layer, then retry."
 #[must_use]
 pub fn learnings_persist_failed(cause: &str) -> String {
     format!("persist failed: {cause}")
+}
+
+// ---------------------------------------------------------------------------
+// `--doctor` (契約 C7) — 本家に対応行の無い、この build 固有の拒否文言。
+// ---------------------------------------------------------------------------
+
+/// `--doctor` の公開入力は引数を取らない (C7「公開入力は引数を追加しない `--doctor` のみ」)。
+#[must_use]
+pub fn doctor_takes_no_arguments(extra: &[String]) -> String {
+    format!(
+        "--doctor takes no arguments (given: {}). Run `aidlc --doctor` alone.",
+        extra.join(" ")
+    )
+}
+
+// ---------------------------------------------------------------------------
+// `aidlc-utility codekb-snapshot` / `codekb-publish` — 書込 2 動詞の拒否（群 D）
+// ---------------------------------------------------------------------------
+//
+// upstream は `die()` が本文を `{"error": …}` に包んで stderr へ出す。ここでは本文言だけを
+// 持ち、包み方は自己防衛拒否の共通経路に委ねる（群 A/B/C と同じ既知の限界）。
+// **判定は拒否ではない** — 公開の成否は stdout・exit 0/1 で返る観測であり、ここに在るのは
+// upstream が `die()` する形だけである。
+
+/// `--repo` が 1 つのパス片として成立しない（upstream `aidlc-utility.ts:6572` 逐語）。
+#[must_use]
+pub fn codekb_invalid_repo(given: &str) -> String {
+    format!("Invalid --repo \"{given}\": a repo name must be one path segment.")
+}
+
+/// `--paths` が無い（upstream `codekbPaths` の逐語 — 動詞名を差し込む）。
+#[must_use]
+pub fn codekb_requires_paths(command: &str) -> String {
+    format!("{command}: pass --paths <comma-separated repo-relative paths>")
+}
+
+/// 源の指紋が採れない（upstream `aidlc-utility.ts:6712` 逐語）。
+#[must_use]
+pub fn codekb_snapshot_cannot_fingerprint(paths: &str) -> String {
+    format!("codekb-snapshot: cannot fingerprint source paths: {paths}")
+}
+
+/// compare-and-swap の合言葉が無い（upstream `:6802` 逐語）。
+pub const CODEKB_PUBLISH_REQUIRES_EXPECTATIONS: &str = "codekb-publish: pass --expect-store <generation> and --expect-source <fingerprint> from codekb-snapshot";
+
+/// staged の指定が無い（upstream `:6739` 逐語）。
+pub const CODEKB_PUBLISH_REQUIRES_STAGED: &str =
+    "codekb-publish: pass --staged <directory-containing-all-nine-artifacts>";
+
+/// staged がプロジェクトの外を指している（upstream `:6745` 逐語）。
+pub const CODEKB_PUBLISH_STAGED_OUTSIDE: &str =
+    "codekb-publish: --staged must resolve inside the project directory";
+
+/// staged が実ディレクトリでない（upstream `:6755` 逐語）。
+pub const CODEKB_PUBLISH_STAGED_NOT_A_DIRECTORY: &str =
+    "codekb-publish: --staged must be a real directory, not a symlink";
+
+/// staged がリンクされた親を通って外へ出ている（upstream `:6766` 逐語）。
+pub const CODEKB_PUBLISH_STAGED_ESCAPES: &str =
+    "codekb-publish: --staged must not escape the project through a symlinked ancestor";
+
+/// staged が見つからない（upstream `:6752` 逐語）。
+#[must_use]
+pub fn codekb_publish_staged_not_found(given: &str) -> String {
+    format!("codekb-publish: staged directory not found: {given}")
+}
+
+/// staged の中身が 9 成果物ちょうどでない（upstream `:6772` 逐語。空なら `(empty)`）。
+#[must_use]
+pub fn codekb_publish_staged_not_the_nine(found: &[String]) -> String {
+    let listed = if found.is_empty() {
+        "(empty)".to_string()
+    } else {
+        found.join(", ")
+    };
+    format!(
+        "codekb-publish: staged directory must contain exactly the nine CodeKB artifacts; found: {listed}"
+    )
+}
+
+/// staged の成果物が通常ファイルでない（upstream `:6783` 逐語）。
+#[must_use]
+pub fn codekb_publish_staged_not_a_regular_file(name: &str) -> String {
+    format!("codekb-publish: staged artifact must be a regular file: {name}")
+}
+
+/// staged の鮮度印の走査範囲ブロックが読めない（upstream `:6790` 逐語）。
+#[must_use]
+pub fn codekb_publish_invalid_scope_block(reason: &str, detail: &str) -> String {
+    format!(
+        "codekb-publish: staged reverse-engineering-timestamp.md has an invalid Scope of Analysis block ({reason}: {detail})"
+    )
+}
+
+/// snapshot の範囲が候補の主張を覆っていない（upstream `:6813` 逐語）。
+#[must_use]
+pub fn codekb_publish_scope_not_covered(path: &str) -> String {
+    format!(
+        "codekb-publish: snapshot paths do not cover candidate analyzed path \"{path}\"; take a fresh codekb-snapshot over the complete candidate scope"
+    )
+}
+
+/// ストアが書き換えられていた（upstream `:6823` 逐語 — 型付きの合図 `CODEKB_STORE_CHANGED`）。
+#[must_use]
+pub fn codekb_store_changed(expected: &str, found: &str) -> String {
+    format!(
+        "CODEKB_STORE_CHANGED: expected {expected}, found {found}. Re-read the current store, re-merge the staged scan, take a fresh snapshot, and retry."
+    )
+}
+
+/// 源が動いていた（upstream `:6830` 逐語。採れなければ `unavailable`）。
+#[must_use]
+pub fn codekb_source_changed(expected: &str, found: Option<&str>) -> String {
+    let found = found.unwrap_or("unavailable");
+    format!(
+        "CODEKB_SOURCE_CHANGED: expected {expected}, found {found}. Re-scan the affected source, re-synthesize all nine artifacts, take a fresh snapshot, and retry."
+    )
+}
+
+/// 候補の鮮度印が古い（upstream `:6844` 逐語。記録が無ければ `unknown`）。
+#[must_use]
+pub fn codekb_candidate_stale(staged: Option<&str>, current: Option<&str>) -> String {
+    let staged = staged.unwrap_or("unknown");
+    let current = current.unwrap_or("unknown");
+    format!(
+        "CODEKB_CANDIDATE_STALE: staged fingerprint {staged} does not match the current source {current}. Re-mint the timestamp and retry."
+    )
+}
+
+/// codekb ストアそのものの読み書きに失敗した（own wording）。
+///
+/// upstream はここで Node の I/O 例外をそのまま投げるので、逐語で写せる相手がいない。
+/// stdout 空・exit 1 は一致させ、本文だけこちらの言葉にする。
+#[must_use]
+pub fn codekb_store_failure(detail: &str) -> String {
+    format!("cannot read or write the codekb store: {detail}")
 }
 
 #[cfg(test)]

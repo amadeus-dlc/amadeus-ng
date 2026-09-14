@@ -160,3 +160,126 @@ mod session_audit_observation_id;
 pub use session_audit_observation_id::SessionAuditObservationId;
 
 pub use hook_health_event::HookFirstDropObserved;
+
+// 自己診断 (`aidlc --doctor`) — 観測の値オブジェクト群と、それを評価する集約 (U3 / C5・C7)。
+// 観測はファイル・環境・ストアの事実の写しであり、判断はすべて集約 `WorkspaceDoctor` の側にある
+// (オーナー裁定 2026-09-12)。
+mod consumed_artifact;
+mod definition_assets;
+mod doctor_check;
+mod doctor_check_id;
+mod doctor_checks;
+mod doctor_observation;
+mod execution_cursor_observation;
+mod graph_stage;
+mod heartbeat_entry;
+mod heartbeat_observation;
+mod hook_binding;
+mod hook_binding_declaration;
+mod hook_binding_target;
+mod hook_wiring;
+mod native_entry_points;
+mod observation_failure;
+mod observed_timestamp;
+mod projection_observation;
+mod record_location;
+mod record_observation;
+mod scope_grid_entry;
+mod stage_artifacts;
+mod stage_file;
+mod stage_frontmatter;
+mod state_file_observation;
+mod state_version_observation;
+mod store_observation;
+mod store_schema;
+mod wired_hook;
+mod workspace_doctor;
+mod workspace_doctor_error;
+mod workspace_doctor_event;
+mod workspace_doctor_event_id;
+mod workspace_doctor_id;
+mod workspace_shell;
+
+pub use consumed_artifact::ConsumedArtifact;
+pub use definition_assets::DefinitionAssets;
+pub use doctor_check::DoctorCheck;
+pub use doctor_check_id::DoctorCheckId;
+pub use doctor_checks::DoctorChecks;
+pub use doctor_observation::DoctorObservation;
+pub use execution_cursor_observation::ExecutionCursorObservation;
+pub use graph_stage::GraphStage;
+pub use heartbeat_entry::HeartbeatEntry;
+pub use heartbeat_observation::HeartbeatObservation;
+pub use hook_binding::HookBinding;
+pub use hook_binding_declaration::HookBindingDeclaration;
+pub use hook_binding_target::HookBindingTarget;
+pub use hook_wiring::HookWiring;
+pub use native_entry_points::NativeEntryPoints;
+pub use observation_failure::ObservationFailure;
+pub use observed_timestamp::ObservedTimestamp;
+pub use projection_observation::ProjectionObservation;
+pub use record_location::RecordLocation;
+pub use record_observation::RecordObservation;
+pub use scope_grid_entry::ScopeGridEntry;
+pub use stage_artifacts::StageArtifacts;
+pub use stage_file::StageFile;
+pub use stage_frontmatter::StageFrontmatter;
+pub use state_file_observation::StateFileObservation;
+pub use state_version_observation::StateVersionObservation;
+pub use store_observation::StoreObservation;
+pub use store_schema::StoreSchema;
+pub use wired_hook::WiredHook;
+pub use workspace_doctor::WorkspaceDoctor;
+pub use workspace_doctor_error::WorkspaceDoctorError;
+pub use workspace_doctor_event::WorkspaceDoctorEvent;
+pub use workspace_doctor_event_id::WorkspaceDoctorEventId;
+pub use workspace_doctor_id::WorkspaceDoctorId;
+pub use workspace_shell::WorkspaceShell;
+
+// codekb (リポジトリごとの durable な知識ストア) — 群 D の compare-and-swap が突き合わせる値。
+// 世代と源の指紋は「呼び手が渡した合言葉」と「実測した値」の両方を同じ型で運ぶ (upstream は
+// 合言葉の綴りを検査せず突き合わせるだけなので、型が形を検査すると観測差が出る)。
+mod codekb_generation;
+mod codekb_repo_id;
+mod codekb_repo_id_error;
+mod codekb_source_fingerprint;
+mod codekb_token_error;
+pub use codekb_generation::CodekbGeneration;
+pub use codekb_repo_id::CodekbRepoId;
+pub use codekb_repo_id_error::CodekbRepoIdError;
+pub use codekb_source_fingerprint::CodekbSourceFingerprint;
+pub use codekb_token_error::CodekbTokenError;
+
+// 公開候補の材料 — 9 成果物ちょうどの集合と、走査範囲の主張・被覆の判断。
+mod codekb_artifact;
+mod codekb_artifact_name;
+mod codekb_artifact_name_error;
+mod codekb_artifacts;
+mod codekb_artifacts_error;
+mod codekb_candidate;
+mod codekb_scope_path;
+mod codekb_scope_path_error;
+mod codekb_scope_paths;
+pub use codekb_artifact::CodekbArtifact;
+pub use codekb_artifact_name::CodekbArtifactName;
+pub use codekb_artifact_name_error::CodekbArtifactNameError;
+pub use codekb_artifacts::CodekbArtifacts;
+pub use codekb_artifacts_error::CodekbArtifactsError;
+pub use codekb_candidate::CodekbCandidate;
+pub use codekb_scope_path::CodekbScopePath;
+pub use codekb_scope_path_error::CodekbScopePathError;
+pub use codekb_scope_paths::CodekbScopePaths;
+
+// 集約 Codekb — 公開の compare-and-swap を判断し、公開の事実を 1 件返す。
+mod codekb;
+mod codekb_event;
+mod codekb_event_id;
+mod codekb_event_id_error;
+mod codekb_publish_refusal;
+mod codekb_snapshot;
+pub use codekb::Codekb;
+pub use codekb_event::{CodekbEvent, CodekbInterruptedPublicationSettled, CodekbPublished};
+pub use codekb_event_id::CodekbEventId;
+pub use codekb_event_id_error::CodekbEventIdError;
+pub use codekb_publish_refusal::CodekbPublishRefusal;
+pub use codekb_snapshot::CodekbSnapshot;

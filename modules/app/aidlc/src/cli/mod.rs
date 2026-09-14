@@ -30,6 +30,7 @@
 //! Request, Invocation, parse}` で参照する
 //! (`coding-rules/module-visibility.md` / `one-public-type`)。
 
+mod codekb_args;
 mod face;
 mod intent_create_args;
 mod invocation;
@@ -39,6 +40,7 @@ mod request;
 mod review_args;
 mod set_autonomy_args;
 
+pub use codekb_args::CodekbArgs;
 pub use face::Face;
 pub use intent_create_args::IntentCreateArgs;
 pub use invocation::Invocation;

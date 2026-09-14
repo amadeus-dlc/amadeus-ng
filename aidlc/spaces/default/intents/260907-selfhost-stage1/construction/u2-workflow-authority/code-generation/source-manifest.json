@@ -3977,6 +3977,246 @@
     },
     {
       "path": "tools/lint/src/setter_methods.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/mod.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/cli/codekb_args.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime/codekb_authority.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime/codekb_write.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime/workflow_authority.rs"
+    },
+    {
+      "path": "modules/app/aidlc/tests/codekb_authority_golden.rs"
+    },
+    {
+      "path": "modules/app/aidlc/tests/codekb_write_golden.rs"
+    },
+    {
+      "path": "modules/app/aidlc/tests/workflow_authority_golden.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_artifact.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_artifact_name.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_artifact_name_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_artifacts.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_artifacts_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_candidate.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_event.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_event/"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_event_id.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_event_id_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_generation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_publish_refusal.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_scope_path.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_scope_path_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_scope_paths.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_snapshot.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_source_fingerprint.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_token_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/tests/codekb_contract_test.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/codekb_repository_impl.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/tests/codekb_repository_contract.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/port/codekb_repository.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/publish_codekb_error.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/publish_codekb_use_case.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/snapshot_codekb_error.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/snapshot_codekb_use_case.rs"
+    },
+    {
+      "path": "modules/core/infrastructure/src/tree_hash.rs"
+    },
+    {
+      "path": "modules/core/infrastructure/tests/tree_hash_test.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/codekb_scope_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/codekb_source_fingerprint_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/intent_repos_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/project_description_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/scope_grid_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/scope_metadata_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/stage_graph_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/tests/codekb_authority_dao_contract.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/tests/workflow_authority_dao_contract.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/compare_codekb_scope_error.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/compare_codekb_scope_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/diff_codekb_scope_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_next_in_scope_stage_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/find_project_description_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/list_scope_catalog_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/list_stage_graph_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/mint_codekb_fingerprint_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/codekb_scope_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/codekb_source_fingerprint_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/intent_repos_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/project_description_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/codekb_scope_diff_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/project_description_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/re_scope_parse_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/re_scope_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/scope_actions_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/scope_catalog_row_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/scope_metadata_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/read_view/stage_graph_entry_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/scope_grid_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/scope_metadata_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/stage_graph_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/project_description_error.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/resolve_codekb_repo_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/resolve_stage_use_case.rs"
+    },
+    {
+      "path": "scripts/goldens/capture-codekb-authority.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-codekb-write.ts"
+    },
+    {
+      "path": "scripts/goldens/capture-workflow-authority.ts"
+    },
+    {
+      "path": "tests/golden/codekb-authority/"
+    },
+    {
+      "path": "tests/golden/codekb-write/"
+    },
+    {
+      "path": "tests/golden/workflow-authority/"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_repo_id.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/codekb_repo_id_error.rs"
     }
   ]
 }

@@ -117,6 +117,10 @@ pub use steering_tables::SteeringTables;
 pub use unsplittable_section::UnsplittableSection;
 
 // 表の DDL と全差し替えは取得ループ (`JournalReaderImpl`) だけが呼ぶ内部の口である。
+// 自己診断の投影 (`orchestration::WorkspaceDoctorReadModelUpdater`) も代理キーの作り方を
+// ここ 1 箇所から借りる — 表ごとに素材の組み方を書き下さない。
+pub(crate) use row_id::doctor_check;
+
 pub(crate) use sql::{
     READ_SCHEMA_VERSION, content_digest, ensure_tables, matches_rows, read_schema_version,
     recreate_tables, replace_all, replace_steering, set_schema_version,

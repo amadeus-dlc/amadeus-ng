@@ -6,10 +6,12 @@
 //! 文中の同じ語や `--` より後の語は自由記述である。本家2.7.1の`parseNextFlags`に対応する。
 //! 名詞の構文から終端コマンドへの変換は `turn` が担い、状態を読んで判断しない。
 //! 通常位置引数は `freeform` として渡し、定義を要するscope照合は後段のルーティングで行う。
-//! `--doctor` 専用追加引数等の未接続面はU2の残作業である。
+//! `aidlc --doctor` (Orchestrate 面の先頭引数) は自己診断の入口 (契約 C7) であり、`next --doctor`
+//! (本家どおり TS 委譲の print) とは別である。
 
 use core_query_use_case::orchestration::{NextTurnInput, NounFamily, NounToken, ReadOnlyVerb};
 
+use super::codekb_args::{CodekbArgs, parse_codekb};
 use super::face::Face;
 use super::intent_create_args::{IntentCreateArgs, parse_intent_create};
 use super::interaction_args::{InteractionArgs, parse_interaction};
@@ -46,6 +48,11 @@ pub enum Request {
     Report(ReportArgs),
     /// `park` — 引数を取らない。
     Park,
+    /// `--doctor` — 自己診断 (契約 C7)。公開入力は `--doctor` だけで、追加引数は拒む。
+    Doctor {
+        /// `--doctor` の後ろに与えられた引数 (空でなければ拒否)。
+        extra: Vec<String>,
+    },
     /// `intent-create` — utility 面。
     IntentCreate(IntentCreateArgs),
     /// エンジン面の未知動詞 — **自己防衛拒否**（stderr + exit 1）。
@@ -53,6 +60,22 @@ pub enum Request {
         /// 与えられた動詞（無ければ `None`）。
         given: Option<String>,
     },
+    /// `aidlc-utility scope-table` — scope グリッドの Markdown 表を plain 出力（群 A）。
+    UtilityScopeTable,
+    /// `aidlc-utility stage-table` — stage グラフの Markdown 表を plain 出力（群 A）。
+    UtilityStageTable,
+    /// `aidlc-utility project-description` — 依頼原文の正本を JSON 1 行で出す（群 B）。
+    ///
+    /// 引数を取らない（upstream `handleProjectDescription(projectDir)` も同様）。
+    UtilityProjectDescription,
+    /// `aidlc-utility codekb-path` — codekb の保管先を出す（群 C・読取専用・副作用なし）。
+    UtilityCodekbPath(CodekbArgs),
+    /// `aidlc-utility codekb-scope-diff` — 走査範囲の突合（群 C・読取専用）。
+    UtilityCodekbScopeDiff(CodekbArgs),
+    /// `aidlc-utility codekb-snapshot` — 走査の直前に 2 つの世代の写しを取る（群 D・書込）。
+    UtilityCodekbSnapshot(CodekbArgs),
+    /// `aidlc-utility codekb-publish` — compare-and-swap を確かめて公開する（群 D・書込）。
+    UtilityCodekbPublish(CodekbArgs),
     /// ユーティリティ面の未知動詞 — 同上。
     UnknownUtilityVerb {
         /// 与えられた動詞（無ければ `None`）。
@@ -70,6 +93,16 @@ pub enum Request {
     UnknownLogVerb {
         /// 与えられた動詞（無ければ `None`）。
         given: Option<String>,
+    },
+    /// `aidlc-state lookup <sub> [args...]` — コンパイル済みグラフの読取解決（群 A）。
+    ///
+    /// サブ動詞（`phase-of` / `agent-for` / `validate-stage` / `next-stage`）と以降の位置引数を
+    /// そのまま運ぶ。どのサブを引くかの構文的ルーティングは消費側（読取クエリ）が担う。
+    StateLookup {
+        /// サブ動詞（無ければ `None`）。
+        sub: Option<String>,
+        /// サブ動詞以降の位置引数。
+        args: Vec<String>,
     },
     /// `aidlc-state practices-promote` — フラグ一式。
     StatePracticesPromote(PromoteArgs),
@@ -125,7 +158,10 @@ const RECOGNISED_BOLT_VERBS: [&str; 7] = [
 ///
 /// `unit` は upstream の `Valid:` 一覧には現れないが switch は受理するので、こちらでも
 /// 「認識はする」側に置く — 未知動詞の逐語に混ぜると「綴りが違う」と読まれる。
-const RECOGNISED_STATE_VERBS: [&str; 24] = [
+///
+/// `lookup` は群 A で**この build に配線した**ので、この未配線集合からは外れている
+/// （配線アーム `(Face::State, Some("lookup"))` が先に受ける）。
+const RECOGNISED_STATE_VERBS: [&str; 23] = [
     "get",
     "set",
     "set-skeleton-stance",
@@ -143,7 +179,6 @@ const RECOGNISED_STATE_VERBS: [&str; 24] = [
     "resume",
     "acknowledge-compaction",
     "reuse-artifact",
-    "lookup",
     "practices-event",
     "fork",
     "merge",
@@ -177,11 +212,27 @@ pub fn parse(face: Face, args: &[String]) -> Request {
         },
         (Face::Orchestrate, Some("report")) => Request::Report(parse_report(rest)),
         (Face::Orchestrate, Some("park")) => Request::Park,
+        (Face::Orchestrate, Some("--doctor")) => Request::Doctor {
+            extra: rest.to_vec(),
+        },
         (Face::Orchestrate, given) => Request::UnknownOrchestrateVerb {
             given: given.map(str::to_string),
         },
         (Face::Utility, Some("intent-create" | "init")) => {
             Request::IntentCreate(parse_intent_create(rest))
+        }
+        (Face::Utility, Some("scope-table")) => Request::UtilityScopeTable,
+        (Face::Utility, Some("stage-table")) => Request::UtilityStageTable,
+        (Face::Utility, Some("project-description")) => Request::UtilityProjectDescription,
+        (Face::Utility, Some("codekb-path")) => Request::UtilityCodekbPath(parse_codekb(rest)),
+        (Face::Utility, Some("codekb-scope-diff")) => {
+            Request::UtilityCodekbScopeDiff(parse_codekb(rest))
+        }
+        (Face::Utility, Some("codekb-snapshot")) => {
+            Request::UtilityCodekbSnapshot(parse_codekb(rest))
+        }
+        (Face::Utility, Some("codekb-publish")) => {
+            Request::UtilityCodekbPublish(parse_codekb(rest))
         }
         (Face::Utility, given) => Request::UnknownUtilityVerb {
             given: given.map(str::to_string),
@@ -192,6 +243,10 @@ pub fn parse(face: Face, args: &[String]) -> Request {
         (Face::Log, Some("link")) => Request::LogLink(parse_link(rest)),
         (Face::Log, given) => Request::UnknownLogVerb {
             given: given.map(str::to_string),
+        },
+        (Face::State, Some("lookup")) => Request::StateLookup {
+            sub: rest.first().cloned(),
+            args: rest.get(1..).unwrap_or_default().to_vec(),
         },
         (Face::State, Some("practices-promote")) => {
             Request::StatePracticesPromote(parse_promote(rest))
@@ -388,6 +443,31 @@ mod tests {
                 }
             );
         }
+    }
+
+    /// `--doctor` は Orchestrate 面の先頭引数として受け、後続の引数はそのまま運ぶ (拒否は消費側)。
+    #[test]
+    fn doctor_is_a_leading_engine_flag_that_carries_its_extra_arguments() {
+        assert_eq!(
+            parse(Face::Orchestrate, &argv(&["--doctor"])),
+            Request::Doctor { extra: Vec::new() }
+        );
+        assert_eq!(
+            parse(Face::Orchestrate, &argv(&["--doctor", "--export"])),
+            Request::Doctor {
+                extra: vec!["--export".to_string()]
+            }
+        );
+        assert!(matches!(
+            parse(Face::Orchestrate, &argv(&["next", "--doctor"])),
+            Request::Next(_)
+        ));
+        assert_eq!(
+            parse(Face::Utility, &argv(&["--doctor"])),
+            Request::UnknownUtilityVerb {
+                given: Some("--doctor".to_string())
+            }
+        );
     }
 
     #[test]
@@ -653,6 +733,272 @@ mod tests {
             parse(Face::State, &[]),
             Request::UnknownStateVerb { given: None }
         );
+    }
+
+    /// `lookup` は配線済みの読取面 — サブ動詞と以降の引数をそのまま運ぶ（群 A）。
+    #[test]
+    fn the_state_lookup_verb_carries_its_subcommand_and_arguments() {
+        assert_eq!(
+            parse(Face::State, &argv(&["lookup", "phase-of", "state-init"])),
+            Request::StateLookup {
+                sub: Some("phase-of".to_string()),
+                args: vec!["state-init".to_string()],
+            }
+        );
+        assert_eq!(
+            parse(
+                Face::State,
+                &argv(&["lookup", "next-stage", "state-init", "bugfix"])
+            ),
+            Request::StateLookup {
+                sub: Some("next-stage".to_string()),
+                args: vec!["state-init".to_string(), "bugfix".to_string()],
+            }
+        );
+        // サブ動詞が無くても未配線には落とさない（配線アームに入り、使い方の拒否は消費側）。
+        assert_eq!(
+            parse(Face::State, &argv(&["lookup"])),
+            Request::StateLookup {
+                sub: None,
+                args: Vec::new(),
+            }
+        );
+    }
+
+    /// `lookup` は `RECOGNISED_STATE_VERBS`（未配線 24 動詞）から外れ、配線アームへ入る。
+    #[test]
+    fn lookup_is_no_longer_in_the_not_wired_state_verb_set() {
+        assert!(!RECOGNISED_STATE_VERBS.contains(&"lookup"));
+        assert!(matches!(
+            parse(Face::State, &argv(&["lookup", "phase-of", "x"])),
+            Request::StateLookup { .. }
+        ));
+    }
+
+    /// `scope-table` / `stage-table` は utility 面から配線済みの plain 出力面へ入る（群 A）。
+    #[test]
+    fn scope_table_and_stage_table_route_from_the_utility_face() {
+        assert_eq!(
+            parse(Face::Utility, &argv(&["scope-table"])),
+            Request::UtilityScopeTable
+        );
+        assert_eq!(
+            parse(Face::Utility, &argv(&["stage-table"])),
+            Request::UtilityStageTable
+        );
+    }
+
+    /// 群 B/C の 3 動詞は utility 面から配線済みの読取面へ入る。
+    #[test]
+    fn the_description_and_codekb_verbs_route_from_the_utility_face() {
+        assert_eq!(
+            parse(Face::Utility, &argv(&["project-description"])),
+            Request::UtilityProjectDescription
+        );
+        assert!(matches!(
+            parse(Face::Utility, &argv(&["codekb-path"])),
+            Request::UtilityCodekbPath(_)
+        ));
+        assert!(matches!(
+            parse(Face::Utility, &argv(&["codekb-scope-diff"])),
+            Request::UtilityCodekbScopeDiff(_)
+        ));
+    }
+
+    /// 群 B/C の動詞はエンジン面からは届かない（面が違えば未知動詞である）。
+    #[test]
+    fn the_codekb_verbs_are_not_reachable_from_the_engine_face() {
+        for verb in [
+            "project-description",
+            "codekb-path",
+            "codekb-scope-diff",
+            "codekb-snapshot",
+            "codekb-publish",
+        ] {
+            assert_eq!(
+                parse(Face::Orchestrate, &argv(&[verb])),
+                Request::UnknownOrchestrateVerb {
+                    given: Some(verb.to_string())
+                }
+            );
+        }
+    }
+
+    /// 群 D の 2 動詞（`codekb-snapshot` / `codekb-publish`）は utility 面から書込面へ入る。
+    #[test]
+    fn the_codekb_write_verbs_route_from_the_utility_face() {
+        assert!(matches!(
+            parse(Face::Utility, &argv(&["codekb-snapshot"])),
+            Request::UtilityCodekbSnapshot(_)
+        ));
+        assert!(matches!(
+            parse(Face::Utility, &argv(&["codekb-publish"])),
+            Request::UtilityCodekbPublish(_)
+        ));
+    }
+
+    /// 群 D の compare-and-swap のフラグを運ぶ。upstream は `!flags["expect-store"]` で判定
+    /// するので、**空文字は「与えられていない」**と同じである。
+    #[test]
+    fn the_write_verbs_carry_their_compare_and_swap_flags() {
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&[
+                "codekb-publish",
+                "--repo",
+                "svc-a",
+                "--staged",
+                "record/.aidlc-codekb-stage-svc-a/",
+                "--expect-store",
+                "sha256:abc",
+                "--expect-source",
+                "git:def",
+                "--paths",
+                "src/",
+                "--json",
+            ]),
+        ));
+        assert_eq!(flags.repo(), Some("svc-a"));
+        assert_eq!(flags.staged(), Some("record/.aidlc-codekb-stage-svc-a/"));
+        assert_eq!(flags.expect_store(), Some("sha256:abc"));
+        assert_eq!(flags.expect_source(), Some("git:def"));
+        assert_eq!(flags.path_list(), vec!["src/".to_string()]);
+        assert!(flags.is_json());
+
+        let blank = expect_codekb(parse(
+            Face::Utility,
+            &argv(&[
+                "codekb-publish",
+                "--staged",
+                "",
+                "--expect-store",
+                "",
+                "--expect-source",
+                "",
+            ]),
+        ));
+        assert_eq!(blank.staged(), None, "空文字は未指定と同じ");
+        assert_eq!(blank.expect_store(), None, "空文字は未指定と同じ");
+        assert_eq!(blank.expect_source(), None, "空文字は未指定と同じ");
+    }
+
+    /// `--paths` は重複を落とす（upstream `codekbPaths` の `[...new Set(paths)]`）。
+    /// 読取側の [`CodekbArgs::path_list`] は重複を落とさないので、別の口で表す。
+    #[test]
+    fn the_write_verbs_deduplicate_the_paths_flag() {
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&["codekb-snapshot", "--paths", "src/, docs/ ,src/,"]),
+        ));
+        assert_eq!(
+            flags.unique_path_list(),
+            vec!["src/".to_string(), "docs/".to_string()],
+            "初出の順序を保って重複だけを落とす"
+        );
+        assert_eq!(
+            flags.path_list(),
+            vec!["src/".to_string(), "docs/".to_string(), "src/".to_string()],
+            "読取側の口は従来どおり重複を残す"
+        );
+    }
+
+    fn expect_codekb(request: Request) -> CodekbArgs {
+        match request {
+            Request::UtilityCodekbPath(flags)
+            | Request::UtilityCodekbScopeDiff(flags)
+            | Request::UtilityCodekbSnapshot(flags)
+            | Request::UtilityCodekbPublish(flags) => flags,
+            other => panic!("codekb へ行く: {other:?}"),
+        }
+    }
+
+    /// upstream `parseArgs` の写し — 次のトークンが `--` 始まりでなければ値、さもなくば
+    /// `"true"`。真偽フラグと値つきフラグを綴りで区別しない。
+    #[test]
+    fn codekb_flags_follow_the_upstream_parse_args_semantics() {
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&[
+                "codekb-scope-diff",
+                "--repo",
+                "svc-a",
+                "--mint",
+                "--paths",
+                "src/",
+                "--json",
+            ]),
+        ));
+        assert_eq!(flags.repo(), Some("svc-a"));
+        assert!(flags.is_mint());
+        assert_eq!(flags.paths(), Some("src/"));
+        assert!(flags.is_json());
+        assert_eq!(flags.compare(), None);
+    }
+
+    /// `--compare` は**有無それ自体が契約**で、値が無ければ upstream と同じく `"true"` を運ぶ
+    /// （その後 `existsSync("true")` が偽なので拒否される — 判断は消費側）。
+    #[test]
+    fn a_valueless_compare_carries_the_literal_true_like_upstream() {
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&["codekb-scope-diff", "--compare"]),
+        ));
+        assert_eq!(flags.compare(), Some("true"));
+
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&["codekb-scope-diff", "--compare", "incoming.md", "--json"]),
+        ));
+        assert_eq!(flags.compare(), Some("incoming.md"));
+        assert!(flags.is_json());
+    }
+
+    /// `--repo=<value>` の等号形も upstream の `parseArgs` は受ける。空値は「与えられていない」。
+    #[test]
+    fn the_equals_form_is_accepted_and_a_blank_repo_reads_as_absent() {
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&["codekb-path", "--repo=svc-a"]),
+        ));
+        assert_eq!(flags.repo(), Some("svc-a"));
+
+        let flags = expect_codekb(parse(Face::Utility, &argv(&["codekb-path", "--repo", ""])));
+        assert_eq!(flags.repo(), None, "空文字は fallback へ倒す");
+    }
+
+    /// `--paths` はコンマで割り、前後の空白を落として空片を捨てる。
+    #[test]
+    fn the_paths_flag_is_split_trimmed_and_compacted() {
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&["codekb-scope-diff", "--mint", "--paths", " src/ , "]),
+        ));
+        assert_eq!(flags.path_list(), vec!["src/".to_string()]);
+
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&["codekb-scope-diff", "--mint", "--paths", "src/,,docs/"]),
+        ));
+        assert_eq!(
+            flags.path_list(),
+            vec!["src/".to_string(), "docs/".to_string()]
+        );
+
+        let bare = expect_codekb(parse(
+            Face::Utility,
+            &argv(&["codekb-scope-diff", "--mint"]),
+        ));
+        assert!(bare.path_list().is_empty(), "`--paths` 無しは空の一覧");
+    }
+
+    /// 位置引数は落とす（upstream も `positional` へ分けて読まない）。
+    #[test]
+    fn positional_tokens_are_ignored_by_the_codekb_flag_parser() {
+        let flags = expect_codekb(parse(
+            Face::Utility,
+            &argv(&["codekb-path", "stray", "--repo", "svc-a"]),
+        ));
+        assert_eq!(flags.repo(), Some("svc-a"));
     }
 
     /// 状態面の動詞はエンジン面からは届かない（面が違えば未知動詞である）。

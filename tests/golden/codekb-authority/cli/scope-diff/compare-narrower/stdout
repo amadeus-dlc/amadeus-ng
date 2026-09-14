@@ -1,0 +1,4 @@
+NARROWER: the incoming scope no longer claims verified deep coverage for:
+  - src/auth/
+  components: auth-service
+(store intent: store-intent; incoming intent: incoming-intent)

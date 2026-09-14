@@ -1,0 +1,219 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude",
+    "files": 277,
+    "manifest": "282b17c53cb82c24755b149f28e01508ce9eaebbdbe3020034a4dd4c8bda4459"
+  },
+  "fixture_kind": "distribution-shell-subset",
+  "capture_method": "固定コミット a277af21 の dist/claude から `git archive` で写した配布シェルの部分集合 (settings.json・agents 14 本・stages 33 本・bugfix / feature の scope 定義)。配布グラフ 3 入力は tests/golden/upstream-a277af21/data/ を使い、hooks の実体は settings.json が名指す名前の空ファイルをテストが置く (doctor は存在だけを見る)。各ファイルの sha256 は同コーパスの封印済み source-manifest.sha256 と一致することを modules/app/aidlc/tests/doctor_contract.rs が実行時に確かめる。既存コーパスは変更しない。",
+  "files": [
+    {
+      "path": ".claude/agents/aidlc-architect-agent.md",
+      "sha256": "b829e279d982c36c80511f6357f97cd7af3c14356518f75a46f62f564a78de66"
+    },
+    {
+      "path": ".claude/agents/aidlc-architecture-reviewer-agent.md",
+      "sha256": "1003f1d493c1620262d99be53a2e4d025e80923785c3f1e11eb923a10a653c8c"
+    },
+    {
+      "path": ".claude/agents/aidlc-aws-platform-agent.md",
+      "sha256": "f0fbd8ae44cbe185bbf489e6fa97e6c3839eb09955139f428189cf5d95d8f938"
+    },
+    {
+      "path": ".claude/agents/aidlc-compliance-agent.md",
+      "sha256": "86362b9042771db92341ab78d23be5e2a694cd17d65fefe4c89cad0d9793a766"
+    },
+    {
+      "path": ".claude/agents/aidlc-composer-agent.md",
+      "sha256": "9277dc8910a91c5f13a55ac37f58938ca37435e0943dc18a2bbe4c6ac24ab6c8"
+    },
+    {
+      "path": ".claude/agents/aidlc-delivery-agent.md",
+      "sha256": "affd0e2d66f6235c91e2ec672c53549ab5984fcac3d8633fdbcbbd0cadae5357"
+    },
+    {
+      "path": ".claude/agents/aidlc-design-agent.md",
+      "sha256": "1d994557f33bc95f5c28cc115c119d57de5a42ddd2bb7e3a6b2bcbadc9cf8dde"
+    },
+    {
+      "path": ".claude/agents/aidlc-developer-agent.md",
+      "sha256": "609c22314c0391af9b13d8a6a76e7f832edd13a47c29f2fe70644aa2238932d5"
+    },
+    {
+      "path": ".claude/agents/aidlc-devsecops-agent.md",
+      "sha256": "ed433edaed38ef0dfeb12827610009d5687357d9f222e267534a8a6870ef4f38"
+    },
+    {
+      "path": ".claude/agents/aidlc-operations-agent.md",
+      "sha256": "ceef2c61ea8eee32c8163a70ffdf2631ebadc6ff4f20ae0a685624a7082c215a"
+    },
+    {
+      "path": ".claude/agents/aidlc-pipeline-deploy-agent.md",
+      "sha256": "820eadffdd460ed642373625b2e14478288d438af81fac18fcc06ee34c3eeb39"
+    },
+    {
+      "path": ".claude/agents/aidlc-product-agent.md",
+      "sha256": "ff249d6a88cae10d6c2cd6a739e17f4cd8f0e1cf17e1326c86a936745df8d09f"
+    },
+    {
+      "path": ".claude/agents/aidlc-product-lead-agent.md",
+      "sha256": "b536b4cf81a74eee08f386d5e87748de60b5126343d0afdffba2b7fb4a98a18f"
+    },
+    {
+      "path": ".claude/agents/aidlc-quality-agent.md",
+      "sha256": "d3c485d6f10a4c6882dec059573ae773464a2e2e2eef3549b19f82e951235978"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/build-and-test.md",
+      "sha256": "74cb6d0482dab0cb140946b2173c6c94c6fb62670de4fe7c34430ca56442681e"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/ci-pipeline.md",
+      "sha256": "7d34a3949afeefcbd3b52f645440b873397adabc6581d6cc9715f329d4448e39"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/code-generation.md",
+      "sha256": "59065ee553bda694892effa9c06c2ce5bdc7e22368858637813972bed01e4d76"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/functional-design.md",
+      "sha256": "1e1d6514b33727e92ef492c9b580ae5747b18f170b5b7e7f62805b48b0bae4cb"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/infrastructure-design.md",
+      "sha256": "bbd6fbfe5eacccf409e5f4c06b118c2e15b0bafacc472963a73737e9fab477c8"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/nfr-design.md",
+      "sha256": "ed196fbbe19d70839380a5e64a47ec3b80d2d3e5cf4d1d569802b40c0a1a401a"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/nfr-requirements.md",
+      "sha256": "b15c520b97acdf38952785ed073dd1e0c5773897d74016cd9df3d440e8183c05"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/ideation/approval-handoff.md",
+      "sha256": "5cf7d619292950cddb1b40c41c073c01fb0be7c94938c0958fa0612e4b6d6e6d"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/ideation/feasibility.md",
+      "sha256": "6321b188dc7a525bc763e15a128a4b44affe1534cfbffafbc5ccabfff5c560fd"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/ideation/intent-capture.md",
+      "sha256": "ca29cb2254dc9a609f140da3f864868100d122c63b8b0319fd84a7fd0e085ea7"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/ideation/market-research.md",
+      "sha256": "990d2b1e2f8cebf39794faf169c35eba88fdf41082293984a6cde29525a80832"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/ideation/rough-mockups.md",
+      "sha256": "a0c1826905ffcb0e8f2da917eed1f0c8d041ed09b9fefa41027868ef4f15fbfd"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/ideation/scope-definition.md",
+      "sha256": "5155dc1c41a3812dade8ac788d9d94a2b0a087fa07f95847a9f84032a005c2fd"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/ideation/team-formation.md",
+      "sha256": "50f6f5c3562a86c52134f6bfda48aea886449c3842a071eaa79f130b3b706d19"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/contract-design.md",
+      "sha256": "58dadd13787a74a1d79077bf136eb32aac0baa322d840148bed984d70948e436"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/delivery-planning.md",
+      "sha256": "c9e66d63bb8a7a1a36fd03982cf089d83b0694f4a45131e4dcb45a9762f5f090"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/domain-design.md",
+      "sha256": "fc2f06c21d9350df36ece5bd0a3d3c1681ff5e57235eaae5921cf0211e03c4ef"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/practices-discovery.md",
+      "sha256": "3b3cbbebee9c2efa118562b3e614f8bc3ab47beb61593131df09a083a66a3a4f"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/refined-mockups.md",
+      "sha256": "6faf7e5b6bf05acace38adeb9edd2a701445ee123faf3540ec7674a7feab6346"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/requirements-analysis.md",
+      "sha256": "5666747cddd595ac59f1343af3e57b2ecef2915748e1f27dbf1001188493f63b"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/reverse-engineering.md",
+      "sha256": "fa2222f2d1729a54537867d6e704d8e15576f950d138c625b73fe3ff17afdd90"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/units-generation.md",
+      "sha256": "a948f5bbb9d3aa975dd54ac57e5dfcee2233ab2b893ed3cf3fe6de5b1462d461"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/user-stories.md",
+      "sha256": "f8418cfda949178ff0a347597bdddb9d60c28644f7a31298271f0debe2769c32"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/initialization/state-init.md",
+      "sha256": "a57491ceb077cd1b15a4a266368b4d1a697b7686631848e183602f34115fb7b9"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/initialization/workspace-detection.md",
+      "sha256": "7d53523f153ccca825a8d7bfba9dd09f7f25af9fd7c74773bc08d7df29de806a"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/initialization/workspace-scaffold.md",
+      "sha256": "2c3dfccb9cd0e22131f104cb42176cb4ede89f240c8484dccca8ac32c67d51d1"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/deployment-execution.md",
+      "sha256": "7a3bb6a01c11f0bfc619e5aee2b26d75841fa7b48b2ef2107efc6cb2739f5219"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/deployment-pipeline.md",
+      "sha256": "7be448d09e43fe1c6e17b8b4a7b5fb35779c1bf9612004e16d946a51d3fa4c8d"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/environment-provisioning.md",
+      "sha256": "7af58e7209e303c0feae667384b986200f26d28ab564314570cf1934bd1d1a07"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/feedback-optimization.md",
+      "sha256": "e5e8714ed6fc38e149ac37b900b2d969882bd13c0f0f0d14b3b4e7fcbc7e4eeb"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/incident-response.md",
+      "sha256": "1f90c137b071323dc5001a66cb77095b93d514f04af192f22e32b805d11f4eb2"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/observability-setup.md",
+      "sha256": "e49a391cd079e6029cb64299f60e591a2e7f46a8311cac3066acf22e7dbfbaa1"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/performance-validation.md",
+      "sha256": "bc451010ff9bd29992c77aa5e2e0c0b5a5528eef5ab5b2f861a690c02dc21734"
+    },
+    {
+      "path": ".claude/scopes/aidlc-bugfix.md",
+      "sha256": "9e4f674a7081ee10a2eba6164a644ec9952c33ca65675bd647d846cbde5ecd8f"
+    },
+    {
+      "path": ".claude/scopes/aidlc-feature.md",
+      "sha256": "de390ee4950657195e3399429c922135cc757c227aca325815e46bf5e8861e11"
+    },
+    {
+      "path": ".claude/settings.json",
+      "sha256": "5445b6ebfe31ef2ce182a6d4ea849ddfb4524f70b50f90ba1e71a2168f082574"
+    }
+  ],
+  "data_files_from_corpus": [
+    ".claude/tools/data/harness.json",
+    ".claude/tools/data/scope-grid.json",
+    ".claude/tools/data/stage-graph.json"
+  ]
+}

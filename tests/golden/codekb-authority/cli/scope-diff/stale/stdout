@@ -1,0 +1,2 @@
+STALE: the analyzed paths have changed since the store was built (intent: store-intent):
+  - src/

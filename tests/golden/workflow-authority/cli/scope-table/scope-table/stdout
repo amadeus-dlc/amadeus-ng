@@ -1,0 +1,8 @@
+<!-- BEGIN: compiled scope grid via `bun aidlc-utility.ts scope-table` - do NOT hand-edit -->
+
+| Scope          | Depth         | TestStrategy | EXECUTE / Total |
+|----------------|---------------|--------------|-----------------|
+| alpha          | Standard      | standard     | 3 / 4           |
+| beta           | Minimal       | (default)    | 2 / 4           |
+
+<!-- END: compiled scope grid -->

@@ -42,18 +42,29 @@
 //! `pub use` ファサードが唯一の宣言 (`coding-rules/module-visibility.md`)。
 
 // 契約 (trait) と、そのポート面のエラー
+mod codekb_scope_dao;
+mod codekb_source_fingerprint_dao;
 mod definition_dao;
 mod definition_stage_dao;
+mod doctor_check_dao;
+mod doctor_observation_dao;
+mod doctor_report_dao;
+mod doctor_view;
 mod execution_dao;
+mod intent_repos_dao;
 mod jump_dao;
 mod jump_phase_dao;
 mod next_answer_dao;
 mod phase_entry_dao;
+mod project_description_dao;
 mod read_model_read_error;
 mod run_stage_dao;
 mod scope_change_dao;
 mod scope_dao;
+mod scope_grid_dao;
 mod scope_keyword_dao;
+mod scope_metadata_dao;
+mod stage_graph_dao;
 mod state_file_dao;
 mod steering_part_dao;
 mod steering_plan_dao;
@@ -61,17 +72,36 @@ mod steering_plan_dao;
 // 契約が返す DTO (同居 — オーナー裁定 2026-08-31)
 mod read_view;
 
+pub use codekb_scope_dao::CodekbScopeDao;
+pub use codekb_source_fingerprint_dao::CodekbSourceFingerprintDao;
 pub use definition_dao::DefinitionDao;
 pub use definition_stage_dao::DefinitionStageDao;
+pub use doctor_check_dao::DoctorCheckDao;
+pub use doctor_observation_dao::DoctorObservationDao;
+pub use doctor_report_dao::DoctorReportDao;
+pub use doctor_view::{
+    ConsumeView, DefinitionAssetsView, DoctorCheck, DoctorObservationView, DoctorReport,
+    DoctorSummaryView, ExecutionCursorView, GraphStageView, HeartbeatEntryView, HeartbeatView,
+    HookBindingDeclaration, HookBindingTarget, HookBindingView, HookWiringView,
+    NativeEntryPointsView, ObservationFailure, ProjectionObservationView, RecordLocationView,
+    RecordObservationView, ScopeGridEntryView, StageArtifactsView, StageFileView,
+    StateFileObservationView, StateVersionKindView, StateVersionView, StoreObservationView,
+    StoreSchemaView, TimestampView, WiredHookView, WorkspaceShellView,
+};
 pub use execution_dao::ExecutionDao;
+pub use intent_repos_dao::IntentReposDao;
 pub use jump_dao::JumpDao;
 pub use jump_phase_dao::JumpPhaseDao;
 pub use next_answer_dao::NextAnswerDao;
 pub use phase_entry_dao::PhaseEntryDao;
+pub use project_description_dao::ProjectDescriptionDao;
 pub use run_stage_dao::RunStageDao;
 pub use scope_change_dao::ScopeChangeDao;
 pub use scope_dao::ScopeDao;
+pub use scope_grid_dao::ScopeGridDao;
 pub use scope_keyword_dao::ScopeKeywordDao;
+pub use scope_metadata_dao::ScopeMetadataDao;
+pub use stage_graph_dao::StageGraphDao;
 pub use state_file_dao::StateFileDao;
 pub use steering_part_dao::SteeringPartDao;
 pub use steering_plan_dao::SteeringPlanDao;
@@ -79,9 +109,10 @@ pub use steering_plan_dao::SteeringPlanDao;
 pub use read_model_read_error::ReadModelReadError;
 
 pub use read_view::{
-    DefinitionStageView, DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView,
-    NextAnswerView, PhaseEntryView, RunStageView, ScopeChangeView, ScopeView, SteeringPartView,
-    SteeringPlanView,
+    CodekbScopeDiffView, DefinitionStageView, DefinitionSummaryView, ExecutionView, JumpPhaseView,
+    JumpView, NextAnswerView, PhaseEntryView, ProjectDescriptionView, ReScopeParseView,
+    ReScopeView, RunStageView, ScopeActionsView, ScopeCatalogRowView, ScopeChangeView,
+    ScopeMetadataView, ScopeView, StageGraphEntryView, SteeringPartView, SteeringPlanView,
 };
 
 mod report_result_dao;

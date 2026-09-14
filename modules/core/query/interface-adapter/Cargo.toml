@@ -27,6 +27,9 @@ serde_json = { workspace = true }
 # ポート面には現れない (`coding-rules/gateway-taxonomy.md` §3 の DAO 項) — 格納形式を
 # 替えても差し替わるのはこのクレートだけである。
 rusqlite = { workspace = true }
+# 自己診断の観測 (`DoctorObservationDaoImpl`) が heartbeat と監査行の ISO 8601 を本家 `Date.parse` と
+# 同じ意味でミリ秒へ解釈するため。観測の材料であり、ドメイン型ではない。
+chrono = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

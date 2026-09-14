@@ -1,0 +1,34 @@
+{
+  "format": 1,
+  "note": "U4 (selfhost-stage1) の配布フック接続定義。配布 .claude/settings.json が登録する 16 本を、この build のフック面 (aidlc hook <name>) へ向けるものと、配布 TypeScript のまま残すものに分類する。live の .claude/settings.json をこの定義どおりに書き換えるかは切替工程の裁定事項であり、この定義の存在は切替の完了を意味しない。",
+  "binary": "target/release/aidlc",
+  "command_template": "\"$CLAUDE_PROJECT_DIR/target/release/aidlc\" hook {hook}",
+  "native_hooks": [
+    "record-human-turn",
+    "state-transition-guard",
+    "write-audit-log",
+    "continue-workflow",
+    "session-start",
+    "session-end",
+    "log-subagent",
+    "validate-state",
+    "sync-workflow-state",
+    "rebuild-stage-graph",
+    "review-freeze",
+    "reviewer-scope",
+    "deliver-stage-rules",
+    "fold-usage"
+  ],
+  "distributed_hooks": [
+    {
+      "name": "plan-approval-guard",
+      "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-plan-approval-guard.ts\"",
+      "reason": "この build のフック面 (NATIVE_HOOKS 14 本) に無い。承認保護を外さないため配布 TypeScript の登録を残す。native 名としては受け付けない。"
+    },
+    {
+      "name": "run-sensors",
+      "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-run-sensors.ts\"",
+      "reason": "センサーは本 intent のスコープ外 (project.md Forbidden)。この build のフック面に無く、native 名としては受け付けない。"
+    }
+  ]
+}

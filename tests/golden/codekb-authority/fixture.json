@@ -1,0 +1,244 @@
+{
+  "note": "群 B/C (aidlc-utility {project-description,codekb-path,codekb-scope-diff}) の CLI ゴールデンの入力仕様。scenario は使い捨てワークスペースの宣言で、採取スクリプト (scripts/goldens/capture-codekb-authority.ts) と Rust テスト (modules/app/aidlc/tests/codekb_authority_golden.rs) が同じ宣言から同じツリーを建てる。git 指紋は内容アドレスであり作業ディレクトリの絶対パスに依存しないので、両者が同じ内容を書けば同じ値になる (実測: 別ワークスペースで同一値)。",
+  "workspace_name_note": "codekbRepoName は記録された repos が無ければ basename(projectDir) に落ちるので、ワークスペースのディレクトリ名は出力に現れる。scenario ごとに固定する。",
+  "fingerprints": {
+    "src-main-only": "3c55f6af3e88b8f5f11eeb1eafeeb84095e998db",
+    "svc-a-src": "c189ad1e9273cee29fc94e7eafa4b3e2f08c31a1",
+    "not-the-current-tree": "1111111111111111111111111111111111111111"
+  },
+  "scenarios": {
+    "lone-git": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "README.md": "# readme\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: legacy preview line\n"
+      }
+    },
+    "lone-git-current": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\n## Scope of Analysis\n\n```yaml\nscope_version: 1\nkind: partial\nintent: store-intent\nfingerprint: 3c55f6af3e88b8f5f11eeb1eafeeb84095e998db\nanalyzed:\n  paths:\n    - src/\n  components:\n    - alpha\nshallow:\n  paths:\n    - README.md\n```\n"
+      }
+    },
+    "lone-git-stale": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 1\nkind: partial\nintent: store-intent\nfingerprint: 1111111111111111111111111111111111111111\nanalyzed:\n  paths:\n    - src/\n```\n"
+      }
+    },
+    "lone-git-unverified-no-fingerprint": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 1\nkind: partial\nintent: store-intent\nfingerprint: unknown\nanalyzed:\n  paths:\n    - src/\n```\n"
+      }
+    },
+    "lone-git-unverified-uncomputable": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 1\nkind: partial\nintent: store-intent\nfingerprint: 1111111111111111111111111111111111111111\nanalyzed:\n  paths:\n    - no-such-dir/\n```\n"
+      }
+    },
+    "store-scope-block-absent": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\nScanned on some date. No scope block at all.\n"
+      }
+    },
+    "store-scope-block-future-version": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 2\nkind: partial\nintent: store-intent\nanalyzed:\n  paths:\n    - src/\n```\n"
+      }
+    },
+    "store-scope-block-full-without-root": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 1\nkind: full\nintent: store-intent\nanalyzed:\n  paths:\n    - src/\n```\n"
+      }
+    },
+    "store-scope-block-partial-without-paths": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 1\nkind: partial\nintent: store-intent\nanalyzed:\n  components:\n    - alpha\n```\n"
+      }
+    },
+    "store-scope-block-missing-kind": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 1\nintent: store-intent\nanalyzed:\n  paths:\n    - src/\n```\n"
+      }
+    },
+    "compare-partial-store": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/payments/a.rs": "a\n",
+        "src/auth/b.rs": "b\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 1\nkind: partial\nintent: store-intent\nfingerprint: aaaa\nanalyzed:\n  paths:\n    - src/payments/\n    - src/auth/\n  components:\n    - payment-gateway\n    - auth-service\n```\n",
+        "incoming-covers.md": "```yaml\nscope_version: 1\nkind: partial\nintent: incoming-intent\nfingerprint: bbbb\nanalyzed:\n  paths:\n    - src/\n  components:\n    - payment-gateway\n    - auth-service\n```\n",
+        "incoming-narrower.md": "```yaml\nscope_version: 1\nkind: partial\nintent: incoming-intent\nfingerprint: bbbb\nanalyzed:\n  paths:\n    - src/payments/\n  components:\n    - payment-gateway\n```\n",
+        "incoming-full.md": "```yaml\nscope_version: 1\nkind: full\nintent: incoming-intent\nfingerprint: bbbb\nanalyzed:\n  paths:\n    - ./\n```\n",
+        "incoming-malformed.md": "no fenced scope block here\n"
+      }
+    },
+    "compare-full-store": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["."],
+      "files": {
+        "src/payments/a.rs": "a\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "```yaml\nscope_version: 1\nkind: full\nintent: store-intent\nfingerprint: aaaa\nanalyzed:\n  paths:\n    - ./\n  components:\n    - everything\n```\n",
+        "incoming-narrower.md": "```yaml\nscope_version: 1\nkind: partial\nintent: incoming-intent\nfingerprint: bbbb\nanalyzed:\n  paths:\n    - src/payments/\n```\n"
+      }
+    },
+    "non-git": {
+      "workspace_name": "demo-repo",
+      "git_repos": [],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n"
+      }
+    },
+    "description-sidecar": {
+      "workspace_name": "demo-repo",
+      "git_repos": [],
+      "files": {
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: single-line preview\n- **Project Description Source**: project-description.json\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/project-description.json": "\"日本語の依頼原文\\nwith a second line\""
+      }
+    },
+    "description-sidecar-missing": {
+      "workspace_name": "demo-repo",
+      "git_repos": [],
+      "files": {
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: single-line preview\n- **Project Description Source**: project-description.json\n"
+      }
+    },
+    "description-unsupported-source": {
+      "workspace_name": "demo-repo",
+      "git_repos": [],
+      "files": {
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n- **Project Description Source**: something-else.json\n"
+      }
+    },
+    "description-sidecar-not-a-string": {
+      "workspace_name": "demo-repo",
+      "git_repos": [],
+      "files": {
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n- **Project Description Source**: project-description.json\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/project-description.json": "{\"not\":\"a string\"}"
+      }
+    },
+    "description-no-project-field": {
+      "workspace_name": "demo-repo",
+      "git_repos": [],
+      "files": {
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Scope**: bugfix\n"
+      }
+    },
+    "registry-one-repo": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["svc-a"],
+      "files": {
+        "svc-a/src/a.rs": "a\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/intents/intents.json": "[{\"uuid\":\"11111111-2222-4333-8444-555555555555\",\"slug\":\"demo\",\"dirName\":\"260101-demo-aaaaaaaa\",\"repos\":[\"svc-a\"],\"status\":\"active\"}]\n"
+      }
+    },
+    "registry-two-repos": {
+      "workspace_name": "demo-repo",
+      "git_repos": ["svc-a"],
+      "files": {
+        "svc-a/src/a.rs": "a\n",
+        "svc-b/src/b.rs": "b\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/intents/intents.json": "[{\"uuid\":\"11111111-2222-4333-8444-555555555555\",\"slug\":\"demo\",\"dirName\":\"260101-demo-aaaaaaaa\",\"repos\":[\"svc-a\",\"svc-b\"],\"status\":\"active\"}]\n"
+      }
+    }
+  },
+  "cases": [
+    { "id": "codekb-path/plain", "scenario": "lone-git", "argv": ["codekb-path"] },
+    { "id": "codekb-path/json", "scenario": "lone-git", "argv": ["codekb-path", "--json"] },
+    { "id": "codekb-path/explicit-repo", "scenario": "lone-git", "argv": ["codekb-path", "--repo", "myrepo"] },
+    { "id": "codekb-path/explicit-repo-json", "scenario": "lone-git", "argv": ["codekb-path", "--repo", "myrepo", "--json"] },
+    { "id": "codekb-path/blank-repo-falls-back", "scenario": "lone-git", "argv": ["codekb-path", "--repo", "", "--json"] },
+    { "id": "codekb-path/registry-one-repo", "scenario": "registry-one-repo", "argv": ["codekb-path", "--json"] },
+    { "id": "codekb-path/registry-two-repos", "scenario": "registry-two-repos", "argv": ["codekb-path", "--json"] },
+
+    { "id": "project-description/legacy-fallback", "scenario": "lone-git", "argv": ["project-description"] },
+    { "id": "project-description/sidecar", "scenario": "description-sidecar", "argv": ["project-description"] },
+    { "id": "project-description/sidecar-missing", "scenario": "description-sidecar-missing", "argv": ["project-description"] },
+    { "id": "project-description/unsupported-source", "scenario": "description-unsupported-source", "argv": ["project-description"] },
+    { "id": "project-description/sidecar-not-a-string", "scenario": "description-sidecar-not-a-string", "argv": ["project-description"] },
+    { "id": "project-description/no-project-field", "scenario": "description-no-project-field", "argv": ["project-description"] },
+
+    { "id": "scope-diff/no-store", "scenario": "lone-git", "argv": ["codekb-scope-diff"] },
+    { "id": "scope-diff/no-store-json", "scenario": "lone-git", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/current", "scenario": "lone-git-current", "argv": ["codekb-scope-diff"] },
+    { "id": "scope-diff/current-json", "scenario": "lone-git-current", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/stale", "scenario": "lone-git-stale", "argv": ["codekb-scope-diff"] },
+    { "id": "scope-diff/stale-json", "scenario": "lone-git-stale", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/unverified-no-fingerprint", "scenario": "lone-git-unverified-no-fingerprint", "argv": ["codekb-scope-diff"] },
+    { "id": "scope-diff/unverified-no-fingerprint-json", "scenario": "lone-git-unverified-no-fingerprint", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/unverified-uncomputable", "scenario": "lone-git-unverified-uncomputable", "argv": ["codekb-scope-diff"] },
+    { "id": "scope-diff/unverified-uncomputable-json", "scenario": "lone-git-unverified-uncomputable", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/unknown-scope-absent", "scenario": "store-scope-block-absent", "argv": ["codekb-scope-diff"] },
+    { "id": "scope-diff/unknown-scope-absent-json", "scenario": "store-scope-block-absent", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/unknown-scope-future-version", "scenario": "store-scope-block-future-version", "argv": ["codekb-scope-diff"] },
+    { "id": "scope-diff/unknown-scope-future-version-json", "scenario": "store-scope-block-future-version", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/unknown-scope-full-without-root-json", "scenario": "store-scope-block-full-without-root", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/unknown-scope-partial-without-paths-json", "scenario": "store-scope-block-partial-without-paths", "argv": ["codekb-scope-diff", "--json"] },
+    { "id": "scope-diff/unknown-scope-missing-kind-json", "scenario": "store-scope-block-missing-kind", "argv": ["codekb-scope-diff", "--json"] },
+
+    { "id": "scope-diff/mint", "scenario": "lone-git", "argv": ["codekb-scope-diff", "--mint", "--paths", "src/"] },
+    { "id": "scope-diff/mint-json", "scenario": "lone-git", "argv": ["codekb-scope-diff", "--mint", "--paths", "src/", "--json"] },
+    { "id": "scope-diff/mint-trims-and-drops-empty", "scenario": "lone-git", "argv": ["codekb-scope-diff", "--mint", "--paths", " src/ , "] },
+    { "id": "scope-diff/mint-unmatched-pathspec", "scenario": "lone-git", "argv": ["codekb-scope-diff", "--mint", "--paths", "no-such-dir/"] },
+    { "id": "scope-diff/mint-every-path-excluded", "scenario": "lone-git", "argv": ["codekb-scope-diff", "--mint", "--paths", "aidlc/", "--json"] },
+    { "id": "scope-diff/mint-non-git", "scenario": "non-git", "argv": ["codekb-scope-diff", "--mint", "--paths", "src/", "--json"] },
+    { "id": "scope-diff/mint-without-paths", "scenario": "lone-git", "argv": ["codekb-scope-diff", "--mint"] },
+    { "id": "scope-diff/mint-sibling-repo-json", "scenario": "registry-one-repo", "argv": ["codekb-scope-diff", "--repo", "svc-a", "--mint", "--paths", "src/", "--json"] },
+
+    { "id": "scope-diff/compare-covers", "scenario": "compare-partial-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-covers.md"] },
+    { "id": "scope-diff/compare-covers-json", "scenario": "compare-partial-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-covers.md", "--json"] },
+    { "id": "scope-diff/compare-narrower", "scenario": "compare-partial-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-narrower.md"] },
+    { "id": "scope-diff/compare-narrower-json", "scenario": "compare-partial-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-narrower.md", "--json"] },
+    { "id": "scope-diff/compare-incoming-full-covers-json", "scenario": "compare-partial-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-full.md", "--json"] },
+    { "id": "scope-diff/compare-incoming-malformed", "scenario": "compare-partial-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-malformed.md"] },
+    { "id": "scope-diff/compare-incoming-malformed-json", "scenario": "compare-partial-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-malformed.md", "--json"] },
+    { "id": "scope-diff/compare-full-store-downgrade", "scenario": "compare-full-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-narrower.md"] },
+    { "id": "scope-diff/compare-full-store-downgrade-json", "scenario": "compare-full-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/incoming-narrower.md", "--json"] },
+    { "id": "scope-diff/compare-missing-file", "scenario": "compare-partial-store", "argv": ["codekb-scope-diff", "--compare", "{workspace}/absent.md"] },
+    { "id": "scope-diff/compare-no-store-short-circuits", "scenario": "lone-git", "argv": ["codekb-scope-diff", "--compare", "{workspace}/absent.md"] }
+  ]
+}

@@ -1,0 +1,478 @@
+{
+  "note": "群 D (aidlc-utility codekb-snapshot / codekb-publish) の CLI ゴールデンの入力仕様。scenario は使い捨てワークスペースの宣言で、採取スクリプト (scripts/goldens/capture-codekb-write.ts) と Rust テスト (modules/app/aidlc/tests/codekb_write_golden.rs) が同じ宣言から同じツリーを建てる。git 指紋 (git write-tree) も木のハッシュ (sha256) も内容アドレスなので、両者が同じ内容を書けば同じ値になる。",
+  "snapshot_first_note": "publish は compare-and-swap の合言葉を必要とするので、snapshot_paths を持つケースは 先に `codekb-snapshot --paths <snapshot_paths> --json` を同じワークスペースで走らせ、その store_generation / source_fingerprint を argv の {store_generation} / {source_fingerprint} へ差し込む。採取側と Rust 側が同じ手順を踏むので、合言葉を定数で焼き込まずに済む。",
+  "determinism_note": "git リポジトリを建てたら repo-local に core.excludesFile=/dev/null と core.autocrlf=false を据える。開発者の global gitignore や改行変換が `git add -A` の結果を変えると指紋が環境依存になるためで、採取スクリプトと Rust テストの双方が同じ 2 設定を据える。",
+  "artifact_files": [
+    "api-documentation.md",
+    "architecture.md",
+    "business-overview.md",
+    "code-quality-assessment.md",
+    "code-structure.md",
+    "component-inventory.md",
+    "dependencies.md",
+    "reverse-engineering-timestamp.md",
+    "technology-stack.md"
+  ],
+  "fingerprints": {
+    "src-main-only": "3c55f6af3e88b8f5f11eeb1eafeeb84095e998db",
+    "not-the-current-tree": "1111111111111111111111111111111111111111"
+  },
+  "scenarios": {
+    "no-store": {
+      "workspace_name": "demo-repo",
+      "git_repos": [
+        "."
+      ],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n"
+      }
+    },
+    "non-git": {
+      "workspace_name": "demo-repo",
+      "git_repos": [],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n"
+      }
+    },
+    "with-store": {
+      "workspace_name": "demo-repo",
+      "git_repos": [
+        "."
+      ],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/api-documentation.md": "# api-documentation.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/architecture.md": "# architecture.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/business-overview.md": "# business-overview.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/code-quality-assessment.md": "# code-quality-assessment.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/code-structure.md": "# code-structure.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/component-inventory.md": "# component-inventory.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/dependencies.md": "# dependencies.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\n## Scope of Analysis\n\n```yaml\nscope_version: 1\nkind: partial\nintent: demo-intent\nfingerprint: 3c55f6af3e88b8f5f11eeb1eafeeb84095e998db\nanalyzed:\n  paths:\n    - src/\n  components:\n    - alpha\n```\n",
+        "aidlc/spaces/default/codekb/demo-repo/technology-stack.md": "# technology-stack.md\nold\n"
+      }
+    },
+    "staged": {
+      "workspace_name": "demo-repo",
+      "git_repos": [
+        "."
+      ],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "stage/api-documentation.md": "# api-documentation.md\nnew\n",
+        "stage/architecture.md": "# architecture.md\nnew\n",
+        "stage/business-overview.md": "# business-overview.md\nnew\n",
+        "stage/code-quality-assessment.md": "# code-quality-assessment.md\nnew\n",
+        "stage/code-structure.md": "# code-structure.md\nnew\n",
+        "stage/component-inventory.md": "# component-inventory.md\nnew\n",
+        "stage/dependencies.md": "# dependencies.md\nnew\n",
+        "stage/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\n## Scope of Analysis\n\n```yaml\nscope_version: 1\nkind: partial\nintent: demo-intent\nfingerprint: 3c55f6af3e88b8f5f11eeb1eafeeb84095e998db\nanalyzed:\n  paths:\n    - src/\n  components:\n    - alpha\n```\n",
+        "stage/technology-stack.md": "# technology-stack.md\nnew\n"
+      }
+    },
+    "with-store-staged": {
+      "workspace_name": "demo-repo",
+      "git_repos": [
+        "."
+      ],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "aidlc/spaces/default/codekb/demo-repo/api-documentation.md": "# api-documentation.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/architecture.md": "# architecture.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/business-overview.md": "# business-overview.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/code-quality-assessment.md": "# code-quality-assessment.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/code-structure.md": "# code-structure.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/component-inventory.md": "# component-inventory.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/dependencies.md": "# dependencies.md\nold\n",
+        "aidlc/spaces/default/codekb/demo-repo/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\n## Scope of Analysis\n\n```yaml\nscope_version: 1\nkind: partial\nintent: demo-intent\nfingerprint: 3c55f6af3e88b8f5f11eeb1eafeeb84095e998db\nanalyzed:\n  paths:\n    - src/\n  components:\n    - alpha\n```\n",
+        "aidlc/spaces/default/codekb/demo-repo/technology-stack.md": "# technology-stack.md\nold\n",
+        "stage/api-documentation.md": "# api-documentation.md\nnew\n",
+        "stage/architecture.md": "# architecture.md\nnew\n",
+        "stage/business-overview.md": "# business-overview.md\nnew\n",
+        "stage/code-quality-assessment.md": "# code-quality-assessment.md\nnew\n",
+        "stage/code-structure.md": "# code-structure.md\nnew\n",
+        "stage/component-inventory.md": "# component-inventory.md\nnew\n",
+        "stage/dependencies.md": "# dependencies.md\nnew\n",
+        "stage/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\n## Scope of Analysis\n\n```yaml\nscope_version: 1\nkind: partial\nintent: demo-intent\nfingerprint: 3c55f6af3e88b8f5f11eeb1eafeeb84095e998db\nanalyzed:\n  paths:\n    - src/\n  components:\n    - alpha\n```\n",
+        "stage/technology-stack.md": "# technology-stack.md\nnew\n"
+      }
+    },
+    "staged-stale": {
+      "workspace_name": "demo-repo",
+      "git_repos": [
+        "."
+      ],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "stage/api-documentation.md": "# api-documentation.md\nnew\n",
+        "stage/architecture.md": "# architecture.md\nnew\n",
+        "stage/business-overview.md": "# business-overview.md\nnew\n",
+        "stage/code-quality-assessment.md": "# code-quality-assessment.md\nnew\n",
+        "stage/code-structure.md": "# code-structure.md\nnew\n",
+        "stage/component-inventory.md": "# component-inventory.md\nnew\n",
+        "stage/dependencies.md": "# dependencies.md\nnew\n",
+        "stage/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\n## Scope of Analysis\n\n```yaml\nscope_version: 1\nkind: partial\nintent: demo-intent\nfingerprint: 1111111111111111111111111111111111111111\nanalyzed:\n  paths:\n    - src/\n  components:\n    - alpha\n```\n",
+        "stage/technology-stack.md": "# technology-stack.md\nnew\n"
+      }
+    },
+    "staged-incomplete": {
+      "workspace_name": "demo-repo",
+      "git_repos": [
+        "."
+      ],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "stage/api-documentation.md": "# api-documentation.md\nnew\n",
+        "stage/architecture.md": "# architecture.md\nnew\n",
+        "stage/business-overview.md": "# business-overview.md\nnew\n",
+        "stage/code-quality-assessment.md": "# code-quality-assessment.md\nnew\n",
+        "stage/code-structure.md": "# code-structure.md\nnew\n",
+        "stage/component-inventory.md": "# component-inventory.md\nnew\n",
+        "stage/dependencies.md": "# dependencies.md\nnew\n",
+        "stage/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\n## Scope of Analysis\n\n```yaml\nscope_version: 1\nkind: partial\nintent: demo-intent\nfingerprint: 3c55f6af3e88b8f5f11eeb1eafeeb84095e998db\nanalyzed:\n  paths:\n    - src/\n  components:\n    - alpha\n```\n"
+      }
+    },
+    "staged-symlink": {
+      "workspace_name": "demo-repo",
+      "git_repos": [
+        "."
+      ],
+      "files": {
+        "src/main.rs": "fn main() {}\n",
+        "aidlc/spaces/default/intents/260101-demo-aaaaaaaa/aidlc-state.md": "# AI-DLC State\n- **Project**: p\n",
+        "stage/api-documentation.md": "# api-documentation.md\nnew\n",
+        "stage/architecture.md": "# architecture.md\nnew\n",
+        "stage/business-overview.md": "# business-overview.md\nnew\n",
+        "stage/code-quality-assessment.md": "# code-quality-assessment.md\nnew\n",
+        "stage/code-structure.md": "# code-structure.md\nnew\n",
+        "stage/component-inventory.md": "# component-inventory.md\nnew\n",
+        "stage/dependencies.md": "# dependencies.md\nnew\n",
+        "stage/reverse-engineering-timestamp.md": "# Reverse Engineering Timestamp\n\n## Scope of Analysis\n\n```yaml\nscope_version: 1\nkind: partial\nintent: demo-intent\nfingerprint: 3c55f6af3e88b8f5f11eeb1eafeeb84095e998db\nanalyzed:\n  paths:\n    - src/\n  components:\n    - alpha\n```\n",
+        "stage/technology-stack.md": "# technology-stack.md\nnew\n"
+      },
+      "symlinks": {
+        "stage/api-documentation.md.link": "../src/main.rs"
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "snapshot/no-store-plain",
+      "scenario": "no-store",
+      "argv": [
+        "codekb-snapshot",
+        "--paths",
+        "src/"
+      ]
+    },
+    {
+      "id": "snapshot/no-store-json",
+      "scenario": "no-store",
+      "argv": [
+        "codekb-snapshot",
+        "--paths",
+        "src/",
+        "--json"
+      ]
+    },
+    {
+      "id": "snapshot/with-store-plain",
+      "scenario": "with-store",
+      "argv": [
+        "codekb-snapshot",
+        "--paths",
+        "src/"
+      ]
+    },
+    {
+      "id": "snapshot/with-store-json",
+      "scenario": "with-store",
+      "argv": [
+        "codekb-snapshot",
+        "--paths",
+        "src/",
+        "--json"
+      ]
+    },
+    {
+      "id": "snapshot/root-paths-json",
+      "scenario": "no-store",
+      "argv": [
+        "codekb-snapshot",
+        "--paths",
+        "./",
+        "--json"
+      ]
+    },
+    {
+      "id": "snapshot/non-git-json",
+      "scenario": "non-git",
+      "argv": [
+        "codekb-snapshot",
+        "--paths",
+        "src/",
+        "--json"
+      ]
+    },
+    {
+      "id": "snapshot/deduplicates-paths",
+      "scenario": "no-store",
+      "argv": [
+        "codekb-snapshot",
+        "--paths",
+        "src/, src/ ,",
+        "--json"
+      ]
+    },
+    {
+      "id": "snapshot/missing-paths",
+      "scenario": "no-store",
+      "argv": [
+        "codekb-snapshot"
+      ]
+    },
+    {
+      "id": "snapshot/unmatched-path",
+      "scenario": "no-store",
+      "argv": [
+        "codekb-snapshot",
+        "--paths",
+        "no-such/"
+      ]
+    },
+    {
+      "id": "snapshot/invalid-repo",
+      "scenario": "no-store",
+      "argv": [
+        "codekb-snapshot",
+        "--repo",
+        "a/b",
+        "--paths",
+        "src/"
+      ]
+    },
+    {
+      "id": "publish/happy-plain",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/happy-json",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}",
+        "--json"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/over-existing-store",
+      "scenario": "with-store-staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/store-changed",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "sha256:stale",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/source-changed",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "git:stale"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/candidate-stale",
+      "scenario": "staged-stale",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/missing-expect",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/"
+      ]
+    },
+    {
+      "id": "publish/missing-paths",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/missing-staged",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/staged-absent-dir",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "no-such-stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/staged-incomplete",
+      "scenario": "staged-incomplete",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/staged-extra-symlink",
+      "scenario": "staged-symlink",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/staged-outside",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "/tmp",
+        "--paths",
+        "src/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    },
+    {
+      "id": "publish/scope-not-covered",
+      "scenario": "staged",
+      "argv": [
+        "codekb-publish",
+        "--staged",
+        "stage",
+        "--paths",
+        "docs/",
+        "--expect-store",
+        "{store_generation}",
+        "--expect-source",
+        "{source_fingerprint}"
+      ],
+      "snapshot_paths": "src/"
+    }
+  ]
+}

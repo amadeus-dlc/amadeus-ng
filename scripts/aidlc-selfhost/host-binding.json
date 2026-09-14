@@ -1,0 +1,123 @@
+{
+  "format": 1,
+  "note": "U4 (selfhost-stage1) のホスト識別と切替準備 (契約 C8)。ホスト = 検証済みの安定版、ターゲット = 開発版である。この資料は準備の形を固定するものであって、実地スモーク・自己診断・CI 全ジョブ成功・切替の達成記録ではない。",
+  "roles": {
+    "host": "作業を進める実体。切替条件 3 つを満たした版に安定タグを付け、その実体をホストとする。",
+    "target": "開発中の実体。検証前の版であり、安定版とは呼ばない。"
+  },
+  "tag_creation": "deferred-to-switch-stage",
+  "binding_selected": "distributed-typescript",
+  "binding_selected_why": "現在の .claude/settings.json は配布 TypeScript の 16 本を登録している。native 面への切替は scripts/aidlc-selfhost/hook-binding.json の形で用意済みだが、まだ適用していない。",
+  "host": {
+    "role": "host",
+    "status": "unverified",
+    "tag": null,
+    "commit": null,
+    "binary": null,
+    "sha256": null,
+    "why": "安定タグがまだ無い。切替条件 3 つを満たした版を切替工程でタグ付けして、はじめてホストになる。ここでタグは作らない。"
+  },
+  "target": {
+    "role": "target",
+    "status": "development",
+    "tag": null,
+    "commit": null,
+    "binary": "target/release/aidlc",
+    "sha256": null,
+    "build_command": "cargo build --release -p aidlc",
+    "commit_command": "git rev-parse HEAD",
+    "sha256_command": "shasum -a 256 target/release/aidlc",
+    "why": "コミットと指紋は実行時に採る。ここへ固定値を書くと、別の版を同じ実体と取り違える。"
+  },
+  "identity_rule": "タグ・コミット・バイナリ実体の 3 つが揃って 1 つの版を指す。3 つのうち 1 つでも欠けている版は unverified であり、安定版として参照しない。",
+  "switch_preconditions": [
+    {
+      "id": "live_bugfix_smoke_pass",
+      "status": "unmet",
+      "evidence": null,
+      "how": "本リポジトリで小さな bugfix 相当の intent を 1 本、target/release/aidlc を作業進行の実体として、開始 → 質問 → 人間のゲート承認 → 完了まで通す。実 Claude Code・実フック・人の応答を使う。runtime::run の繰返し、試験装置による人間応答の注入、承認保護の無効化はこの証拠にならない。"
+    },
+    {
+      "id": "doctor_pass",
+      "status": "unmet",
+      "evidence": null,
+      "how": "同じ実体で target/release/aidlc --doctor を本リポジトリで実行し、終了コード 0 と失敗 0 を採る。"
+    },
+    {
+      "id": "all_ci_jobs_pass",
+      "status": "unmet",
+      "evidence": null,
+      "how": "対象コミットの CI 全ジョブの成功を確認する。cargo audit も今回の成功条件に含める。非適用になった検査は成功へ書き換えず、適用理由を記録する。"
+    }
+  ],
+  "switch_procedure": [
+    {
+      "step": 1,
+      "action": "ターゲットを作り、識別を採る。",
+      "command": "cargo build --release -p aidlc && git rev-parse HEAD && shasum -a 256 target/release/aidlc",
+      "undo": "成果物を消すだけで戻る (rm -rf target/release/aidlc)。識別の記録は残してよい。"
+    },
+    {
+      "step": 2,
+      "action": "切替条件 3 つを満たし、証拠を intent 記録へ残す。",
+      "command": "",
+      "undo": "証拠が揃わないうちは次へ進まない。進めた場合は step 3 以降の undo を順に実行する。"
+    },
+    {
+      "step": 3,
+      "action": "検証済みコミットに安定タグを付け、この資料の host を verified へ更新する。",
+      "command": "git tag <stable-tag> <verified-commit>",
+      "undo": "git tag -d <stable-tag> し、host を unverified へ戻す。"
+    },
+    {
+      "step": 4,
+      "action": ".claude/settings.json のフック登録を scripts/aidlc-selfhost/hook-binding.json の native 側へ向ける。配布のまま残す 2 本は登録を変えない。",
+      "command": "",
+      "undo": "git checkout -- .claude/settings.json で配布 TypeScript の登録へ戻す。"
+    },
+    {
+      "step": 5,
+      "action": "Claude Code を完全に再起動し、target/release/aidlc --doctor で接続を確かめる。",
+      "command": "target/release/aidlc --doctor",
+      "undo": "step 4 の undo を実行してから再起動し、同じ確認をやり直す。"
+    },
+    {
+      "step": 6,
+      "action": "binding_selected を native へ、host をタグ・コミット・指紋つきで更新する。",
+      "command": "",
+      "undo": "binding_selected を distributed-typescript へ戻し、host を unverified へ戻す。"
+    }
+  ],
+  "rollback": {
+    "restores": "host",
+    "available": false,
+    "when_unavailable": "ホストが未検証のあいだは戻り先が無い。配布 TypeScript の登録 (git checkout -- .claude/settings.json) が唯一の既知の動作状態であり、これはホストへの復帰ではなく切替前の状態への復帰である。",
+    "steps": [
+      {
+        "step": 1,
+        "action": "フック登録を配布 TypeScript へ戻す。",
+        "command": "git checkout -- .claude/settings.json",
+        "undo": "切替手順 step 4 をやり直す。"
+      },
+      {
+        "step": 2,
+        "action": "検証済みホストのコミットを取り出し、その実体を作る。",
+        "command": "git checkout <host-tag> && cargo build --release -p aidlc",
+        "undo": "開発版のブランチへ戻して作り直す。"
+      },
+      {
+        "step": 3,
+        "action": "戻した実体の指紋がホストの記録と一致することを確かめる。",
+        "command": "shasum -a 256 target/release/aidlc",
+        "undo": "一致しない場合は復帰を完了とせず、人間の裁定を求める。"
+      },
+      {
+        "step": 4,
+        "action": "Claude Code を完全に再起動し、自己診断で復帰を確かめる。",
+        "command": "target/release/aidlc --doctor",
+        "undo": "失敗した場合は復帰を完了とせず、人間の裁定を求める。"
+      }
+    ]
+  },
+  "not_proof_of_completion": "この資料が揃っていることは準備であって達成ではない。fixture テストの成功、接続定義の存在、手順の記述のいずれも、実地スモーク (FR7)・自己診断・CI 全ジョブ成功・切替 (FR8) の成功証拠にならない。達成は切替工程で別々に記録する。"
+}

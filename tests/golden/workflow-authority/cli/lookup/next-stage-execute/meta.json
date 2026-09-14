@@ -1,0 +1,11 @@
+{
+  "upstream_commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+  "tool": "aidlc-state.ts",
+  "argv": [
+    "lookup",
+    "next-stage",
+    "state-init",
+    "alpha"
+  ],
+  "exit_code": 0
+}

@@ -213,3 +213,22 @@ pub use jump_use_case::JumpUseCase;
 
 mod jump_error;
 pub use jump_error::JumpError;
+
+// 自己診断 (`aidlc --doctor`) の集約 `WorkspaceDoctor` の Repository ポート。
+pub use port::WorkspaceDoctorRepository;
+
+mod diagnose_workspace_use_case;
+mod workspace_doctor_command_error;
+pub use diagnose_workspace_use_case::DiagnoseWorkspaceUseCase;
+pub use workspace_doctor_command_error::WorkspaceDoctorCommandError;
+
+// codekb (リポジトリごとの durable な知識ストア) — 群 D の書込 2 動詞。
+mod publish_codekb_error;
+mod publish_codekb_use_case;
+mod snapshot_codekb_error;
+mod snapshot_codekb_use_case;
+pub use port::CodekbRepository;
+pub use publish_codekb_error::PublishCodekbError;
+pub use publish_codekb_use_case::PublishCodekbUseCase;
+pub use snapshot_codekb_error::SnapshotCodekbError;
+pub use snapshot_codekb_use_case::SnapshotCodekbUseCase;

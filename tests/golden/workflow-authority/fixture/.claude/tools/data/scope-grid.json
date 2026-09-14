@@ -1,0 +1,4 @@
+{
+  "alpha": {"stages": {"state-init":"EXECUTE","intent-capture":"EXECUTE","domain-design":"SKIP","deployment-execution":"EXECUTE"}},
+  "beta": {"stages": {"state-init":"EXECUTE","intent-capture":"SKIP","domain-design":"EXECUTE","deployment-execution":"SKIP"}}
+}

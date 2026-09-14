@@ -32,6 +32,7 @@
 //!
 //! [`ReadModelReadError`]: super::ReadModelReadError
 
+mod codekb_scope_diff_view;
 mod definition_stage_view;
 mod definition_summary_view;
 mod execution_view;
@@ -39,12 +40,20 @@ mod jump_phase_view;
 mod jump_view;
 mod next_answer_view;
 mod phase_entry_view;
+mod project_description_view;
+mod re_scope_parse_view;
+mod re_scope_view;
 mod run_stage_view;
+mod scope_actions_view;
+mod scope_catalog_row_view;
 mod scope_change_view;
+mod scope_metadata_view;
 mod scope_view;
+mod stage_graph_entry_view;
 mod steering_part_view;
 mod steering_plan_view;
 
+pub use codekb_scope_diff_view::CodekbScopeDiffView;
 pub use definition_stage_view::DefinitionStageView;
 pub use definition_summary_view::DefinitionSummaryView;
 pub use execution_view::ExecutionView;
@@ -52,8 +61,15 @@ pub use jump_phase_view::JumpPhaseView;
 pub use jump_view::JumpView;
 pub use next_answer_view::NextAnswerView;
 pub use phase_entry_view::PhaseEntryView;
+pub use project_description_view::ProjectDescriptionView;
+pub use re_scope_parse_view::ReScopeParseView;
+pub use re_scope_view::ReScopeView;
 pub use run_stage_view::RunStageView;
+pub use scope_actions_view::ScopeActionsView;
+pub use scope_catalog_row_view::ScopeCatalogRowView;
 pub use scope_change_view::ScopeChangeView;
+pub use scope_metadata_view::ScopeMetadataView;
 pub use scope_view::ScopeView;
+pub use stage_graph_entry_view::StageGraphEntryView;
 pub use steering_part_view::SteeringPartView;
 pub use steering_plan_view::SteeringPlanView;
