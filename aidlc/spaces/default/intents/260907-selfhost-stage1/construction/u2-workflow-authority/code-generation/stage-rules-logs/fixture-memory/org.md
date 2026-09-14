@@ -1,3 +1,0 @@
-# Org
-
-Org rule body.

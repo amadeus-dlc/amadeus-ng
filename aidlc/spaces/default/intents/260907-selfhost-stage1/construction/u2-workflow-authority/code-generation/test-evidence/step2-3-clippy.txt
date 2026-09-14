@@ -1,7 +1,0 @@
-    Checking core-query-use-case v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/query/use-case)
-    Checking core-read-model-updater v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/read-model-updater)
-    Checking core-command-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/command/interface-adapter)
-    Checking core-query-interface-adapter v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/query/interface-adapter)
-    Checking harness-claude v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/claude)
-    Checking aidlc v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/app/aidlc)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.33s
