@@ -233,7 +233,8 @@ impl Workspace {
     }
 
     fn create(&self) -> Output {
-        Command::new(self.path().join("bin/aidlc-utility"))
+        let mut command = Command::new(self.path().join("bin/aidlc-utility"));
+        command
             .args([
                 "intent-create",
                 "--scope",
@@ -247,9 +248,21 @@ impl Workspace {
             .env_clear()
             .envs(coverage_profile_env())
             .env("HOME", self.path())
-            .env("PATH", "/usr/bin:/bin")
-            .output()
-            .unwrap()
+            .env("PATH", "/usr/bin:/bin");
+        // 並列テストのforkがコピー中の書込fdを継承すると、close-on-execまでETXTBSYに
+        // なることがある。起動前のこの失敗だけを待ち、実行後の終了結果はそのまま返す。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            match command.output() {
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                result => return result.unwrap(),
+            }
+        }
     }
     fn state(&self) -> String {
         fs::read_to_string(self.record_dir().join("aidlc-state.md")).unwrap()
@@ -354,6 +367,29 @@ impl Workspace {
         child.stdin.take().unwrap().write_all(input).unwrap();
         child.wait_with_output().unwrap()
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn intent_creation_waits_for_the_copied_executables_writer_to_close() {
+    let workspace = Workspace::new();
+    let binary = workspace.path().join("bin/aidlc-utility");
+    let writer = fs::OpenOptions::new().write(true).open(&binary).unwrap();
+    assert_eq!(
+        Command::new(&binary)
+            .arg("--help")
+            .output()
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::ExecutableFileBusy,
+    );
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        drop(writer);
+    });
+    let result = workspace.create();
+    release.join().unwrap();
+    assert!(result.status.success(), "{result:?}");
 }
 
 #[test]
