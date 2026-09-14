@@ -1,0 +1,15 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude"
+  },
+  "fixture_kind": "declared-synthetic-workspaces",
+  "purpose": "U2 群 D (aidlc-utility codekb-snapshot / codekb-publish) の CLI ゴールデン。stdout バイトと終了コードを upstream 2.7.1 と一致させる。",
+  "capture_method": "固定ピン a277af21 の配布ツリーを `git archive a277af21 dist/claude/.claude` で一時ディレクトリへ展開し、その aidlc-utility.ts を fixture.json の scenario から建てた使い捨てワークスペースに対して実行して採取した。展開できなければ採取は失敗する — vendor の作業ツリーへ暗黙に後退しない。再採取は `bun scripts/goldens/capture-codekb-write.ts`。採取結果は手修正しない。",
+  "snapshot_first_note": "codekb-publish は compare-and-swap の合言葉 (--expect-store / --expect-source) を要る。snapshot_paths を持つケースは同じワークスペースで先に codekb-snapshot --json を走らせ、その値を argv の {store_generation} / {source_fingerprint} へ差し込む。採取側と Rust 側が同じ手順を踏むので、合言葉を定数で焼き込まない (焼き込むと git 版差でフィクスチャが黙って別経路を採る)。",
+  "determinism_note": "git リポジトリを建てたら repo-local に core.excludesFile=/dev/null と core.autocrlf=false を据える。採取スクリプトは 3 行形・世代の綴り・tree: への後退・--paths の重複畳み・公開 1 行・14 件の拒否を採取の場で検査し、フィクスチャの指紋定数が現在の git と合わなくなったら落ちる。",
+  "stderr_note": "失敗経路は upstream が stdout 空・exit 1・stderr に {\"error\":..} を出す。native は stdout 空・exit 1 を一致させるが、stderr のエンベロープ形式の横断整合は別 Bolt の宿題でありbyte 比較しない (群 A の tests/golden/workflow-authority/provenance.json、群 B/C の tests/golden/codekb-authority/provenance.json と同じ既知の限界)。状態ファイルが在るときの ERROR_LOGGED 監査副作用も同じく別 Bolt に残す。",
+  "write_verb_note": "群 D は**書込**動詞である。codekb-snapshot は監査ロック下で中断したトランザクションを復旧し、codekb-publish はロック下で 3 つの compare-and-swap (store 世代 / 源の指紋 / 候補の指紋) を検査してからトランザクションディレクトリ経由で原子的に rename する。ゴールデンはすべて使い捨ての一時ワークスペースで採取・再生し、実 codekb ストアには触れない。"
+}

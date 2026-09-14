@@ -109,3 +109,6 @@ pub use session_journal_entry::SessionJournalEntry;
 mod session_event_dto;
 
 pub use dto::SingleStageRunStartedDto;
+
+mod workspace_doctor_read_model_updater;
+pub use workspace_doctor_read_model_updater::WorkspaceDoctorReadModelUpdater;

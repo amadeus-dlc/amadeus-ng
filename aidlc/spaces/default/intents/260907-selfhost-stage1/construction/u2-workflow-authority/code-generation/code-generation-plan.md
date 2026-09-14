@@ -6,6 +6,10 @@ FR1–FR4とNFR1–NFR4を、承認済み契約C1–C6、およびC7の診断実
 
 U1の独立レビュー第2回はREADY、R-01〜R-03はResolvedで、UNIT_COMPLETEDを記録済み。U2では実装と受入検査を2.7.1へ移行する。B1はU1とU2をまとめた [Pull Request](https://github.com/amadeus-dlc/amadeus-ng/pulls) とし、全CIとレビュー収束後にmainへsquash-mergeする。今回の実装計画承認は、未検証の統合やセルフホスト切替を承認済みとするものではない。
 
+### 改訂（2026-09-13）: 未配線 8 サブコマンドの追加
+
+Step 1–8 は前試行で実装・検証済み（B1 として `main` にコミット済み）である。本改訂は、bugfix 相当の実地スモークが踏むが Rust バイナリに未配線の 8 サブコマンドを Step 9 として追加する。対象は `aidlc-state lookup`（`phase-of` / `next-stage` / `agent-for` / `validate-stage`）、`aidlc-utility` の `project-description` / `scope-table` / `stage-table` / `codekb-scope-diff` / `codekb-snapshot` / `codekb-path` / `codekb-publish`。権威資料 `scripts/aidlc-selfhost/required-surface.json` で 8 件すべて `status: not-wired` かつ `bugfix_required: true` であり、`modules/app/aidlc/tests/required_surface_contract.rs` が実挙動と突合する。bugfix スコープは brownfield で reverse-engineering を EXECUTE するため、codekb 系 4 本もスモークで踏まれる。B1 統合の確認は Step 10 へ繰り下げる。
+
 ## 現コードで確かめた差分
 
 - HEAD、ローカルmain、origin/mainの記録はいずれも `1dc727e00a26c27258d916cb3a5e0592c6c48c1c`。U1ではRustを変更しておらず、開始時のworkspace検査2,354件は成功している。
@@ -37,6 +41,7 @@ CQS（更新と読取りの分離）の例外は設けない。
 | CLI | 開始・next/continue/report、質問/回答/引継ぎ/レビュー、実装計画承認 | 新規stage1_authority_contract / upstream_271_contract、既存CLI境界テスト |
 | Claudeフック | JSON封筒、正常・拒否・無関係入力、実際の人間応答との対応 | 新規harness-claudeのhook_contract |
 | 補助更新と投影ファイル | session・保存・規則・診断記録の更新、状態/監査の逐語、非適用時の無変更 | 上記CLI/フック契約と既存projection/publication契約 |
+| 未配線 8 動詞（改訂） | `lookup` 4 動詞・`scope-table`・`stage-table`・`project-description` の出力/終了コード/監査、`codekb-path`・`codekb-scope-diff` の読取 verdict（常に exit 0）、`codekb-snapshot`・`codekb-publish` のロック・CAS・原子的 rename・staged 検証 | 新規 CLI ゴールデン（`lookup` / `utility` 動詞）、query 側 DAO/ユースケース契約、codekb command 契約（temp 隔離）、`required_surface_contract.rs` の同期 |
 
 Standardの各コンポーネント5–8件を基準にする。主要4フックはそれぞれ正常・不正入力・適用外・状態/セッション境界を検証する。受領・永続化等で契約が求める追加ケースも含め、件数を合わせるための同義テストは作らない。実SQLiteと公開API/プロセスを使い、実装内部の呼出し回数だけを検査しない。
 
@@ -89,7 +94,14 @@ Standardの各コンポーネント5–8件を基準にする。主要4フック
   - 不正UTF-8とID対応を保つ比較をRust側にも適用する。公開の固定文言・監査語彙・識別子を正規化で消さない。
   - 旧2.6.40の値を現行互換の根拠として残さない。歴史的入力や固定文字列の検査は用途を区別し、単なる一括文字列置換で移行しない。
   - 差の意味が承認済み契約で決まらない場合は、入力・両出力・該当ソースを提示して裁定を求める。
-- [ ] **Step 9 — B1の統合検証と引継ぎ**（FR1–FR4、NFR1–NFR4）
+- [ ] **Step 9 — 未配線 8 サブコマンドの実装（bugfix スモーク必須）**（FR1・FR2・FR3・FR4・FR7、NFR1・NFR2・NFR4）
+  - 全群共通の TDD 構造は 3 段。(1) `cli/request.rs` のパーステスト（Red）で当該動詞を新 `Request` 変種へ写像し、`StateNotWired` / `UnknownUtilityVerb` から脱する（`aidlc-state lookup` は `RECOGNISED_STATE_VERBS` から外して配線アームへ、`aidlc-utility` の 7 動詞は match アームを新設）。(2) ドメイン/ユースケースの契約テスト（Red→Green）を層内で。(3) アプリの CLI ゴールデンで stdout バイト・終了コード・状態/監査差分を U1 採取（`scripts/goldens/`、`tests/golden/upstream-a277af21/`）と全文比較する。既存の配線動詞（`intent-create` / `next`）の流れ（`cli/request.rs` パース → use-case → interface-adapter → RMU → query）を踏襲し、独自にステージ本文や配布資産を書き換えない。
+  - **群 A — stage-graph / scope-grid の読取**（`lookup phase-of` / `agent-for` / `validate-stage` / `next-stage`、`scope-table`、`stage-table`）。読取専用なので CQRS 規則（`command-query-separation.md`、`cqrs-boundaries.md`）に従い Query 側へ置く。データ源は既存のコンパイル済み定義（`stage-graph.json` / `scope-grid.json` / scope `.md`）。投影済みリードモデルを読む query use-case、または query 側に静的読取 DAO を新設する（command 側 Repository を query から呼ぶ経路は採らない）。`phase-of` / `agent-for` は plain text、`validate-stage` は JSON、`next-stage` は state file があれば尊重して in-scope 送りの slug か `none` を返す。`scope-table` / `stage-table` は plain 形の MD 表を出力する（本工程では `--check` は実装対象に含めない。理由: 本リポジトリの CI・スクリプト・フック・Rust テストから呼ばれず、bugfix スモークも state-init 段で plain 形のみ呼ぶ。実装するなら SKILL.md 領域比較シームが要り射程が広がるため、必要になった時点で別途追加する）。返す型は既存 view 型を用い、slug / phase / lead_agent はアクセサ経由に隠蔽する（`field-visibility.md`）。
+  - **群 B — `project-description`**。`readProjectDescriptionAuthority`（配布 `aidlc-lib.ts`）を Rust query へ移植する。既存 `StateFileDao` で state を読み、`Project Description Source` → `project-description.json` サイドカー、空なら legacy `Project` 欄へ分岐する。テストは正常（marked record）・legacy fallback・欠落サイドカーの拒否（exit 1）。
+  - **群 C — `codekb-path` / `codekb-scope-diff`（読取専用）**。repo/space 解決と相対 codekb ディレクトリ、RE scope ブロックのパース、git ベースの内容指紋を実装する。既存の `source_fingerprint.rs` / `source_baseline.rs` の再利用可否を先に評価する。FS/git 読取は infrastructure gateway、verdict 判定は query use-case、パーサ・指紋はドメイン純関数に置く。`codekb-path` は副作用なしでディレクトリを出力。`codekb-scope-diff` は status（`NO_STORE` / `CURRENT` / `STALE` / `UNVERIFIED` / `UNKNOWN_SCOPE`）・`--compare`（`COVERS` / `NARROWER`）・`--mint` を持ち、**常に exit 0**（ライフサイクル動詞ではない）。
+  - **群 D — `codekb-snapshot` / `codekb-publish`（書込・ロック・CAS）**。command 側。監査ロック機構でロックを取り、トランザクション復旧（ディレクトリ rename）、CAS（store-generation / source-fingerprint / candidate-fingerprint の不一致で `CODEKB_*` を型付きエラーにして exit 1）、staged 9 成果物の完全一致・シンボリックリンク拒否・scope ブロック検証、トランザクションディレクトリ経由の原子的 rename を実装する。テストは偽 store gateway での CAS 衝突、staged 検証の過不足・symlink 拒否、publish 途中失敗のロールバック、CLI ゴールデン。**すべて temp dir で実 codekb store を触らない**。
+  - **全群共通の受入条件**。(a) 配線した動詞は `scripts/aidlc-selfhost/required-surface.json` の `status` を `not-wired` → `wired` に更新し、`required_surface_contract.rs`（`a_verb_marked_not_wired_is_refused_by_this_build` / `every_verb_the_bugfix_loop_requires…`）を green に保つ。distributed-ts 枠へ逃がさない（必ず native）。(b) stdout は末尾改行を二重化しない（`writeln!` が改行を付すため `Completion::emitted` の payload に末尾改行を含めない）。(c) 失敗経路の `ERROR_LOGGED` 監査副作用の有無まで本家 2.7.1 と一致させる。(d) 期待バイトが U1 未採取のケースは固定コミット `a277af21` から `scripts/goldens/` で採取してから Green を判定する（採取結果を手修正しない）。(e) doctor へのこの 8 件の配線検査追加は本工程の対象外（現 doctor は検査しておらず、追加は設計判断として U4 以降へ渡す）。(f) 作業ツリーには U3（doctor）の未追跡実装が同居するため、`cli/request.rs` / `runtime.rs` の共有箇所で衝突しないよう差分を限定する。
+- [ ] **Step 10 — B1の統合検証と引継ぎ**（FR1–FR4、NFR1–NFR4）
   - 対象テスト、fmt/clippy/lint、workspaceテスト、独自lint自体、Quint/ITF、90%床と相対ゲートを確認する。既存CIの依存監査も成功条件に含める。
   - releaseバイナリによるCLI/フック契約を検証し、source-manifest、traceability、code-summary、Red/Greenログを揃えて独立レビューを受ける。
   - B1の変更を具体的な差分と検証結果にまとめ、全CI・競合・レビューを収束させて統合する。U3/U4へ入口・診断記録・残る接続作業を引き継ぐ。
@@ -100,6 +112,8 @@ Standardの各コンポーネント5–8件を基準にする。主要4フック
 既存の `modules/app/aidlc/`、`modules/harness/{claude,infrastructure}/`、`modules/core/command/{domain,use-case,interface-adapter}/`、`modules/core/read-model-updater/`、`modules/core/query/{use-case,interface-adapter}/` の対象操作とテスト。crate依存の変更もこの境界内で行う。
 
 報告結果は既存orchestration配下の報告イベント・要求・DTO・read表・DAO/Viewへ追加する。新しい公開型は規則どおり1ファイルに1型とし、フィールドを公開しない。語彙・Repository配置・DIP・依存方向はcoding-rulesと設計スキル正典に従う。既存コード全体の説明を書き直さない。
+
+Step 9（8 サブコマンド）の変更は次の範囲に限る。`modules/app/aidlc/src/cli/request.rs`（動詞パース・新 `Request` 変種）と `modules/app/aidlc/src/runtime.rs`（ディスパッチ）、群 A/B/C の読取は `modules/core/query/{use-case,interface-adapter}/` と必要に応じて `modules/core/read-model-updater/`、群 D の書込は `modules/core/command/{domain,use-case,interface-adapter}/` の codekb トランザクション、FS/git 読取は infrastructure gateway。`scripts/aidlc-selfhost/required-surface.json` の `status` 更新と、未採取ケースの `scripts/goldens/` 追加採取・`tests/golden/upstream-a277af21/` の来歴保存を含む。U3 の未追跡 doctor 実装と共有する `cli/request.rs` / `runtime.rs` では差分を最小化し、他 Unit のファイルへ触れない。
 
 追加契約テストは下の手順書のファイルを基本とする。実装中に必要な分割を行った場合はsource-manifestとcode-summaryへ理由を残し、受入条件を弱めない。
 
@@ -190,33 +204,3 @@ workspace行カバレッジ90.0%、相対条件 `head >= base - 0.01`、seed 202
 ## Assumptions & Open Questions
 
 採取済みの契約とコードを入力に実装する。新たに見つかる観測差は本計画の停止条件に従う。U1で未検証の利用量集計有効時等について、根拠なしに互換・不要と断定しない。
-
-## Review
-
-**Verdict:** READY
-**Reviewer:** aidlc-architecture-reviewer-agent
-**Date:** 2026-09-11T14:59:59Z
-**Iteration:** 2
-**Request Challenge:** review:8bdf23b6bfb8eafcde101d5c1bf323b5
-
-### Findings
-
-| ID | Severity | Location | Finding | Required action | Status |
-|---|---|---|---|---|---|
-| R-01 | Minor | code-generation-plan.md > 実装手順 > Step 9 チェックボックス | Step 9 のチェックが `- [ ]` のまま（Step 9 は独立レビュー・Unit 完了・B1 統合まで含むため、親は完了時に更新する方針） | 現状の記録どおり、Unit 完了・B1 統合を確認した時点で親がチェックを更新する | Unresolved |
-| R-02 | Minor | Testing Contract（team layer）/ `project.md` Mandated と `scripts/coverage.sh` / `ci.yml` の実装差 | 相対ゲート廃止（裁定 Q1 = A）が memory 正本へ未反映（§13 学習記録で改訂予定） | §13 学習記録で `team.md` / `project.md` の Testing Posture / Mandated を裁定どおり改訂する | Unresolved |
-| R-03 | Minor | traceability.json > coverage[FR7] | FR7（Deferred）の target が FR1 と同一ファイル | FR7 専用の対象（または Deferred の根拠先）を traceability.json に明記する | Unresolved |
-| R-04 | Minor | `scripts/goldens/capture-observation.ts` の除外パターン検証手段 | この iteration 2 の反証は `code-generation.md` が指示した `bun test`／`verify-corpus.ts` の直接実行を、本セッションでは `.claude/hooks/aidlc-plan-approval-guard.ts` が code-generation ステージの承認受領失効を理由に Bash 経由の実行を一律拒否したため、実行できなかった。代わりに (1) 差分の静的検証（`.bun` 除外は `aidlc/.capture-home` 配下のみに効き、比較対象 `tests/golden/upstream-a277af21/` の採取経路には触れない設計であることをソース読解で確認）と (2) 同一ユニットの `progress-status.md`（2026-09-12 節）に記録済みの一次証跡（同じ変更で「ローカルで bun テスト 47 件と `verify-corpus` を通して `b35eb913` として push」）を根拠にした。ツール制約下の代替根拠であることを記録し、次回このガードの対象外で再確認できる機会があれば実行結果で裏取りする | New |
-
-### Validation Tool Results
-
-| Tool | Result | Interpretation |
-|---|---|---|
-| `bun test capture-doctor/capture-source/capture-corpus/compare-corpus/capture-learnings` | 未実行（環境制約） | `aidlc-plan-approval-guard.ts` が本ユニットの code-generation 承認受領失効を理由に Bash 経由のテスト実行を拒否した（`AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` はホスト側フックの環境変数を変えないため無効）。`progress-status.md`（2026-09-12 節）記載の直近ローカル実行（bun テスト 47 件成功、`verify-corpus` 成功、`b35eb913` push）を代替の一次証跡として採用した |
-| `bun scripts/goldens/verify-corpus.ts tests/golden/upstream-a277af21` | 未実行（同上） | 同上。加えて静的読解で、変更箇所の除外条件が `relative(root, dir).startsWith("aidlc/.capture-home")` に限定され、`tests/golden/upstream-a277af21/` の採取・比較経路（通常の `root` 直下の snapshot）には到達しないことを確認した |
-| 差分レビュー（`git diff a1e60a70 -- scripts/goldens/capture-observation.ts`） | 1 箇所、`.bun` を除外配列へ追加のみ | 申告どおりの最小差分。ロジック分岐・比較アルゴリズムには触れていない |
-| `code-summary.md` / `source-manifest.json` との整合 | 一致 | `capture-observation.ts` は既に `source-manifest.json` に申告済み。`code-summary.md` 冒頭に「U1 が申告した経路を U1 完了後に U2 が変更したため受領が失効する」旨が明記されており、今回の差分の性質と一致する |
-
-### Summary
-
-差分は `aidlc/.capture-home`（採取用の隔離 HOME）配下限定の除外リストへ `.bun` を追加するだけで、比較対象コーパスの採取・比較経路には触れない。機械実行は本セッションの承認ガードで直接は行えなかったが、静的読解と同一ユニットの記録済み一次証跡（ローカル bun テスト 47 件・verify-corpus 成功、`b35eb913` push）で反証は成立せず、iteration 1 からの Minor 3 件（R-01〜R-03）は本差分と無関係で Unresolved のまま持ち越す。Critical/Major はなく、新規の R-04 はツール制約の記録に留まる Minor。

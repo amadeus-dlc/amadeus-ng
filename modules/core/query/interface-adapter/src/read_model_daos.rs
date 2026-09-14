@@ -1,4 +1,4 @@
-//! `ReadModelDaos` — 1 要求ぶんの読取専用接続と、その上に建つ 13 の DAO 実装。
+//! `ReadModelDaos` — 1 要求ぶんの読取専用接続と、その上に建つ 29 の DAO 実装。
 
 use std::path::Path;
 use std::rc::Rc;
@@ -20,7 +20,7 @@ use super::scope_keyword_dao_impl::ScopeKeywordDaoImpl;
 use super::steering_part_dao_impl::SteeringPartDaoImpl;
 use super::steering_plan_dao_impl::SteeringPlanDaoImpl;
 
-/// **1 要求 = 1 接続**。13 の DAO 実装はこの 1 つを分け合う。
+/// **1 要求 = 1 接続**。29 の DAO 実装はこの 1 つを分け合う。
 ///
 /// # なぜ束ねるのか
 ///
@@ -124,6 +124,18 @@ impl ReadModelDaos {
     #[must_use]
     pub fn report_result(&self) -> super::ReportResultDaoImpl {
         super::ReportResultDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// `read_doctor_report` を引く実装。
+    #[must_use]
+    pub fn doctor_report(&self) -> crate::DoctorReportDaoImpl {
+        crate::DoctorReportDaoImpl::new(Rc::clone(&self.store))
+    }
+
+    /// `read_doctor_check` を引く実装。
+    #[must_use]
+    pub fn doctor_check(&self) -> crate::DoctorCheckDaoImpl {
+        crate::DoctorCheckDaoImpl::new(Rc::clone(&self.store))
     }
 
     /// 構造化リードモデルのストアを読取専用で 1 度だけ開く。

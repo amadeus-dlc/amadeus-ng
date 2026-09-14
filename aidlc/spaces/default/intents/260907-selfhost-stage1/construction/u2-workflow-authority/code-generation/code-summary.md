@@ -49,6 +49,44 @@
 - **追加の裁定候補**（U2 では実装せず記録）: `ResumeMenu` 変種の廃止、`PlanApprovalRuntimeId` 単一変種ゆえの `foreign approval` 検査、`AuditFieldKey` 無謬コンストラクタ、同一監査シャードへの複数追記計画の `PublicationConflict`、DTO 拒否形の不揃い、`scan_range` の manifest 非選別。
 - **後続の達成条件**（U2 の完了で代用しない）: 実際の Claude Code と人間による実地スモーク、`target/release/aidlc` の自己診断成功、CI 全ジョブ成功、安定タグへの切替。
 
+## Step 9（2026-09-13 改訂）: 未配線 8 サブコマンドの実装
+
+bugfix 実地スモークが踏むのに Rust バイナリへ未配線だった 8 サブコマンドを TDD で配線した。権威資料 `scripts/aidlc-selfhost/required-surface.json` で 8 件すべてが `status: not-wired` かつ `bugfix_required: true` だったものを `wired` へ更新し、`bugfix_required` かつ未配線の動詞は 0 件になった（`distributed-ts` 枠は `aidlc-review-brief` の 3 動詞のみで不変）。
+
+| 群 | 動詞 | 配置 |
+| --- | --- | --- |
+| A | `lookup` の phase-of / agent-for / validate-stage / next-stage、`scope-table`、`stage-table` | クエリ側（静的読取 DAO と View） |
+| B | `project-description` | クエリ側（state とサイドカー） |
+| C | `codekb-path`、`codekb-scope-diff` | クエリ側（読取専用、verdict 経路は常に exit 0） |
+| D | `codekb-snapshot`、`codekb-publish` | コマンド側（ロック・CAS・原子的 rename） |
+
+### 検証
+
+- CLI ゴールデン: `workflow_authority_golden` 16、`codekb_authority_golden` 4、`codekb_write_golden` 3（採取 24 ケースの stdout バイトと終了コードを上流と突合）
+- 層内: `tree_hash` 10（上流実測の `treeGeneration` 3 ベクタを含む）、ドメイン契約 23、ユースケース 10、Gateway 契約 9、`required_surface_contract` 7
+- 静的: `cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo lint` いずれも exit 0
+- 全体回帰 `cargo test --workspace` は Step 10 の担当であり本工程では未実行
+
+### 承認済み計画からの逸脱
+
+- `codekb-scope-diff` を計画は「どのモード・どの verdict でも exit 0」としたが、ピン `a277af21` の実測では usage 経路（`--mint` の `--paths` 欠落、`--compare` の対象欠落）が exit 1 だった。計画文言より上流実測を優先し upstream-exact で実装した。計画本文は凍結成果物のため書き換えていない。
+
+### 是正した欠陥
+
+- **群 A の来歴不整合**: 採取スクリプトが submodule 作業ツリー（fork `801c5700`）を実行しながら来歴へ `upstream_commit: a277af21` と記録し、ピンとの一致検証を持たなかった。ピンを `git archive` で一時ディレクトリへ実体化して実行し、実体化できなければ失敗する方式へ変更した。上書き前の実測でピン vs 既存ゴールデン 0/16 差分、ピン vs 作業ツリー 0/16 差分を確認し、再採取後もバイトは 1 件も変わらなかった。兄弟スクリプトは既に `git archive` 方式で、欠陥は群 A のみだった。
+- **CQS 違反**: 群 D の初版が中断トランザクションの復旧（ディレクトリ rename）を `CodekbRepository::find_by_id` の内側に隠していた。利用者の裁定により、ポートへ `recover_interrupted_publications`（`&mut self` + `Result<(), E>`）を独立コマンドとして新設し、`find_by_id` を `observe_generation` だけの純粋な読取へ戻し、両ユースケースがロック区間の先頭で明示的に復旧を呼ぶ上流と同じ順序へ是正した。採取 24 ケースのバイトと `tree_hash` の上流実測 3 ベクタは不変。
+
+### 既知の限界（利用者裁定により繰延）
+
+- 失敗経路の stderr エンベロープ（上流 `{"error":..}`）と、状態ファイル存在時の `ERROR_LOGGED` 監査副作用は native に無い。標準出力空・終了コード 1 は一致し、bugfix スモークは有効入力で呼ぶため踏まない。切替条件 2 の判定前に要裁定として別 Bolt へ繰延した。差は広げていない。
+- CLI ゴールデンは合成フィクスチャに対する採取であり、実グラフ 33 ノード・実 scope でのバイト一致は証明していない。
+- `scope-table --check` / `stage-table --check` は実装対象外とした。本リポジトリの CI・スクリプト・フック・Rust テストのどこからも呼ばれず、スモークは plain 形のみ使う。
+- doctor へのこの 8 動詞の配線検査追加は対象外（U4 以降へ引き継ぐ）。
+
+### 未解決事項
+
+- `find_by_id` に副作用が隠れている面が他の Repository にも無いか、横断点検が要る。`project.md` の規則により AI の判断だけで GitHub Issue を起票しないため、人間の裁定を待つ。
+
 ## Sources
 
 - [code-generation-plan.md](code-generation-plan.md)、[unit-test-instructions.md](unit-test-instructions.md)、[traceability.json](traceability.json)、[source-manifest.json](source-manifest.json)

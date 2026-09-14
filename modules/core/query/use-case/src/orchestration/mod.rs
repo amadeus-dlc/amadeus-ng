@@ -43,8 +43,11 @@ mod ask_kind;
 mod bindings;
 mod blank_stage_name;
 mod bundle_digest;
+mod compare_codekb_scope_error;
+mod compare_codekb_scope_use_case;
 mod continuation_view;
 mod continue_token;
+mod diff_codekb_scope_use_case;
 mod directive;
 mod directive_digest;
 mod directive_schema;
@@ -55,7 +58,9 @@ mod find_definition_use_case;
 mod find_execution_use_case;
 mod find_jump_use_case;
 mod find_next_answer_use_case;
+mod find_next_in_scope_stage_use_case;
 mod find_phase_entry_use_case;
+mod find_project_description_use_case;
 mod find_run_stage_use_case;
 mod find_scope_change_use_case;
 mod find_scope_keyword_use_case;
@@ -63,7 +68,10 @@ mod find_scope_use_case;
 mod find_state_file_use_case;
 mod find_steering_use_case;
 mod gate_field;
+mod list_scope_catalog_use_case;
+mod list_stage_graph_use_case;
 mod load_steering_directive;
+mod mint_codekb_fingerprint_use_case;
 mod next_turn_input;
 mod next_turn_view;
 mod noun_family;
@@ -72,7 +80,10 @@ mod part_count;
 mod part_index;
 mod phase_view;
 mod port;
+mod project_description_error;
 mod read_only_verb;
+mod resolve_codekb_repo_use_case;
+mod resolve_stage_use_case;
 mod review_class_view;
 mod route_digest;
 mod rule_content;
@@ -140,9 +151,10 @@ pub use noun_token::NounToken;
 // 動詞は読取 (`find`) だけ (`coding-rules/cqrs-boundaries.md` 規則 6 /
 // `gateway-taxonomy.md` §3 の 2026-08-31 追記)。
 pub use port::{
-    DefinitionDao, DefinitionStageDao, ExecutionDao, JumpDao, JumpPhaseDao, NextAnswerDao,
-    PhaseEntryDao, RunStageDao, ScopeChangeDao, ScopeDao, ScopeKeywordDao, SteeringPartDao,
-    SteeringPlanDao,
+    CodekbScopeDao, CodekbSourceFingerprintDao, DefinitionDao, DefinitionStageDao, ExecutionDao,
+    IntentReposDao, JumpDao, JumpPhaseDao, NextAnswerDao, PhaseEntryDao, ProjectDescriptionDao,
+    RunStageDao, ScopeChangeDao, ScopeDao, ScopeGridDao, ScopeKeywordDao, ScopeMetadataDao,
+    StageGraphDao, SteeringPartDao, SteeringPlanDao,
 };
 
 // ポート (trait) — upstream 互換の人間可読リードモデル (`aidlc-state.md`) を生テキストで
@@ -151,9 +163,10 @@ pub use port::StateFileDao;
 
 // 行の写し (1 表 1 View)。
 pub use port::{
-    DefinitionStageView, DefinitionSummaryView, ExecutionView, JumpPhaseView, JumpView,
-    NextAnswerView, PhaseEntryView, RunStageView, ScopeChangeView, ScopeView, SteeringPartView,
-    SteeringPlanView,
+    CodekbScopeDiffView, DefinitionStageView, DefinitionSummaryView, ExecutionView, JumpPhaseView,
+    JumpView, NextAnswerView, PhaseEntryView, ProjectDescriptionView, ReScopeParseView,
+    ReScopeView, RunStageView, ScopeActionsView, ScopeCatalogRowView, ScopeChangeView,
+    ScopeMetadataView, ScopeView, StageGraphEntryView, SteeringPartView, SteeringPlanView,
 };
 
 // 複数の表にまたがる答えの**組み立て View**。DAO が返す型ではない (ユースケースが FK を
@@ -163,24 +176,35 @@ pub use next_turn_view::NextTurnView;
 pub use steering_delivery_view::SteeringDeliveryView;
 
 // ユースケース (読取専用 — DAO ポートを保持し、`execute` は `&self` のクエリ)。
+pub use compare_codekb_scope_use_case::CompareCodekbScopeUseCase;
+pub use diff_codekb_scope_use_case::DiffCodekbScopeUseCase;
 pub use find_continuation_use_case::FindContinuationUseCase;
 pub use find_definition_stage_use_case::FindDefinitionStageUseCase;
 pub use find_definition_use_case::FindDefinitionUseCase;
 pub use find_execution_use_case::FindExecutionUseCase;
 pub use find_jump_use_case::FindJumpUseCase;
 pub use find_next_answer_use_case::FindNextAnswerUseCase;
+pub use find_next_in_scope_stage_use_case::FindNextInScopeStageUseCase;
 pub use find_phase_entry_use_case::FindPhaseEntryUseCase;
+pub use find_project_description_use_case::FindProjectDescriptionUseCase;
 pub use find_run_stage_use_case::FindRunStageUseCase;
 pub use find_scope_change_use_case::FindScopeChangeUseCase;
 pub use find_scope_keyword_use_case::FindScopeKeywordUseCase;
 pub use find_scope_use_case::FindScopeUseCase;
 pub use find_state_file_use_case::FindStateFileUseCase;
 pub use find_steering_use_case::FindSteeringUseCase;
+pub use list_scope_catalog_use_case::ListScopeCatalogUseCase;
+pub use list_stage_graph_use_case::ListStageGraphUseCase;
+pub use mint_codekb_fingerprint_use_case::MintCodekbFingerprintUseCase;
+pub use resolve_codekb_repo_use_case::ResolveCodekbRepoUseCase;
+pub use resolve_stage_use_case::ResolveStageUseCase;
 
 // 拒否 (ポート面のエラーは材料のみ — 逐語文言は出す側が組む)
 pub use port::ReadModelReadError;
 // 拒否 (値の復号 — ビューではないので `View` 接尾辞を付けない)
 pub use blank_stage_name::BlankStageName;
+pub use compare_codekb_scope_error::CompareCodekbScopeError;
+pub use project_description_error::ProjectDescriptionError;
 pub use scope_slug_error::ScopeSlugError;
 pub use stage_slug_error::StageSlugError;
 pub use unit_name_error::UnitNameError;
@@ -250,3 +274,19 @@ pub use port::{PipelineProgressDao, PipelineProgressView};
 mod jump_result_use_case;
 pub use jump_result_use_case::JumpResultUseCase;
 pub use port::{JumpResultDao, JumpResultView};
+
+// 自己診断 (`aidlc --doctor`) — 観測ポート・その DTO 群・**表示だけ**のユースケースと報告
+// (U3 / C7)。判定 (D1.a〜D5.b) はコマンド側の集約 `WorkspaceDoctor` が所有し、RMU が
+// `read_doctor_*` へ焼き込む (オーナー裁定 2026-09-12)。
+mod doctor_report_use_case;
+pub use doctor_report_use_case::DoctorReportUseCase;
+pub use port::{
+    ConsumeView, DefinitionAssetsView, DoctorCheck, DoctorCheckDao, DoctorObservationDao,
+    DoctorObservationView, DoctorReport, DoctorReportDao, DoctorSummaryView, ExecutionCursorView,
+    GraphStageView, HeartbeatEntryView, HeartbeatView, HookBindingDeclaration, HookBindingTarget,
+    HookBindingView, HookWiringView, NativeEntryPointsView, ObservationFailure,
+    ProjectionObservationView, RecordLocationView, RecordObservationView, ScopeGridEntryView,
+    StageArtifactsView, StageFileView, StateFileObservationView, StateVersionKindView,
+    StateVersionView, StoreObservationView, StoreSchemaView, TimestampView, WiredHookView,
+    WorkspaceShellView,
+};

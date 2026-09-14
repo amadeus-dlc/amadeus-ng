@@ -855,3 +855,296 @@ impl<R: SessionAuditRepository> SessionAuditRepository for &mut R {
         (**self).store(event, aggregate).await
     }
 }
+
+// ---------------------------------------------------------------------------
+// 自己診断 (`WorkspaceDoctor`) — DIP 制約下で `DiagnoseWorkspaceUseCase` を回すフェイク。
+// ---------------------------------------------------------------------------
+
+use core_command_domain::workspace::{
+    DefinitionAssets, DoctorObservation, HeartbeatObservation, HookHealthTarget, HookWiring,
+    NativeEntryPoints, SpaceName, WorkspaceDoctor, WorkspaceDoctorEvent, WorkspaceDoctorId,
+    WorkspaceShell,
+};
+
+use super::port::WorkspaceDoctorRepository;
+
+/// 診断対象のフィクスチャ (既定 space・record 未確定)。
+pub(crate) fn doctor_target() -> HookHealthTarget {
+    HookHealthTarget::new(
+        SpaceName::parse("default").expect("既定 space は文法内"),
+        None,
+    )
+}
+
+/// 最小の観測。`bun_found` だけを振って行の成否を変える。
+pub(crate) fn doctor_observation(bun_found: bool) -> DoctorObservation {
+    DoctorObservation::new(
+        bun_found,
+        NativeEntryPoints::new(
+            Ok("/opt/aidlc/target/release/aidlc".to_string()),
+            Vec::new(),
+        ),
+        HookWiring::new(
+            true,
+            Ok(Vec::new()),
+            None,
+            false,
+            Ok(Vec::new()),
+            Vec::new(),
+            core_command_domain::workspace::HookBindingDeclaration::Absent,
+        ),
+        HeartbeatObservation::new(false, false, Vec::new(), 0, false, None),
+        WorkspaceShell::new(true, true),
+        DefinitionAssets::new(
+            Ok(Vec::new()),
+            Ok(Vec::new()),
+            Ok(Vec::new()),
+            Ok(Vec::new()),
+            Ok(Vec::new()),
+        ),
+        None,
+    )
+}
+
+/// `WorkspaceDoctorRepository` のテストダブル。
+pub(crate) struct InMemoryWorkspaceDoctorRepository {
+    held: HashMap<WorkspaceDoctorId, WorkspaceDoctor>,
+    stored: Vec<WorkspaceDoctorEvent>,
+    find_fails: bool,
+    store_fails: bool,
+}
+
+impl InMemoryWorkspaceDoctorRepository {
+    fn new(
+        held: HashMap<WorkspaceDoctorId, WorkspaceDoctor>,
+        find_fails: bool,
+        store_fails: bool,
+    ) -> InMemoryWorkspaceDoctorRepository {
+        InMemoryWorkspaceDoctorRepository {
+            held,
+            stored: Vec::new(),
+            find_fails,
+            store_fails,
+        }
+    }
+
+    /// 何も保持しない (どの識別子で引いても `NotFound`)。
+    pub(crate) fn empty() -> InMemoryWorkspaceDoctorRepository {
+        InMemoryWorkspaceDoctorRepository::new(HashMap::new(), false, false)
+    }
+
+    /// 1 つの診断集約を保持する。
+    pub(crate) fn holding(aggregate: WorkspaceDoctor) -> InMemoryWorkspaceDoctorRepository {
+        let mut held = HashMap::new();
+        held.insert(aggregate.id().clone(), aggregate);
+        InMemoryWorkspaceDoctorRepository::new(held, false, false)
+    }
+
+    /// 取得が `NotFound` 以外で失敗する。
+    pub(crate) fn failing_on_find() -> InMemoryWorkspaceDoctorRepository {
+        InMemoryWorkspaceDoctorRepository::new(HashMap::new(), true, false)
+    }
+
+    /// 保存が必ず I/O で失敗する。
+    pub(crate) fn failing_on_store() -> InMemoryWorkspaceDoctorRepository {
+        InMemoryWorkspaceDoctorRepository::new(HashMap::new(), false, true)
+    }
+
+    /// これまでに保存した事実 (保存順)。
+    pub(crate) fn stored(&self) -> &[WorkspaceDoctorEvent] {
+        &self.stored
+    }
+
+    /// 保存後に保持している集約。
+    pub(crate) fn held(&self, id: &WorkspaceDoctorId) -> Option<&WorkspaceDoctor> {
+        self.held.get(id)
+    }
+}
+
+impl WorkspaceDoctorRepository for InMemoryWorkspaceDoctorRepository {
+    async fn find_by_id(
+        &self,
+        id: &WorkspaceDoctorId,
+    ) -> Result<WorkspaceDoctor, RepositoryError<WorkspaceDoctorId>> {
+        if self.find_fails {
+            return Err(RepositoryError::Io {
+                kind: std::io::ErrorKind::PermissionDenied,
+                path: None,
+            });
+        }
+        self.held
+            .get(id)
+            .cloned()
+            .ok_or_else(|| RepositoryError::NotFound { id: id.clone() })
+    }
+
+    async fn store(
+        &mut self,
+        event: &WorkspaceDoctorEvent,
+        aggregate: &WorkspaceDoctor,
+    ) -> Result<(), RepositoryError<WorkspaceDoctorId>> {
+        if self.store_fails {
+            return Err(RepositoryError::Io {
+                kind: std::io::ErrorKind::Other,
+                path: None,
+            });
+        }
+        self.stored.push(event.clone());
+        self.held.insert(aggregate.id().clone(), aggregate.clone());
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// codekb (群 D) — 公開の compare-and-swap を回すためのフェイクと材料
+// ---------------------------------------------------------------------------
+//
+// DIP の制約下でユースケースを単体テストする唯一の手段がこのクレート内の `#[cfg(test)]`
+// フェイクである (`coding-rules/use-case-rules.md` §2 のポート実装 3 層のうち 2 番目) —
+// アダプタ層を dev-dependency にも書けないので、実 Gateway はここへ届かない。
+
+use core_command_domain::workspace::{
+    Codekb, CodekbArtifact, CodekbArtifactName, CodekbArtifacts, CodekbCandidate, CodekbEvent,
+    CodekbGeneration, CodekbRepoId, CodekbScopePath, CodekbScopePaths,
+};
+
+use super::CodekbRepository;
+
+/// フィクスチャのリポジトリ識別子。
+pub(crate) fn codekb_repo() -> CodekbRepoId {
+    CodekbRepoId::parse("demo-repo").expect("フィクスチャの repo 識別子は文法内")
+}
+
+/// 走査範囲のパスの並び。
+pub(crate) fn scope_paths(values: &[&str]) -> CodekbScopePaths {
+    CodekbScopePaths::of(
+        values
+            .iter()
+            .map(|value| CodekbScopePath::parse(value).expect("フィクスチャのパスは文法内"))
+            .collect(),
+    )
+}
+
+/// 9 成果物ちょうどを持つ公開候補。
+pub(crate) fn candidate(fingerprint: Option<&str>) -> CodekbCandidate {
+    let artifacts = CodekbArtifacts::of(
+        CodekbArtifactName::all()
+            .iter()
+            .map(|name| CodekbArtifact::new(*name, format!("# {}\n", name.as_str()).into_bytes()))
+            .collect(),
+    )
+    .expect("フィクスチャは 9 つちょうど");
+    CodekbCandidate::new(
+        artifacts,
+        scope_paths(&["src/"]),
+        fingerprint.map(str::to_string),
+    )
+}
+
+/// codekb ストアのフェイク — 観測した世代を返し、保存されたイベントを覚える。
+///
+/// **中断した公開を実 Gateway と同じ形で模す**: [`InMemoryCodekbRepository::interrupted`] は
+/// 畳む前は不在 (`none`) として読まれ、集約が抱えた決着を `store` が受け取って初めて畳んだ
+/// 世代になる。呼出順を覗き見るのではなく、**観測できる違い**でテストする
+/// (`coding-rules/interior-mutability.md` — 読取に `&self` + 内部可変性の記録係を挿さない)。
+#[derive(Debug)]
+pub(crate) struct InMemoryCodekbRepository {
+    generation: Option<CodekbGeneration>,
+    interrupted: Option<CodekbGeneration>,
+    committed: Vec<CodekbEvent>,
+    writable: bool,
+}
+
+impl InMemoryCodekbRepository {
+    /// その世代のストアを持つ (中断した公開は残っていない)。
+    pub(crate) const fn holding(generation: CodekbGeneration) -> Self {
+        Self {
+            generation: Some(generation),
+            interrupted: None,
+            committed: Vec::new(),
+            writable: true,
+        }
+    }
+
+    /// 中断した公開が残っている — 畳むまでは不在に見え、決着を保存すると `folded` の世代になる。
+    pub(crate) fn interrupted(folded: CodekbGeneration) -> Self {
+        Self {
+            generation: Some(CodekbGeneration::absent()),
+            interrupted: Some(folded),
+            committed: Vec::new(),
+            writable: true,
+        }
+    }
+
+    /// 再構成そのものが失敗する。
+    pub(crate) const fn unreadable() -> Self {
+        Self {
+            generation: None,
+            interrupted: None,
+            committed: Vec::new(),
+            writable: true,
+        }
+    }
+
+    /// 中断した公開を抱えているが、その決着を保存できない。
+    pub(crate) fn unsettleable() -> Self {
+        Self {
+            generation: Some(CodekbGeneration::absent()),
+            interrupted: Some(CodekbGeneration::of_tree_hash("folded")),
+            committed: Vec::new(),
+            writable: false,
+        }
+    }
+
+    /// 読めるが書けない。
+    pub(crate) const fn unwritable(generation: CodekbGeneration) -> Self {
+        Self {
+            generation: Some(generation),
+            interrupted: None,
+            committed: Vec::new(),
+            writable: false,
+        }
+    }
+
+    /// 保存されたイベント (テストが**効果**を観測するための継ぎ目)。
+    pub(crate) fn committed(&self) -> &[CodekbEvent] {
+        &self.committed
+    }
+}
+
+impl CodekbRepository for InMemoryCodekbRepository {
+    async fn find_by_id(&self, id: &CodekbRepoId) -> Result<Codekb, RepositoryError<CodekbRepoId>> {
+        match (&self.generation, &self.interrupted) {
+            (Some(generation), Some(_)) => Ok(Codekb::observed_with_interrupted_publication(
+                id.clone(),
+                generation.clone(),
+            )),
+            (Some(generation), None) => Ok(Codekb::observed(id.clone(), generation.clone())),
+            (None, _) => Err(RepositoryError::Io {
+                kind: std::io::ErrorKind::PermissionDenied,
+                path: None,
+            }),
+        }
+    }
+
+    async fn store(
+        &mut self,
+        event: &CodekbEvent,
+        _codekb: &Codekb,
+    ) -> Result<(), RepositoryError<CodekbRepoId>> {
+        if !self.writable {
+            return Err(RepositoryError::Io {
+                kind: std::io::ErrorKind::PermissionDenied,
+                path: None,
+            });
+        }
+        // 決着を保存したら、実 Gateway と同じく畳んだあとの世代が読めるようになる。
+        if matches!(event, CodekbEvent::InterruptedPublicationSettled(_))
+            && let Some(folded) = self.interrupted.take()
+        {
+            self.generation = Some(folded);
+        }
+        self.committed.push(event.clone());
+        Ok(())
+    }
+}

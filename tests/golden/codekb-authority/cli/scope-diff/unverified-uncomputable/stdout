@@ -1,0 +1,3 @@
+UNVERIFIED: the store (intent: store-intent) analyzed:
+  - no-such-dir/
+but the current tree's fingerprint cannot be computed - freshness unknown.

@@ -1,0 +1,44 @@
+{
+  "stage": "code-generation",
+  "unit": "u3-selfhost-doctor",
+  "upstream_ids": [
+    "FR5",
+    "FR6",
+    "NFR1",
+    "NFR2",
+    "NFR3",
+    "NFR4"
+  ],
+  "coverage": [
+    {
+      "id": "FR5",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/workspace/doctor_checks/definition_checks.rs"
+    },
+    {
+      "id": "FR6",
+      "status": "OK",
+      "target": "modules/app/aidlc/src/runtime/doctor.rs"
+    },
+    {
+      "id": "NFR1",
+      "status": "OK",
+      "target": "modules/app/aidlc/tests/doctor_contract.rs"
+    },
+    {
+      "id": "NFR2",
+      "status": "OK",
+      "target": "modules/core/command/domain/tests/workspace_doctor_contract.rs"
+    },
+    {
+      "id": "NFR3",
+      "status": "Deferred",
+      "target": ".github/workflows/ci.yml"
+    },
+    {
+      "id": "NFR4",
+      "status": "OK",
+      "target": "modules/core/command/domain/src/workspace/doctor_checks/environment_checks.rs"
+    }
+  ]
+}

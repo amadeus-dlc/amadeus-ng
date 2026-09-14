@@ -27,6 +27,7 @@ pub mod secret_file;
 
 pub mod ecmascript;
 pub mod hash;
+pub mod tree_hash;
 
 mod exclusive_file_lock;
 pub use exclusive_file_lock::ExclusiveFileLock;

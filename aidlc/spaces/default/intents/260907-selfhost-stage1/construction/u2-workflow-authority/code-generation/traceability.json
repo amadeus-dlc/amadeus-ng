@@ -36,7 +36,7 @@
     {
       "id": "FR7",
       "status": "Deferred",
-      "target": "modules/app/aidlc/tests/upstream_271_contract.rs"
+      "target": "scripts/aidlc-selfhost/required-surface.json"
     },
     {
       "id": "NFR1",

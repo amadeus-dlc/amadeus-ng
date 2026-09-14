@@ -1,0 +1,532 @@
+{
+  "stage": "code-generation",
+  "unit": "u3-selfhost-doctor",
+  "version": 1,
+  "writes": [
+    {
+      "path": "modules/app/aidlc/src/cli/request.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime/doctor.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/runtime/doctor/observation.rs"
+    },
+    {
+      "path": "modules/app/aidlc/src/wording.rs"
+    },
+    {
+      "path": "modules/app/aidlc/tests/doctor_contract.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/consumed_artifact.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/definition_assets.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_check_id.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_check.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_checks.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_checks/definition_checks.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_checks/environment_checks.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_checks/heartbeat_check.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_checks/hook_checks.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_checks/record_checks.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/doctor_observation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/execution_cursor_observation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/graph_stage.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/heartbeat_entry.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/heartbeat_observation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/hook_binding_target.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/hook_binding.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/hook_wiring.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/mod.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/native_entry_points.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/observation_failure.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/observed_timestamp.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/projection_observation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/record_location.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/record_observation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/scope_grid_entry.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/stage_artifacts.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/stage_file.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/stage_frontmatter.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/stage_frontmatter/schema.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/state_file_observation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/state_version_observation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/store_observation.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/store_schema.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/wired_hook.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/workspace_doctor_error.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/workspace_doctor_event_id.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/workspace_doctor_event.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/workspace_doctor_id.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/workspace_doctor.rs"
+    },
+    {
+      "path": "modules/core/command/domain/src/workspace/workspace_shell.rs"
+    },
+    {
+      "path": "modules/core/command/domain/tests/workspace_doctor_contract.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/mod.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workspace_doctor_aggregate_key_dto.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workspace_doctor_check_dto.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workspace_doctor_dto.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/dto/workspace_doctor_event_dto.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/mod.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/src/orchestration/workspace_doctor_repository_impl.rs"
+    },
+    {
+      "path": "modules/core/command/interface-adapter/tests/workspace_doctor_repository_contract.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/diagnose_workspace_use_case.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/mod.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/port/mod.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/port/workspace_doctor_repository.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/test_support.rs"
+    },
+    {
+      "path": "modules/core/command/use-case/src/orchestration/workspace_doctor_command_error.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/Cargo.toml"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_check_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_environment.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_observation_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_observation_dao_impl/audit_ledger.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_observation_dao_impl/definition.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_observation_dao_impl/environment.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_observation_dao_impl/heartbeat.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_observation_dao_impl/record.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_observation_dao_impl/settings.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_observation_dao_impl/store.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_paths.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/doctor_report_dao_impl.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/lib.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/native_doctor_facts.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/read_model_daos.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/src/state_version_classifier.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/tests/doctor_observation_contract.rs"
+    },
+    {
+      "path": "modules/core/query/interface-adapter/tests/doctor_report_dao_contract.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/doctor_report_use_case.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/mod.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_check_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_observation_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_report_dao.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/consume_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/definition_assets_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/doctor_check.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/doctor_observation_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/doctor_report.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/doctor_summary_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/execution_cursor_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/graph_stage_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/heartbeat_entry_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/heartbeat_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/hook_binding_target.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/hook_binding_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/hook_wiring_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/mod.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/native_entry_points_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/observation_failure.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/projection_observation_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/record_location_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/record_observation_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/scope_grid_entry_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/stage_artifacts_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/stage_file_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/state_file_observation_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/state_version_kind_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/state_version_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/store_observation_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/store_schema_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/timestamp_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/wired_hook_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/doctor_view/workspace_shell_view.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/src/orchestration/port/mod.rs"
+    },
+    {
+      "path": "modules/core/query/use-case/tests/doctor_report_contract.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/lib.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/mod.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/orchestration/workspace_doctor_read_model_updater.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/src/read_tables/row_id.rs"
+    },
+    {
+      "path": "modules/core/read-model-updater/tests/workspace_doctor_projection_contract.rs"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-architect-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-architecture-reviewer-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-aws-platform-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-compliance-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-composer-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-delivery-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-design-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-developer-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-devsecops-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-operations-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-pipeline-deploy-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-product-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-product-lead-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/agents/aidlc-quality-agent.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/construction/build-and-test.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/construction/ci-pipeline.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/construction/code-generation.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/construction/functional-design.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/construction/infrastructure-design.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/construction/nfr-design.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/construction/nfr-requirements.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/ideation/approval-handoff.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/ideation/feasibility.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/ideation/intent-capture.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/ideation/market-research.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/ideation/rough-mockups.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/ideation/scope-definition.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/ideation/team-formation.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/contract-design.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/delivery-planning.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/domain-design.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/practices-discovery.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/refined-mockups.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/requirements-analysis.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/reverse-engineering.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/units-generation.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/inception/user-stories.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/initialization/state-init.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/initialization/workspace-detection.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/initialization/workspace-scaffold.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/operation/deployment-execution.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/operation/deployment-pipeline.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/operation/environment-provisioning.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/operation/feedback-optimization.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/operation/incident-response.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/operation/observability-setup.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/aidlc-common/stages/operation/performance-validation.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/scopes/aidlc-bugfix.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/scopes/aidlc-feature.md"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/.claude/settings.json"
+    },
+    {
+      "path": "tests/golden/selfhost-stage1/doctor-shell/provenance.json"
+    }
+  ]
+}

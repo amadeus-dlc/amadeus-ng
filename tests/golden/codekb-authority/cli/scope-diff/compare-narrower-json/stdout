@@ -1,0 +1,1 @@
+{"repo":"demo-repo","store":"aidlc/spaces/default/codekb/demo-repo/","verdict":"NARROWER","store_intent":"store-intent","incoming_intent":"incoming-intent","discarded_paths":["src/auth/"],"discarded_components":["auth-service"]}

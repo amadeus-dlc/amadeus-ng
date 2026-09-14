@@ -1,0 +1,7 @@
+[
+  {"slug":"state-init","number":"0.3","name":"State Initialization","phase":"initialization","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline"},
+  {"slug":"intent-capture","number":"1.1","name":"Intent Capture & Framing","phase":"ideation","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":["aidlc-architect-agent"],"mode":"inline"},
+  {"slug":"domain-design","number":"2.6","name":"Domain Design","phase":"inception","execution":"CONDITIONAL","lead_agent":"aidlc-architect-agent","support_agents":["aidlc-developer-agent","aidlc-product-agent"],"mode":"subagent"},
+  {"slug":"deployment-execution","number":"4.2","name":"Deployment Execution","phase":"operation","execution":"ALWAYS","lead_agent":"aidlc-pipeline-deploy-agent","support_agents":[],"mode":"subagent"},
+  {"slug":"disabled-stage","number":"9.9","name":"Disabled Stage","phase":"operation","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","enabled":false}
+]

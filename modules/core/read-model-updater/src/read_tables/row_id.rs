@@ -145,6 +145,14 @@ pub(crate) fn scope_change(execution_id: &str, scope: &str) -> String {
     of([("execution_id", text(execution_id)), ("scope", text(scope))])
 }
 
+/// `read_doctor_check.id` — 診断集約 × 表示順の位置。
+pub(crate) fn doctor_check(report_id: &str, position: usize) -> String {
+    of([
+        ("report_id", text(report_id)),
+        ("position", index(position)),
+    ])
+}
+
 /// `read_steering_plan.id` — フェーズ。
 ///
 /// `read_steering_part.steering_plan_id` と `read_run_stage.steering_plan_id` はこの

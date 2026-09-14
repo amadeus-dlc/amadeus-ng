@@ -1,0 +1,10 @@
+<!-- BEGIN: compiled stage graph via `bun aidlc-utility.ts stage-table` - do NOT hand-edit -->
+
+| Slug | # | Stage | Phase | Execution | Lead Agent | Support Agents | Mode |
+|------|---|-------|-------|-----------|------------|----------------|------|
+| state-init | 0.3 | State Initialization | Initialization | ALWAYS | (orchestrator) | — | inline |
+| intent-capture | 1.1 | Intent Capture & Framing | Ideation | ALWAYS | aidlc-product-agent | aidlc-architect-agent | inline |
+| domain-design | 2.6 | Domain Design | Inception | CONDITIONAL | aidlc-architect-agent | aidlc-developer-agent, aidlc-product-agent | subagent |
+| deployment-execution | 4.2 | Deployment Execution | Operation | ALWAYS | aidlc-pipeline-deploy-agent | — | subagent |
+
+<!-- END: compiled stage graph -->

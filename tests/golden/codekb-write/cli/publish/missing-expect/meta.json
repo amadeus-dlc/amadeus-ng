@@ -1,0 +1,13 @@
+{
+  "upstream_commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+  "tool": "aidlc-utility.ts",
+  "scenario": "staged",
+  "argv": [
+    "codekb-publish",
+    "--staged",
+    "stage",
+    "--paths",
+    "src/"
+  ],
+  "exit_code": 1
+}

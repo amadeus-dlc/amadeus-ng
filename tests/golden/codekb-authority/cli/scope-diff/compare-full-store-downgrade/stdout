@@ -1,0 +1,4 @@
+NARROWER: the incoming scope no longer claims verified deep coverage for:
+  - ./
+  components: everything
+(store intent: store-intent; incoming intent: incoming-intent)

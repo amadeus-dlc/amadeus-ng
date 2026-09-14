@@ -20,9 +20,12 @@
 //! **stderr・exit 1**（[`crate::presenter`] のモジュール doc）。[`Completion`] がその 2 つを
 //! 表す。
 
+mod codekb_authority;
+mod codekb_write;
 mod continuation;
 mod continuation_cursor;
 mod dispatch_rules;
+mod doctor;
 mod fold_usage;
 mod jump;
 mod learnings;
@@ -36,6 +39,7 @@ mod session_hooks;
 mod session_start;
 mod task_sync;
 mod testing_posture;
+mod workflow_authority;
 use core_command_domain::orchestration::ReportId;
 use core_query_use_case::orchestration::{ReportResultUseCase, ReportResultView};
 use std::path::Path;
@@ -131,6 +135,20 @@ impl Completion {
         Self::new(None, Some(diagnostic), 1)
     }
 
+    /// 報告書を stdout へ出し、報告書自身が決めた終了コードで終わる (`--doctor` — C7)。
+    /// stderr は空である。
+    #[must_use]
+    pub const fn reported(text: String, code: u8) -> Completion {
+        Self::new(Some(text), None, code)
+    }
+
+    /// 報告書を stdout へ出したうえで、後続の記録に失敗して stderr へ診断を出し 1 で終わる
+    /// (C7 DC10 — 診断出力は残り、記録の成功は捏造しない)。
+    #[must_use]
+    pub const fn reported_then_refused(text: String, diagnostic: String) -> Completion {
+        Self::new(Some(text), Some(diagnostic), 1)
+    }
+
     /// 何も stdout へ出さず、stderr へ助言を出して**止めずに**終わる。
     ///
     /// 終了コード 3 は PreToolUse の拒否 (2) でも成功 (0) でもない第 3 の観測であり、
@@ -176,6 +194,7 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         Request::Continue { token } => emit(resume(&layout, &token).await),
         Request::Report(args) => report(&layout, &args).await,
         Request::Park => park(&layout).await,
+        Request::Doctor { extra } => doctor::run(&layout, &extra).await,
         Request::IntentCreate(args) => create_intent(&layout, &args).await,
         Request::UnknownOrchestrateVerb { given } => {
             Completion::refused(wording::unknown_orchestrate_subcommand(given.as_deref()))
@@ -194,6 +213,20 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         Request::UnknownLogVerb { given } => {
             Completion::refused(wording::unknown_log_subcommand(given.as_deref()))
         }
+        Request::StateLookup { sub, args } => {
+            workflow_authority::lookup(&layout, sub.as_deref(), &args)
+        }
+        Request::UtilityScopeTable => workflow_authority::scope_table(&layout),
+        Request::UtilityStageTable => workflow_authority::stage_table(&layout),
+        Request::UtilityProjectDescription => codekb_authority::project_description(&layout),
+        Request::UtilityCodekbPath(flags) => codekb_authority::codekb_path(&layout, &flags),
+        Request::UtilityCodekbScopeDiff(flags) => {
+            codekb_authority::codekb_scope_diff(&layout, &flags)
+        }
+        Request::UtilityCodekbSnapshot(flags) => {
+            codekb_write::codekb_snapshot(&layout, &flags).await
+        }
+        Request::UtilityCodekbPublish(flags) => codekb_write::codekb_publish(&layout, &flags).await,
         Request::StatePracticesPromote(args) => practices_promote(&layout, &args).await,
         Request::StateNotWired { verb } => {
             Completion::refused(wording::state_verb_not_wired(&verb))
@@ -1039,24 +1072,27 @@ fn gate_precondition(verdict: Verdict, stage: &str, state: &str) -> String {
 }
 
 /// 人間応答フックは配布の明示契約どおり、記録失敗でも人間の入力を止めない。
+/// `aidlc hook <name>` が受けるフック名 — この build のフック面の配線表 (doctor D1.b / D2.e も
+/// 同じ表を見る)。
+pub(crate) const NATIVE_HOOKS: [&str; 14] = [
+    "record-human-turn",
+    "state-transition-guard",
+    "write-audit-log",
+    "continue-workflow",
+    "session-start",
+    "session-end",
+    "log-subagent",
+    "validate-state",
+    "sync-workflow-state",
+    "rebuild-stage-graph",
+    "review-freeze",
+    "reviewer-scope",
+    "deliver-stage-rules",
+    "fold-usage",
+];
+
 async fn run_hook(layout: &Layout, name: &str) -> Completion {
-    if !matches!(
-        name,
-        "record-human-turn"
-            | "state-transition-guard"
-            | "write-audit-log"
-            | "continue-workflow"
-            | "session-start"
-            | "session-end"
-            | "log-subagent"
-            | "validate-state"
-            | "sync-workflow-state"
-            | "rebuild-stage-graph"
-            | "review-freeze"
-            | "reviewer-scope"
-            | "deliver-stage-rules"
-            | "fold-usage"
-    ) {
+    if !NATIVE_HOOKS.contains(&name) {
         return Completion::refused(format!("Unknown hook: {name}"));
     }
     use std::io::Read as _;
@@ -2837,6 +2873,12 @@ fn review_class(raw: &str) -> Option<String> {
 /// record がまだ無い（intent 未鋳造）ときは描く先が無いので何もしない — それは失敗では
 /// なく fresh なワークスペースの正常な姿である。
 async fn catch_up(layout: &Layout) -> Result<(), String> {
+    catch_up_with(layout, true).await
+}
+
+/// `restore_missing_files` の有無を選べる追いつき — `--doctor` は診断のために失われた
+/// 状態・監査を復元してはならない (C7 `automatic_repair: forbidden`) ので `false` で呼ぶ。
+async fn catch_up_with(layout: &Layout, restore_missing: bool) -> Result<(), String> {
     let (Some(state_file), Some(audit_dir)) = (layout.state_file(), layout.audit_dir()) else {
         return Ok(());
     };
@@ -2874,9 +2916,11 @@ async fn catch_up(layout: &Layout) -> Result<(), String> {
         audit_dir.join(shard.as_str())
     };
     let targets = ProjectionTargets::new(state_file, shard_path, layout.memory_dir());
-    journal_reader
-        .restore_missing_files(&projection, &targets)
-        .map_err(|error| format!("projection restoration: {error}"))?;
+    if restore_missing {
+        journal_reader
+            .restore_missing_files(&projection, &targets)
+            .map_err(|error| format!("projection restoration: {error}"))?;
+    }
     // 参照入力 (memory 層) はジャーナルとは別の入口である — 規則の編集はイベントを
     // 伴わないので、読取先を明示的に渡す。
     let steering =

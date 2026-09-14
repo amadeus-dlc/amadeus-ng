@@ -45,3 +45,9 @@ pub use workflow_continuation_repository::WorkflowContinuationRepository;
 
 mod session_audit_repository;
 pub use session_audit_repository::SessionAuditRepository;
+
+mod workspace_doctor_repository;
+pub use workspace_doctor_repository::WorkspaceDoctorRepository;
+
+mod codekb_repository;
+pub use codekb_repository::CodekbRepository;

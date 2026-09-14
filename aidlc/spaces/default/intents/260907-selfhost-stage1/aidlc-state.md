@@ -31,13 +31,13 @@
 - **In Progress**: code-generation
 
 ## Runtime State
-- **Revision Count**: 2
+- **Revision Count**: 3
 
 - **Construction Iteration**: unit-major
 - **Unit Ownership**: solo
 - **Skeleton Stance**: off
-- **Parked**: 2026-09-11T15:04:08Z
-- **Parked At Stage**: code-generation
+- **Active Unit**: u2-workflow-authority
+- **Unit State**: in-progress
 ## Phase Progress
 <!-- Status values: Pending, Active, Verified, Skipped -->
 
@@ -81,7 +81,7 @@ Per unit: [TBD]
 - [ ] nfr-requirements — SKIP
 - [ ] nfr-design — SKIP
 - [ ] infrastructure-design — SKIP
-- [-] code-generation — EXECUTE
+- [R] code-generation — EXECUTE
 - [ ] build-and-test — EXECUTE
 - [ ] ci-pipeline — SKIP
 
@@ -99,7 +99,7 @@ Per unit: [TBD]
 - **Current Stage**: code-generation
 - **Next Stage**: build-and-test
 - **Status**: Running
-- **Last Updated**: 2026-09-11T15:04:08Z
+- **Last Updated**: 2026-09-13T07:13:43Z
 
 ## Session Resume Point
 - **Last Completed Stage**: delivery-planning

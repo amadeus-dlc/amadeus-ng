@@ -177,3 +177,12 @@ mod jump_scope_dto;
 mod review_binding_dto;
 mod review_completion_dto;
 mod review_record_dto;
+
+mod workspace_doctor_aggregate_key_dto;
+pub use workspace_doctor_aggregate_key_dto::WorkspaceDoctorAggregateKeyDto;
+mod workspace_doctor_check_dto;
+pub use workspace_doctor_check_dto::WorkspaceDoctorCheckDto;
+mod workspace_doctor_dto;
+pub use workspace_doctor_dto::WorkspaceDoctorDto;
+mod workspace_doctor_event_dto;
+pub use workspace_doctor_event_dto::WorkspaceDoctorEventDto;

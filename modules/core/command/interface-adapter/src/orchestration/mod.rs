@@ -97,3 +97,15 @@ pub use session_audit_repository_impl::{
 };
 
 pub use dto::SingleStageRunStartedDto;
+
+mod workspace_doctor_repository_impl;
+pub use dto::{
+    WorkspaceDoctorAggregateKeyDto, WorkspaceDoctorCheckDto, WorkspaceDoctorDto,
+    WorkspaceDoctorEventDto,
+};
+pub use workspace_doctor_repository_impl::WorkspaceDoctorRepositoryImpl;
+
+// 集約 `Codekb` (リポジトリごとの durable な知識ストア) の Repository 実装 — 媒体が
+// 9 成果物のディレクトリであることは内部詳細である。
+mod codekb_repository_impl;
+pub use codekb_repository_impl::CodekbRepositoryImpl;

@@ -1,0 +1,2 @@
+CURRENT: the analyzed paths are unchanged since the store was built (intent: store-intent, coverage: partial):
+  - src/

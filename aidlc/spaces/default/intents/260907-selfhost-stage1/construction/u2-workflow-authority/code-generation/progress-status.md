@@ -323,3 +323,18 @@ Step 9 の検査はすべて成功。残りは最終成果物（source-manifest 
 - iteration 1: **READY**（Critical / Major なし）。Minor 3 件を提案として記録: R-01 計画 Step 9 のチェック未更新（Unit 完了時に親が更新）、R-02 相対ゲート廃止の memory 正本への未反映（§13 で改訂提案）、R-03 `traceability.json` の FR7（Deferred）target が FR1 と同一ファイル。レビュアーはターン上限で一度止まり、手元の根拠で判定を書くよう再開させて完了。
 - CI 修正（申告ソース `capture-observation.ts`）を作業ツリーへ戻したため受領が失効。stale-receipt 回復レビュー（iteration 2、差分のみ）を起票中。
 - レビュアーが計画ファイル末尾へ `## Review` を追記すると承認指紋が失効する（計画バイトに含まれる）。再発行したディレクティブの下で計画承認を取り直した（指紋 `sha256:608e6bc1…`、利用者 Approve Plan）。iteration 2 の追記後も同じ理由で失効しうるが、以後の作業は記録ディレクトリ内と framework ツールのみ。
+
+#### B1 マージまで（2026-09-12、記録のみ）
+
+- 回復レビュー（iteration 2）READY → `REVIEW_COMPLETED`（READY）→ `UNIT_COMPLETED`（2026-09-11T15:01:59Z）。
+- CI の Linux 差 3 件を修正して push: bun キャッシュ `~/.bun/install/cache` の除外（`b35eb913`）、fixture の `/private` 接頭辞の正規化（`25abf455`、利用者が sed で適用）、ロック競合の診断文言の OS 差（`872228ba`、同）。最終実行 `34616404487` は全ジョブ成功。
+- [PR #125](https://github.com/amadeus-dlc/amadeus-ng/pull/125) をマージキュー経由で `main` へ squash-merge（`33b61cdb`、2026-09-11T16:05:48Z）。B1（U1 + U2）完了。
+- 次 Unit（U3）の計画承認が無い間、ガードが git / gh / 変更系コマンドを拒んだため、コミット・CI 確認は利用者が `!` で実行した。学びはメモリ（`aidlc-code-generation-guard-pitfalls`、`amadeus-ng-test-binary-launch-cost`）に記録。
+
+#### Step 9 の完了確認とチェックボックスの扱い（2026-09-12、裁定）
+
+Step 9（B1 の統合検証と引継ぎ）は完了している。根拠は上記のとおり — 検査一式成功（`step9-logs/s9d-fmt-clippy-lint.log`、`s9d-coverage.log` で 3,599 件成功・0 失敗・head 98.55%・絶対床 PASS、`verify-ci-governance.sh` 19 検査 PASS）、最終成果物 3 点（`source-manifest.json` 1,325 経路 / `traceability.json` gaps 0 / `code-summary.md` required-sections PASS）、独立レビュー iteration 2 **READY**（監査 `REVIEW_COMPLETED` 2026-09-11T15:01:55Z）、`UNIT_COMPLETED`（同 15:01:59Z）、[PR #125](https://github.com/amadeus-dlc/amadeus-ng/pull/125) の squash-merge（`33b61cdb`、CI 実行 `34616404487` 全ジョブ成功）。
+
+ただし承認済み `code-generation-plan.md` の `- [ ] Step 9` は**未チェックのまま残す**（利用者の裁定 2026-09-12）。同ファイルは code-generation のレビュー対象成果物であり、終端の `REVIEW_COMPLETED` が `Artifact Fingerprint: sha256:1cf77486…` としてそのバイトに束縛されている。1 文字でも変えると受領が失効するが、U2 の受領失効に対する回復レビュー 1 回は iteration 2 で使い切っているため、工程ゲートで `escalation-required`（人間の裁定待ちの停止）を招きうる。
+
+したがってレビュー所見 R-01（「Unit 完了・B1 統合を確認した時点で親がチェックを更新する」）は、**チェックの更新ではなくこの進捗記録で閉じる**。R-01 は iteration 1 の所見であり、終端受領（iteration 2）が成立する前に書かれたものである。R-02（相対ゲート廃止の memory 正本への反映）と R-03（`traceability.json` の FR7 target）は工程末の §13 学習記録・後続 Unit で扱う。

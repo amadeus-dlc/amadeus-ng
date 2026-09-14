@@ -272,6 +272,27 @@ impl Layout {
             .join("memory")
     }
 
+    /// `aidlc/spaces/<space>/codekb/<repo>` — リポジトリごとの durable な知識の置き場。
+    ///
+    /// intent の記録ディレクトリの**下ではない** — codekb はリポジトリ名で鍵付けられ、
+    /// space の中の全 intent が共有する（memory / knowledge と同じ space 直下の兄弟）。
+    #[must_use]
+    pub fn codekb_dir(&self, repo: &str) -> PathBuf {
+        self.aidlc_root()
+            .join("spaces")
+            .join(&self.space)
+            .join("codekb")
+            .join(repo)
+    }
+
+    /// [`Layout::codekb_dir`] のワークスペース相対形（区切りは常に `/`）。
+    ///
+    /// 出力に載る綴りなので、ホスト OS の区切りに依らず posix 形で組む。
+    #[must_use]
+    pub fn relative_codekb_dir(&self, repo: &str) -> String {
+        format!("aidlc/spaces/{}/codekb/{repo}", self.space)
+    }
+
     /// ハーネス根（`.claude` — 既定の 1 ハーネス）。
     ///
     /// upstream の `harnessDir()` は `.claude` / `.kiro` / `.codex` を配置から判別するが、

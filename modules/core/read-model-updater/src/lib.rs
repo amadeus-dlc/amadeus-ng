@@ -34,6 +34,30 @@
 //! 2 系統は同じ取得ループが 1 回のキャッチアップで両方描く。構造化面の行の差し替えと
 //! チェックポイントの前進は 1 トランザクションに閉じる（裁定 §3）。
 //!
+//! # 集約ごとに独立した投影単位がある
+//!
+//! [`read_tables`] の 17 表とは別に、**自分の manifest だけを全履歴から再投影する**小さな
+//! 投影単位が 2 つある。どちらも自前のチェックポイント表を持ち、取得ループと投影核の二層は
+//! 同じである。
+//!
+//! | 投影単位 | manifest | 表 | チェックポイント |
+//! | --- | --- | --- | --- |
+//! | [`orchestration::HookHealthReadModelUpdater`] | `hook-health-event/1` | `read_hook_health` | `hook_health_projection_checkpoint` |
+//! | [`orchestration::WorkspaceDoctorReadModelUpdater`] | `workspace-doctor-event/1` | `read_doctor_report` / `read_doctor_check` | `workspace_doctor_projection_checkpoint` |
+//!
+//! 自己診断 (`aidlc --doctor`) の 2 表は次の形である。`read_doctor_report` は診断対象ごとに
+//! 1 行で、主キーは集約 id (`WorkspaceDoctorId`)、自然キー `target`
+//! (`spaces/<space>/intents[/<record>]`) に UNIQUE インデックスを張る。列
+//! `passed` / `failed` / `exit_code` は**集約のクエリの答えを焼き込んだ**もので、クエリ側は
+//! 数えない。`read_doctor_check` は表示順の 1 行 1 レコードで、主キーは自然キー
+//! (`report_id` × `position`) から導いた代理キー、FK 列 `report_id` が報告を指し、
+//! `check_id` / `passed` / `label` / `fix` は集約が決めた行の写しである。DAO は 1 表 1 引当で
+//! 引き、ユースケースが FK をたどって View を組む。
+//!
+//! 診断のイベントは合成ルートが開いた**一時ストア**(プロセス内の共有キャッシュ SQLite) に
+//! 置かれることがある — C7 が「診断は正本を修復・再初期化しない」「初回状態でファイルを
+//! 一切作らない」と定めるためであり、投影の手順は実ファイルのストアと 1 行も違わない。
+//!
 //! # 構造化面の表の形 — 単一主キー + FK + インデックス
 //!
 //! `read_*` 表は**基本的な関係モデリング**で設計する（オーナー裁定 2026-09-03。本クレート doc が

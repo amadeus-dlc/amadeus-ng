@@ -1,0 +1,16 @@
+{
+  "source": {
+    "repository": "https://github.com/awslabs/aidlc-workflows",
+    "commit": "a277af218f0df7f325d3b8be7b6d90fce2c5bd40",
+    "version": "2.7.1",
+    "distribution": "dist/claude"
+  },
+  "fixture_kind": "declared-synthetic-workspaces",
+  "purpose": "U2 群 B/C (aidlc-utility project-description / codekb-path / codekb-scope-diff) の CLI ゴールデン。stdout バイトと終了コードを upstream 2.7.1 と一致させる。",
+  "capture_method": "固定ピン a277af21 の配布ツリーを `git archive a277af21 dist/claude/.claude` で一時ディレクトリへ展開し、その aidlc-utility.ts を fixture.json の scenario から建てた使い捨てワークスペースに対して実行して採取した。再採取は `bun scripts/goldens/capture-codekb-authority.ts`。採取結果は手修正しない。",
+  "why_not_the_vendor_worktree": "vendor/aidlc-workflows の作業ツリーは fork 側の後続コミット 801c5700 を指しており、ピンそのものではない。群 B/C が写す 3 ハンドラ (handleProjectDescription / handleCodekbPath / handleCodekbScopeDiff) と 8 個の lib ヘルパ (readProjectDescriptionAuthority / parseReScope / codekbScopeFingerprint / relativeCodekbDir / codekbRepoName / intentRepos / scopePathCovered / getField) は a277af21 と作業ツリーで**バイト一致**していることを実測で確認済みだが、採取そのものはピンから行う。",
+  "fixture_note": "フィクスチャは fixture.json の scenario 宣言 (ファイル内容 + git リポジトリの位置) であり、採取スクリプトと Rust テスト (modules/app/aidlc/tests/codekb_authority_golden.rs) が同じ宣言から同じツリーを建てる。git 指紋 (git write-tree) は内容アドレスで作業ディレクトリの絶対パスに依存しないため、両者は同じ値を得る (実測: 別ワークスペースで同一値)。codekbRepoName が記録なしのとき basename(projectDir) に落ちるので、ワークスペースのディレクトリ名は scenario が固定する。",
+  "determinism_note": "git リポジトリを建てたら repo-local に core.excludesFile=/dev/null と core.autocrlf=false を据える。開発者の global gitignore や改行変換が `git add -A` の結果を変えると指紋が環境依存になるためで、採取スクリプトと Rust テストの双方が同じ 2 設定を据える。採取スクリプトは CURRENT / STALE / NO_STORE / UNVERIFIED / UNKNOWN_SCOPE / COVERS / NARROWER の判定と mint の 40 桁 hex を採取の場で検査し、フィクスチャの指紋定数が現在の git と合わなくなったら落ちる。",
+  "stderr_note": "失敗経路 (サイドカー欠落・不正な source・--mint の --paths 欠落・--compare の不在ファイル) は upstream が stdout 空・exit 1・stderr に {\"error\":..} を出す。native は stdout 空・exit 1 を一致させるが、stderr のエンベロープ形式の横断整合は別 Bolt の宿題であり byte 比較しない (群 A の tests/golden/workflow-authority/provenance.json と同じ既知の限界)。状態ファイルが在るときの ERROR_LOGGED 監査副作用も同じく別 Bolt に残す。",
+  "exit_code_note": "codekb-scope-diff は**判定 (verdict) を返す経路では常に exit 0** である — ライフサイクル動詞ではないので拒否を返さない。exit 1 になるのは呼び出しそのものが成立しない 2 形 (`--mint` に `--paths` が無い / `--compare` の指す先が無い) だけで、これは upstream の die() 経路である。両方をゴールデンに含めて固定した。"
+}
