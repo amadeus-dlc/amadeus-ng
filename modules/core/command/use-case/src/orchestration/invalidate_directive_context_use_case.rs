@@ -35,10 +35,7 @@ impl<R: PlanApprovalRuntimeRepository, E: IntentExecutionRepository>
         at: DateTime<Utc>,
     ) -> Result<(), PlanApprovalCommandError> {
         let mut execution = self.execution_repository.find_by_id(execution_id).await?;
-        if !execution
-            .active_directive()
-            .is_some_and(|directive| directive.matches_context(request))
-        {
+        if !execution.matches_directive_context(request) {
             return Ok(());
         }
         let invalidated = execution.invalidate_directive_context(operation, request, at)?;

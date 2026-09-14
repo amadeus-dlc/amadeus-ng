@@ -32,8 +32,6 @@
 
 use std::io::ErrorKind;
 
-use core_command_domain::orchestration::Intent;
-
 use core_command_domain::workflow_definition::{
     WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
 };
@@ -325,13 +323,6 @@ where
             P = WorkflowDefinitionEventDto,
         >,
 {
-    async fn find_for_intent(
-        &self,
-        intent: &Intent,
-    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
-        self.find_by_id(intent.definition_id()).await
-    }
-
     async fn find_by_id(
         &self,
         id: &WorkflowDefinitionId,
@@ -483,7 +474,7 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    use core_command_domain::orchestration::{IntentId, StartRequest, WorkspaceScan};
+    use core_command_domain::orchestration::{Intent, IntentId, StartRequest, WorkspaceScan};
     use core_command_domain::workflow_definition::{
         CompiledDefinition, CompiledDefinitionId, DefinitionRevision, ExecutionKind, PhaseId,
         Redefined, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder, StageNumber,
@@ -818,7 +809,7 @@ mod tests {
         )
         .expect("定義を参照する intent");
         let related_failure = workflow_definition_repository
-            .find_for_intent(&intent)
+            .find_by_id(intent.definition_id())
             .await
             .expect_err("関連取得も同じ破損を伝播する");
         assert!(

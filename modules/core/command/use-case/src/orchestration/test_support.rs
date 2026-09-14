@@ -18,6 +18,14 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+mod workflow_definition_repository;
+mod workflow_definition_repository_tests;
+pub(crate) use workflow_definition_repository::{
+    ConflictingWorkflowDefinitionRepository, InMemoryWorkflowDefinitionRepository,
+    MisdirectedWorkflowDefinitionRepository, UnreadableWorkflowDefinitionRepository,
+    WorkflowDefinitionRepositorySpy,
+};
+
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     Created, Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
@@ -28,7 +36,7 @@ use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionEvent, CompiledDefinitionId,
     DefinitionRevision, ExecutionKind, PRACTICES_DISCOVERY_SLUG, PhaseId, PlanAction,
     ReviewCapValue, ReviewClass, ScopeGrid, ScopeMetadata, StageGraph, StageMode, StageNodeBuilder,
-    StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionEvent, WorkflowDefinitionId,
+    StageNumber, StageSlug, WorkflowDefinition, WorkflowDefinitionId,
 };
 
 use super::port::CompiledDefinitionRepository;
@@ -232,154 +240,6 @@ pub(crate) fn compiled(stage_count: usize) -> CompiledDefinition {
 /// フィクスチャの配布束 id (系譜は `definition_id` と同じ name)。
 pub(crate) fn compiled_definition_id() -> CompiledDefinitionId {
     CompiledDefinitionId::parse("claude").expect("フィクスチャの配布束 id")
-}
-
-/// [`WorkflowDefinitionRepository`] のインメモリ実装。
-///
-/// 「1 ハーネス 1 定義」(BR2.6) を単一スロットで模す。楽観 version は本家の実測どおり
-/// 「新規作成は 0、1 件書くごとに 1 つ進む」で採番する。イベントストアの実体
-/// (`WorkflowDefinitionRepositoryImpl`) の契約はアダプタ層の契約テストが固定する。
-#[derive(Debug)]
-pub(crate) struct InMemoryWorkflowDefinitionRepository {
-    stored: Option<(WorkflowDefinition, usize)>,
-    committed: Vec<WorkflowDefinitionEvent>,
-    /// これまでに引かれた回数 (どの段が定義を読むかの観測点 — b48)。
-    lookups: std::cell::Cell<usize>,
-    /// 読取を破損で失敗させる台本 (`corrupt()` が立てる)。
-    corrupt: bool,
-    /// 関連取得の取り違えを再現する、参照先の差し替え。
-    related_lookup_id: Option<WorkflowDefinitionId>,
-    /// 書込に割り込む別の書き手の回数 (`holding_behind_a_concurrent_write` が立てる)。
-    interrupting_writes: usize,
-}
-
-impl InMemoryWorkflowDefinitionRepository {
-    const fn of_store(stored: Option<(WorkflowDefinition, usize)>, corrupt: bool) -> Self {
-        Self {
-            stored,
-            committed: Vec::new(),
-            lookups: std::cell::Cell::new(0),
-            corrupt,
-            related_lookup_id: None,
-            interrupting_writes: 0,
-        }
-    }
-
-    /// 基本コンストラクタ — 中身 (集約とストアが採番している版) をそのまま受け取る。
-    pub(crate) const fn new(
-        stored: Option<(WorkflowDefinition, usize)>,
-    ) -> InMemoryWorkflowDefinitionRepository {
-        Self::of_store(stored, false)
-    }
-
-    /// 関連取得が異なる系譜を返す不具合を再現する。
-    pub(crate) fn misdirecting_related_lookup(mut self, id: WorkflowDefinitionId) -> Self {
-        self.related_lookup_id = Some(id);
-        self
-    }
-
-    /// 何も入っていないストア — `find_by_id` は `NotFound` を返す。
-    pub(crate) const fn empty() -> InMemoryWorkflowDefinitionRepository {
-        InMemoryWorkflowDefinitionRepository::new(None)
-    }
-
-    /// 確立済みの定義を版 1 で保持する (genesis が 1 度書かれた状態)。
-    pub(crate) const fn holding(held: WorkflowDefinition) -> InMemoryWorkflowDefinitionRepository {
-        InMemoryWorkflowDefinitionRepository::new(Some((held, 1)))
-    }
-
-    /// 確立済みの定義を保持しつつ、最初の `store` に**別の書き手の書込が割り込む**ストア。
-    ///
-    /// 割り込んだ回は版だけが 1 つ進み、提示された版は古くなるので `Conflict` になる。
-    /// 単一スレッドのテストから競合を作る唯一の手であり、実物では別プロセスが先に改訂した
-    /// 状況にあたる (`InMemoryIntentExecutionRepository::holding_behind_concurrent_writes`
-    /// と同じ役目)。
-    pub(crate) fn holding_behind_a_concurrent_write(
-        held: WorkflowDefinition,
-    ) -> InMemoryWorkflowDefinitionRepository {
-        let mut workflow_definition_repository =
-            InMemoryWorkflowDefinitionRepository::holding(held);
-        workflow_definition_repository.interrupting_writes = 1;
-        workflow_definition_repository
-    }
-
-    /// 読取そのものが**破損で失敗する**ストア。
-    ///
-    /// `NotFound` 以外の読取失敗をユースケースがどう運ぶかを見るための台本 — 実物では
-    /// ジャーナル行を直接壊さないと作れない状態である。
-    pub(crate) const fn corrupt() -> InMemoryWorkflowDefinitionRepository {
-        Self::of_store(None, true)
-    }
-
-    /// このストアが受理したイベント列 (書込の有無を見るテスト用)。
-    pub(crate) fn committed(&self) -> &[WorkflowDefinitionEvent] {
-        &self.committed
-    }
-
-    /// これまでに引かれた回数 (「定義を読むのは Approve 段だけ」の観測点 — b48)。
-    pub(crate) fn lookups(&self) -> usize {
-        self.lookups.get()
-    }
-}
-
-impl WorkflowDefinitionRepository for InMemoryWorkflowDefinitionRepository {
-    async fn find_for_intent(
-        &self,
-        intent: &Intent,
-    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
-        self.find_by_id(
-            self.related_lookup_id
-                .as_ref()
-                .unwrap_or_else(|| intent.definition_id()),
-        )
-        .await
-    }
-
-    async fn find_by_id(
-        &self,
-        id: &WorkflowDefinitionId,
-    ) -> Result<WorkflowDefinition, RepositoryError<WorkflowDefinitionId>> {
-        self.lookups.set(self.lookups.get() + 1);
-        if self.corrupt {
-            return Err(RepositoryError::Corrupt {
-                id: id.clone(),
-                seq_nr: Some(1),
-                source: Box::new(std::io::Error::other("journal row is unreadable")),
-            });
-        }
-        match &self.stored {
-            // 返す集約にはストアが採番した版を刻む — 呼出側はそれをそのまま書込へ提示する。
-            Some((held, version)) if held.id() == id => Ok(held.clone().with_version(*version)),
-            _ => Err(RepositoryError::NotFound { id: id.clone() }),
-        }
-    }
-
-    async fn store(
-        &mut self,
-        event: &WorkflowDefinitionEvent,
-        definition: &WorkflowDefinition,
-    ) -> Result<(), RepositoryError<WorkflowDefinitionId>> {
-        let expected_version = definition.version();
-        let mut current = self.stored.as_ref().map_or(0, |(_, version)| *version);
-        if self.interrupting_writes > 0 {
-            // 別の書き手が先に書いた — その行の版が進み、提示された版が古くなる。
-            self.interrupting_writes -= 1;
-            current += 1;
-            if let Some((held, version)) = self.stored.take() {
-                let _ = version;
-                self.stored = Some((held, current));
-            }
-        }
-        if expected_version != current {
-            return Err(RepositoryError::Conflict {
-                expected: expected_version,
-                actual: current,
-            });
-        }
-        self.stored = Some((definition.clone(), current + 1));
-        self.committed.push(event.clone());
-        Ok(())
-    }
 }
 
 /// [`CompiledDefinitionRepository`] のテストダブル — 決まった配布束を返すか、決まった失敗を返す。
@@ -708,13 +568,6 @@ impl InMemoryIntentExecutionRepository {
 }
 
 impl IntentExecutionRepository for InMemoryIntentExecutionRepository {
-    async fn find_for_approval_origin(
-        &self,
-        origin: &core_command_domain::orchestration::PlanApprovalOrigin,
-    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>> {
-        self.find_by_id(origin.execution_id()).await
-    }
-
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,
@@ -806,13 +659,6 @@ impl InMemoryIntentRepository {
 }
 
 impl IntentRepository for InMemoryIntentRepository {
-    async fn find_for_execution(
-        &self,
-        execution: &IntentExecution,
-    ) -> Result<Intent, RepositoryError<IntentId>> {
-        self.find_by_id(execution.intent_id()).await
-    }
-
     async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>> {
         self.lookups.set(self.lookups.get() + 1);
         self.held

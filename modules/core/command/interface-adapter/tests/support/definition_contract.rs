@@ -21,7 +21,7 @@ use super::{
 };
 
 /// intent の参照先を再構成し、intent 作成後の定義の改訂も反映する。
-pub(crate) async fn find_for_intent_returns_the_current_definition<F: DefinitionStoreFixture>(
+pub(crate) async fn find_by_id_returns_the_current_definition<F: DefinitionStoreFixture>(
     fixture: &F,
 ) {
     let mut repository = fixture.open();
@@ -50,7 +50,7 @@ pub(crate) async fn find_for_intent_returns_the_current_definition<F: Definition
 
     let found = fixture
         .reopen(&repository)
-        .find_for_intent(&intent())
+        .find_by_id(intent().definition_id())
         .await
         .expect("intent の参照先を再構成する");
 
@@ -60,7 +60,7 @@ pub(crate) async fn find_for_intent_returns_the_current_definition<F: Definition
 }
 
 /// 関連先が保存されていなければ、その定義の ID を伴う `NotFound` を返す。
-pub(crate) async fn find_for_intent_reports_the_missing_definition<F: DefinitionStoreFixture>(
+pub(crate) async fn find_by_id_reports_the_missing_definition<F: DefinitionStoreFixture>(
     fixture: &F,
 ) {
     let mut repository = fixture.open();
@@ -79,7 +79,7 @@ pub(crate) async fn find_for_intent_reports_the_missing_definition<F: Definition
     ));
 
     let error = repository
-        .find_for_intent(&intent)
+        .find_by_id(intent.definition_id())
         .await
         .expect_err("参照先は未保存");
 

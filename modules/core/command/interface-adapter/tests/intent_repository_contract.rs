@@ -105,8 +105,8 @@ macro_rules! contract_tests {
 }
 
 contract_tests!(
-    find_for_execution_resolves_its_intent,
-    find_for_execution_reports_the_missing_intent,
+    find_by_id_resolves_its_intent,
+    find_by_id_reports_the_missing_intent,
     open_twice_yields_independent_empty_stores,
     round_trip,
     not_found,

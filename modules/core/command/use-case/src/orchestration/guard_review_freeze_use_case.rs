@@ -91,12 +91,12 @@ impl<
             .map_err(ReviewFreezeError::Execution)?;
         let intent = self
             .intent_repository
-            .find_for_execution(&execution)
+            .find_by_id(execution.intent_id())
             .await
             .map_err(ReviewFreezeError::Intent)?;
         let definition = self
             .workflow_definition_repository
-            .find_for_intent(&intent)
+            .find_by_id(intent.definition_id())
             .await
             .map_err(ReviewFreezeError::Definition)?;
         let verdict = execution.judge_review_freeze(&intent, &definition, targets);

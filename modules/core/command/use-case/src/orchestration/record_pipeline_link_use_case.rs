@@ -51,12 +51,12 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         let mut execution = self.executions.find_by_id(id).await.map_err(E::Execution)?;
         let intent = self
             .intents
-            .find_for_execution(&execution)
+            .find_by_id(execution.intent_id())
             .await
             .map_err(E::Intent)?;
         let definition = self
             .definitions
-            .find_for_intent(&intent)
+            .find_by_id(intent.definition_id())
             .await
             .map_err(E::Definition)?;
         let event = execution

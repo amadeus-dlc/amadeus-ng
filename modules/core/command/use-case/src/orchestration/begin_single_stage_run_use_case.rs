@@ -43,7 +43,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> BeginSingleStageRunUseCa
         at: DateTime<Utc>,
     ) -> Result<(), SingleStageRunError> {
         let mut execution = self.executions.find_by_id(id).await?;
-        let intent = self.intents.find_for_execution(&execution).await?;
+        let intent = self.intents.find_by_id(execution.intent_id()).await?;
         let event = match execution.begin_single_stage_run(&intent, stage, at) {
             Ok(event) => event,
             Err(CommandError::SingleStageAttemptAlreadyOpen) => return Ok(()),

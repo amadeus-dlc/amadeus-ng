@@ -121,11 +121,11 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
             .await?;
         let intent = self
             .intent_repository
-            .find_for_execution(&aggregate)
+            .find_by_id(aggregate.intent_id())
             .await?;
         let definition = self
             .definitions
-            .find_for_intent(&intent)
+            .find_by_id(intent.definition_id())
             .await
             .map_err(SingleStageRunError::DefinitionRepository)?;
         aggregate

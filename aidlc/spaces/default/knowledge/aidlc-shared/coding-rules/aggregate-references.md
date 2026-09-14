@@ -44,7 +44,7 @@ pub fn approve_gate(&mut self, intent: &Intent, ...) -> Result<IntentExecutionEv
 
 - 受け取り側は**取り違えをガードする**: `intent.id() == self.intent_id` を検査し、
   不一致は `Err` で拒否する（ID 参照だからこそ照合が書ける）。
-- 読み込んで渡すのは、注入されたRepositoryを使うユースケースの仕事。集約は取得手段を持たない（use-case-rules.md §2b）。ユースケースでgetterを禁止する2026-09-05裁定に従い、関連取得は `find_for_execution` / `find_for_intent` としてRepositoryへ依頼する。参照IDを読むのはadapter内に限り、判断や状態遷移は取得したドメインオブジェクトへ命令する。
+- 読み込んで渡すのは、注入されたRepositoryを使うユースケースの仕事。集約は取得手段を持たない（use-case-rules.md §2b）。I/Oの対象指定として参照先の型付きIDをgetterで取得し、既存の `find_by_id` へ直接渡す（2026-09-14裁定）。Repositoryは参照元オブジェクトを要求せず、業務判断や状態遷移は取得したドメインオブジェクトへ依頼する。
 
 ## イベントに材料の複製が載るのは違反ではない
 

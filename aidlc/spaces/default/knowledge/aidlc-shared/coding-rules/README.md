@@ -10,7 +10,7 @@
 - 集約IDの型名は **集約名 + `Id`**。[ubiquitous-language.md](ubiquitous-language.md) の対応規則で確認する。
 - 完成型の初期化は **完全コンストラクタ** に集約し、**setterは禁止**する。初期化漏れと、ドメインの文脈を無視した任意の状態変更を防ぐためである。
 - **`with_*` はビルダーのファクトリメソッドであり、setterとは区別する。** `build()` は完成型の完全コンストラクタを呼ぶ。詳しい判定と点検項目は [factory-naming.md](factory-naming.md) を参照する。
-- **ユースケースからドメインのgetterを呼ばない。** ドメインモデル貧血症を防ぐため、判断を状態の所有者へ委譲する。実装・是正の区切りで `cargo lint` を実行する。既存の禁止範囲と点検方法は [tell-dont-ask.md](tell-dont-ask.md) を参照する。
+- **ユースケースで業務判断のためにドメインのgetterを呼ばない。Repositoryの `find_by_id` への型付きIDの直接受け渡しだけは許可する（2026-09-14）。** ドメインモデル貧血症を防ぐため、判断を状態の所有者へ委譲する。実装・是正の区切りで `cargo lint` を実行する。既存の禁止範囲と点検方法は [tell-dont-ask.md](tell-dont-ask.md) を参照する。
 - **ドメインのFCCの要素はドメイン固有型とし、プリミティブ型を使わない。** `PendingIterations` の要素は `PendingIteration` とする。既存移行とリンター追加は利用者が許可した後続Issueで管理する。詳細は [first-class-collections.md](first-class-collections.md) を参照する。
 
 記録だけで是正済みとは扱わず、コードの構築・更新経路を点検し、結果を現在のintent記録へ残す。
@@ -49,7 +49,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | --- | --- | --- |
 | [abstract-data-type.md](abstract-data-type.md) | **土台** — AVDM / DP は抽象データ型。操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。カプセル化の単位は `struct` であって `mod`。**1 ファイル 1 公開型**（2026-09-01 改訂 — 全層へ拡張） | 部分的（`cargo lint` の no-public-fields / one-public-type） |
 | [good-examples.md](good-examples.md) | 規則の文面に対して「この形」と指せる**実在ファイルの索引**。スニペットを書き写さないのでコードが変われば例も追随する | — |
-| [tell-dont-ask.md](tell-dont-ask.md) | **ユースケースからドメインのgetterを呼ばない**。アダプタ層でのgetterは合法（2026-09-05）。判断は状態の所有者へ。`value()`/`inner()`/`raw()`で内部型を意識させない | `cargo lint`（checkbox-vocabulary / use-case-domain-getter） |
+| [tell-dont-ask.md](tell-dont-ask.md) | **ユースケースの業務判断にgetterを使わない**。Repositoryの `find_by_id` への型付きIDの直接受け渡しは許可（2026-09-14）。アダプタ層でのgetterは合法。判断は状態の所有者へ。`value()`/`inner()`/`raw()`で内部型を意識させない | `cargo lint`（checkbox-vocabulary / use-case-domain-getter） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
 | [first-class-collections.md](first-class-collections.md) | コレクション操作（`filter` / `map` / `fold_left` / `at`）を優先し、型の意味に沿った `combine` / `divide` を先に選ぶ。イテレータ公開は最後の手段で、例外は理由付きの境界処理のみ（裁定日 2026-09-06 — 従来この告知は「規則が衝突したら」節の中に置かれていたが、一覧表の本行へ畳んだ） | 設計・レビュー基準（全型への一律lintは未実装） |
 | [field-visibility.md](field-visibility.md) | フィールドはデフォルト private — 公開はアクセサ経由。**`pub` も `pub(crate)` も禁止で例外を認めない**（2026-08-24 改訂。検出境界の拡張は既存違反の是正と同じ Bolt で着地させる） | `cargo lint`（no-public-fields。境界拡張は機械化ロードマップ 2） |

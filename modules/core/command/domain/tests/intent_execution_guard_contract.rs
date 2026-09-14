@@ -10,8 +10,9 @@ use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     CommandError, DirectivePublication, Intent, IntentExecution, IntentExecutionId, IntentId,
     PipelineHandoffInput, PipelineLinkError, PipelineLinkRequest, PlanApprovalDocuments,
-    PlanApprovalInput, PlanApprovalOrigin, PlanChoice, PlanReceipts, PlanSession, PlanTarget,
-    PublishedDirective, ReportRequest, StartRequest, TestingSections, Verdict, WorkspaceScan,
+    PlanApprovalInput, PlanApprovalOrigin, PlanApprovalRuntime, PlanChoice, PlanSession,
+    PlanTarget, PublishedDirective, ReportRequest, StartRequest, TestingSections, Verdict,
+    WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, ExecutionKind, PhaseId,
@@ -101,6 +102,48 @@ const OWN: &str = "01a02785-1bd8-76eb-aeea-5aa303ebd5b6";
 const FOREIGN: &str = "018f3b2c-4d5e-7f60-8abc-def012345678";
 const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 const OTHER_EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0001";
+
+#[test]
+fn directive_context_matching_requires_an_issued_directive_and_all_owner_fields() {
+    use core_command_domain::orchestration::DirectiveContextInvalidation;
+    let (_, _, mut execution) = started();
+    let request = |intent, project: &str, state: &str, session: &str| {
+        DirectiveContextInvalidation::new(
+            IntentId::parse(intent).unwrap(),
+            project.into(),
+            state.into(),
+            session.into(),
+        )
+    };
+    let project = "a".repeat(64);
+    let state = "b".repeat(64);
+    let session = "sessionless:aaaaaaaaaaaaaaaa";
+    let matching = request(OWN, &project, &state, session);
+    assert!(!execution.matches_directive_context(&matching));
+    execution
+        .issue_directive(
+            &DirectivePublication::new(
+                project.clone(),
+                state.clone(),
+                PublishedDirective::RunStage {
+                    stage: slug("code-generation"),
+                    unit: None,
+                },
+            ),
+            at(),
+        )
+        .unwrap();
+    assert!(execution.matches_directive_context(&matching));
+    for mismatch in [
+        request(FOREIGN, &project, &state, session),
+        request(OWN, &"c".repeat(64), &state, session),
+        request(OWN, &project, &"c".repeat(64), session),
+        request(OWN, &project, &state, "other-session"),
+        request(OWN, &project, &state, ""),
+    ] {
+        assert!(!execution.matches_directive_context(&mismatch));
+    }
+}
 
 fn started() -> (Intent, Intent, IntentExecution) {
     let own = intent(OWN);
@@ -207,11 +250,13 @@ fn the_plan_approval_queries_refuse_a_foreign_intent() {
             .to_string(),
         MISMATCH
     );
-    let approval = execution.code_generation_approval(&foreign, &input, &PlanReceipts::default());
+    let approval =
+        execution.code_generation_approval(&foreign, &input, &PlanApprovalRuntime::create(at()).0);
     assert!(!approval.ok());
     assert_eq!(approval.reason(), MISMATCH);
     // 自分の intent でも、発行済みの指示が無ければ権限は解決できない。
-    let approval = execution.code_generation_approval(&own, &input, &PlanReceipts::default());
+    let approval =
+        execution.code_generation_approval(&own, &input, &PlanApprovalRuntime::create(at()).0);
     assert!(!approval.ok());
     assert!(
         approval.reason().contains("run a fresh `next`"),

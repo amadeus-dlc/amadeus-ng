@@ -42,7 +42,7 @@ impl<R: PlanApprovalRuntimeRepository, E: IntentExecutionRepository, I: IntentRe
         let mut execution = self.execution_repository.find_by_id(execution_id).await?;
         let intent = self
             .intent_repository
-            .find_for_execution(&execution)
+            .find_by_id(execution.intent_id())
             .await?;
         let evidence = execution.plan_approval_evidence(&intent, request.input(), "")?;
         let prompt = request

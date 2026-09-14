@@ -85,7 +85,7 @@ Repository（集約 I/O）に当てはまらない外界協調は、**アウト�
 集約の宣言はコードが持っている（`modules/core/command/domain/src/` の `orchestration` / `workspace` / `workflow_definition` 各モジュールの集約ルート。旧 `docs/specs/` の 01-domain-model §3・11-workspace §2.1・12-workflow-definition §2.1 に宣言表があったが 2026-09-07 に削除した）。Repository はそこに載っている集約ルート名をそのまま冠する。
 
 - `IntentExecution` → `IntentExecutionRepository`（~~`WorkflowExecution` → `WorkflowExecutionRepository`~~ 集約の分割・改名 2026-08-29）
-- `Intent` → `IntentRepository`。**Repositoryは自分の集約だけを再構成・保存して返す**。`IntentRepository`はIntent、`IntentExecutionRepository`はIntentExecutionを扱い、別の集約を復元して返さない。基本の検索は自集約IDによる `find_by_id`。ユースケースでgetterを禁止する2026-09-05裁定への対応として、参照関係による `IntentRepository::find_for_execution(&IntentExecution)` と `WorkflowDefinitionRepository::find_for_intent(&Intent)` も許す。渡す集約は検索条件となる参照の所有者であり、adapterがその参照IDを読み、既存find_by_idへ委譲する。渡された側を再取得・保存する権限や、業務判断をRepositoryへ移す許可には広げない。ユースケースは依存先の取得を指示し、ドメインの判断には取得済み集約の参照を渡す（[aggregate-references.md](aggregate-references.md)）。
+- `Intent` → `IntentRepository`。**Repositoryは自分の集約だけを再構成・保存して返す**。基本の検索は自集約IDによる `find_by_id`。参照先IDを読むだけのために、参照元の集約や値オブジェクトを検索引数に取らない（2026-09-14裁定）。ユースケースが型付きIDを直接渡して依存先を取得し、ドメインの判断には取得済み集約の参照を渡す（[aggregate-references.md](aggregate-references.md)）。Repositoryに業務判断や参照元の再取得・保存を持ち込まない。
 - `CompiledDefinition` → `CompiledDefinitionRepository`（**新設 2026-09-02、b36** — 配布束の
   集約。識別子は自前の `CompiledDefinitionId`。`find_by_id` と `store` の両動詞（「書き込め
   ないと読み込めない」裁定）。媒体 = 配布 3 ファイルは実装の内部詳細で、graph / grid は

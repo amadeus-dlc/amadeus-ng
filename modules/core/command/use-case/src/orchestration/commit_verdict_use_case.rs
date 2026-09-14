@@ -187,7 +187,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         // 参照するだけなので（`coding-rules/aggregate-references.md`）、その ID で引く。
         let intent = self
             .intent_repository
-            .find_for_execution(&aggregate)
+            .find_by_id(aggregate.intent_id())
             .await?;
 
         // 状態の計算は先に行うが、pipeline根拠不足の拒否は本家と同じく
@@ -196,7 +196,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         let definition = if request.requires_completion_evidence() {
             Some(
                 self.workflow_definition_repository
-                    .find_for_intent(&intent)
+                    .find_by_id(intent.definition_id())
                     .await
                     .map_err(CommitError::DefinitionRepository)?,
             )
@@ -342,8 +342,8 @@ mod tests {
     use super::super::port::RepositoryError;
     use super::super::test_support::{
         InMemoryIntentExecutionRepository, InMemoryIntentRepository,
-        InMemoryWorkflowDefinitionRepository, absent_execution, at, definition,
-        definition_with_reviewer, execution_id, genesis, genesis_with_review, slug,
+        InMemoryWorkflowDefinitionRepository, WorkflowDefinitionRepositorySpy, absent_execution,
+        at, definition, definition_with_reviewer, execution_id, genesis, genesis_with_review, slug,
         start_from_plan,
     };
     use chrono::{DateTime, Utc};
@@ -365,15 +365,16 @@ mod tests {
     }
 
     /// テストの主体 — 3 本のポートを注入したユースケース。
-    struct Subject {
-        use_case: CommitVerdictUseCase<
-            InMemoryIntentExecutionRepository,
-            InMemoryIntentRepository,
+    struct Subject<
+        D: super::super::port::WorkflowDefinitionRepository = WorkflowDefinitionRepositorySpy<
             InMemoryWorkflowDefinitionRepository,
         >,
+    > {
+        use_case:
+            CommitVerdictUseCase<InMemoryIntentExecutionRepository, InMemoryIntentRepository, D>,
     }
 
-    impl Subject {
+    impl<D: super::super::port::WorkflowDefinitionRepository> Subject<D> {
         async fn execute(
             &mut self,
             request: ReportRequest,
@@ -400,7 +401,7 @@ mod tests {
             self.use_case.intent_repository()
         }
 
-        const fn workflow_definition_repository(&self) -> &InMemoryWorkflowDefinitionRepository {
+        const fn workflow_definition_repository(&self) -> &D {
             self.use_case.workflow_definition_repository()
         }
     }
@@ -422,7 +423,9 @@ mod tests {
             use_case: CommitVerdictUseCase::new(
                 InMemoryIntentExecutionRepository::holding(aggregate, version),
                 InMemoryIntentRepository::holding(intent),
-                InMemoryWorkflowDefinitionRepository::holding(definition),
+                WorkflowDefinitionRepositorySpy::new(
+                    InMemoryWorkflowDefinitionRepository::holding(definition),
+                ),
             ),
         }
     }
@@ -514,15 +517,16 @@ mod tests {
 
     #[tokio::test]
     async fn an_unrelated_definition_is_reported_with_its_cause_before_any_write() {
-        use super::super::test_support::{definition_id, genesis_referencing_other_definition};
+        use super::super::test_support::{
+            MisdirectedWorkflowDefinitionRepository, genesis_referencing_other_definition,
+        };
         use core_command_domain::orchestration::IntentReviewError;
         let (intent, aggregate) = genesis_referencing_other_definition();
         let mut subject = Subject {
             use_case: CommitVerdictUseCase::new(
                 InMemoryIntentExecutionRepository::holding(aggregate, 1),
                 InMemoryIntentRepository::holding(intent),
-                InMemoryWorkflowDefinitionRepository::holding(definition(3))
-                    .misdirecting_related_lookup(definition_id()),
+                MisdirectedWorkflowDefinitionRepository::new(definition(3)),
             ),
         };
         let refusal = subject

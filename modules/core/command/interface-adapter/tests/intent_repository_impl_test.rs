@@ -275,7 +275,7 @@ async fn a_journal_row_without_a_snapshot_row_is_corrupt() {
 
     let error = fixture
         .repository()
-        .find_for_execution(&support::genesis().0)
+        .find_by_id(support::genesis().0.intent_id())
         .await
         .expect_err("関連取得も破損を伝播する");
     assert!(
@@ -290,7 +290,7 @@ async fn a_journal_row_without_a_snapshot_row_is_corrupt() {
 }
 
 #[tokio::test]
-async fn find_for_execution_preserves_the_io_failure_location() {
+async fn find_by_id_preserves_the_io_failure_location() {
     let fixture = Fixture::new();
     let repository = fixture.repository();
     fixture
@@ -299,7 +299,7 @@ async fn find_for_execution_preserves_the_io_failure_location() {
         .expect("表を壊す");
 
     let error = repository
-        .find_for_execution(&support::genesis().0)
+        .find_by_id(support::genesis().0.intent_id())
         .await
         .expect_err("I/O 失敗");
 

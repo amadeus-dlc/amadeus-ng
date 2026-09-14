@@ -883,11 +883,11 @@ async fn an_approval_origin_resolves_to_its_execution_and_nothing_else() {
     let mut repository = fixture.repository();
     let expected = seed(&mut repository).await;
     let origin = PlanApprovalOrigin::new(SpaceName::parse("other").unwrap(), execution_id());
-    let found = repository.find_for_approval_origin(&origin).await.unwrap();
+    let found = repository.find_by_id(origin.execution_id()).await.unwrap();
     assert_eq!(found, expected);
     let absent = PlanApprovalOrigin::new(SpaceName::default(), absent_execution_id());
     assert!(matches!(
-        repository.find_for_approval_origin(&absent).await,
+        repository.find_by_id(absent.execution_id()).await,
         Err(RepositoryError::NotFound { id }) if id == absent_execution_id()
     ));
 }
