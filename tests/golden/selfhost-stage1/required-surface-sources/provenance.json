@@ -1,0 +1,89 @@
+{
+  "source": {
+    "repository": "https://github.com/amadeus-dlc/amadeus-ng",
+    "commit": "688bd6e846441bed481afaaf4d90546c8751f66a",
+    "version": "2.7.1-j5ik2o.1",
+    "distribution": ".claude",
+    "upstream_fork": {
+      "repository": "https://github.com/j5ik2o/aidlc-workflows",
+      "commit": "801c570062f67dc8f4952ee5fc601381d09db7ec"
+    },
+    "files": 18
+  },
+  "fixture_kind": "required-surface-sources",
+  "capture_method": "aidlc 2.8.2 へ更新する直前の amadeus-ng main（fork 同期で導入した 2.7.1-j5ik2o.1 の .claude 配布物）から `git show` で写した、scripts/aidlc-selfhost/required-surface.json の sources 18 ファイル。2.8.2 では配布物の呼出し形が `aidlc engine` に変わり、U4 で測った出典行が現物から消えたため、列挙はこの固定バイトに対して検証する（modules/app/aidlc/tests/required_surface_contract.rs）。",
+  "files": [
+    {
+      "path": ".claude/skills/aidlc/SKILL.md",
+      "sha256": "dfd3efbc2010cfdb42cf2164c05dad13188537b84a283d12059fcce17c6a5ba0"
+    },
+    {
+      "path": ".claude/aidlc-common/conductor.md",
+      "sha256": "7033010b0bbb3dcc44afddd9007d7511fb59d37c05d78a48845f5984ee4c07c7"
+    },
+    {
+      "path": ".claude/aidlc-common/protocols/stage-protocol.md",
+      "sha256": "2aa09470ff0d10da41d423f66a6aeeefddd7e50d2900f1954432201acba3b4ca"
+    },
+    {
+      "path": ".claude/aidlc-common/protocols/stage-protocol-construction.md",
+      "sha256": "78876f8b99f4f3383ae7bc5fb931bf9ab4faed4ed0f26c071c9380d0d7f73af1"
+    },
+    {
+      "path": ".claude/aidlc-common/protocols/stage-protocol-reviewer.md",
+      "sha256": "64de95bae05d75f69fe2a2d7861b933655e7dbee3df63a15d4484a155071856a"
+    },
+    {
+      "path": ".claude/aidlc-common/protocols/stage-protocol-ensemble.md",
+      "sha256": "475273620fa1cc8a221ad78f476d9858589e00699c3f4d5c6f1842886c6a0284"
+    },
+    {
+      "path": ".claude/aidlc-common/protocols/stage-protocol-governance.md",
+      "sha256": "585acfafbbc20dfa429de59aac77f84b0327482faceeb03fd33af756daf94d74"
+    },
+    {
+      "path": ".claude/aidlc-common/protocols/stage-protocol-recovery.md",
+      "sha256": "d3ce9581d21605eb80368cf7b3008a49ad6907773f1d226296d6b6ba1bd6cd49"
+    },
+    {
+      "path": ".claude/scopes/aidlc-bugfix.md",
+      "sha256": "9e4f674a7081ee10a2eba6164a644ec9952c33ca65675bd647d846cbde5ecd8f"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/initialization/state-init.md",
+      "sha256": "a57491ceb077cd1b15a4a266368b4d1a697b7686631848e183602f34115fb7b9"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/initialization/workspace-detection.md",
+      "sha256": "7d53523f153ccca825a8d7bfba9dd09f7f25af9fd7c74773bc08d7df29de806a"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/initialization/workspace-scaffold.md",
+      "sha256": "2c3dfccb9cd0e22131f104cb42176cb4ede89f240c8484dccca8ac32c67d51d1"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/reverse-engineering.md",
+      "sha256": "fa2222f2d1729a54537867d6e704d8e15576f950d138c625b73fe3ff17afdd90"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/inception/requirements-analysis.md",
+      "sha256": "5666747cddd595ac59f1343af3e57b2ecef2915748e1f27dbf1001188493f63b"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/code-generation.md",
+      "sha256": "59065ee553bda694892effa9c06c2ce5bdc7e22368858637813972bed01e4d76"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/build-and-test.md",
+      "sha256": "74cb6d0482dab0cb140946b2173c6c94c6fb62670de4fe7c34430ca56442681e"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/deployment-pipeline.md",
+      "sha256": "7be448d09e43fe1c6e17b8b4a7b5fb35779c1bf9612004e16d946a51d3fa4c8d"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/operation/deployment-execution.md",
+      "sha256": "7a3bb6a01c11f0bfc619e5aee2b26d75841fa7b48b2ef2107efc6cb2739f5219"
+    }
+  ]
+}

@@ -7,16 +7,19 @@ const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 function shellWords(command: string): string[] {
   const words: string[] = [];
   let word = "";
+  let wordStarted = false;
   let quote: "'" | '"' | null = null;
   let escaped = false;
   const push = () => {
-    if (word.length > 0) words.push(word);
+    if (wordStarted) words.push(word);
     word = "";
+    wordStarted = false;
   };
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
     if (escaped) {
       word += ch;
+      wordStarted = true;
       escaped = false;
       continue;
     }
@@ -30,6 +33,7 @@ function shellWords(command: string): string[] {
     }
     if (ch === "\\" && quote !== "'") {
       escaped = true;
+      wordStarted = true;
       continue;
     }
     if (quote !== null) {
@@ -39,36 +43,26 @@ function shellWords(command: string): string[] {
     }
     if (ch === "'" || ch === '"') {
       quote = ch;
+      wordStarted = true;
       continue;
     }
-    if (ch === ">" || ch === "<") {
-      // `[n]>word` / `[n]<word`: a bare descriptor number belongs to the
-      // operator, and `>&n`, `>&-`, `<&n`, `<&-` duplicate or close a
-      // descriptor without naming a file. Neither is a word of the command.
-      if (/^\d+$/.test(word)) word = "";
-      push();
-      let end = i + 1;
-      if (command[end] === ch) end++;
-      if (ch === ">" && command[end] === "|") end++;
-      if (command[end] === "&") {
-        const descriptor = command
-          .slice(end + 1)
-          .match(/^(?:\d+|-)(?![^\s;|&()<>])/);
-        end += 1 + (descriptor?.[0].length ?? 0);
+    if (ch === "<" || ch === ">" || (!wordStarted && /\d/.test(ch))) {
+      const descriptorRedirect =
+        /^\d*[<>]&[ \t]*(?:\d+|-)(?=$|[ \t\n;|&()<>])/.exec(command.slice(i));
+      if (descriptorRedirect) {
+        // Shell descriptors are syntax, not argv. In particular, keeping a
+        // trailing "2" or "1" would change a mutator's apparent destination.
+        push();
+        i += descriptorRedirect[0].length - 1;
+        continue;
       }
-      i = end - 1;
-      continue;
-    }
-    if (ch === "&" && command[i + 1] === ">") {
-      // `&>word` / `&>>word` (bash): both streams to a file; the `>` follows.
-      push();
-      continue;
     }
     if (/\s/.test(ch) || ";|&()<>".includes(ch)) {
       push();
       continue;
     }
     word += ch;
+    wordStarted = true;
   }
   push();
   return words;
@@ -79,15 +73,10 @@ function shellCommandSegments(command: string): string[] {
   let start = 0;
   let quote: "'" | '"' | null = null;
   let escaped = false;
-  // The previous unquoted, unescaped character. An `&` right after `>` or `<`
-  // duplicates a descriptor (`2>&1`, `<&0`) and an `&` right before `>` sends
-  // both streams to a file (`&>log`); neither separates commands.
-  let previous = "";
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
     if (escaped) {
       escaped = false;
-      previous = "";
       continue;
     }
     if (
@@ -107,14 +96,19 @@ function shellCommandSegments(command: string): string[] {
     }
     if (ch === "'" || ch === '"') {
       quote = ch;
-      previous = "";
       continue;
     }
-    const redirection =
-      ch === "&" &&
-      (previous === ">" || previous === "<" || command[i + 1] === ">");
-    previous = ch;
-    if (redirection) continue;
+    // Descriptor duplication/closure is one redirection operator, not a
+    // background separator followed by a command named "1" or "-". Only shell
+    // blanks/newlines delimit it: Unicode whitespace can be part of a filename.
+    if (ch === ">" || ch === "<") {
+      const descriptorRedirect =
+        /^[<>]&[ \t]*(?:\d+|-)(?=$|[ \t\n;|&()<>])/.exec(command.slice(i));
+      if (descriptorRedirect) {
+        i += descriptorRedirect[0].length - 1;
+        continue;
+      }
+    }
     if (ch !== ";" && ch !== "\n" && ch !== "|" && ch !== "&") continue;
     segments.push(command.slice(start, i));
     if ((ch === "|" || ch === "&") && command[i + 1] === ch) i++;

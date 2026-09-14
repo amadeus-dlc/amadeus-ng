@@ -1,5 +1,0 @@
-   Compiling core-read-model-updater v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/core/read-model-updater)
-   Compiling harness-claude v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/claude)
-   Compiling aidlc v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/app/aidlc)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 04s
-     Running tests/review_guards_contract.rs (target/debug/deps/review_guards_contract-c5352ed79e9f4f03)

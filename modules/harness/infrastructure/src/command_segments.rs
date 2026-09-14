@@ -9,7 +9,7 @@ use core_infrastructure::collections::Collection;
 ///
 /// `&` は常に区切りではない。`2>&1` `<&0` の `&` は記述子の複製であり、`&>log` の `&` は
 /// 両方の流れをファイルへ送る綴りの一部である。どちらもコマンドを分けない
-/// (`scripts/aidlc-sync/patches/shell-redirection-tokens.patch` の是正)。
+/// (旧 fork パッチ `shell-redirection-tokens` の是正。パッチは fork 同期の廃止で削除済み)。
 #[must_use]
 pub(crate) fn split_command_segments(command: &str) -> Collection<String> {
     let chars: Vec<char> = command.chars().collect();

@@ -1,2 +1,0 @@
-    Checking harness-claude v0.1.0 (/Users/j5ik2o/orca/workspaces/amadeus-ng/stage1/modules/harness/claude)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.92s

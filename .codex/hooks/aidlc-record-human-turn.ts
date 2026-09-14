@@ -51,23 +51,24 @@
 // suppressed too should say so — it is a one-line follow-on, not a silent choice.
 import { existsSync } from "node:fs";
 import {
+  consumeSharedDirectiveAsk,
   humanTurnMintAllowed,
   markHumanTurn,
   resolveProjectDirFromHook,
   stateFilePath,
 } from "../tools/aidlc-lib.ts";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
-import { recordPlanApprovalHumanResponse } from "../tools/aidlc-testing-posture.ts";
+import {
+  recordPlanApprovalHumanResponse,
+  recordPlanApprovalOverrideRequest,
+} from "../tools/aidlc-testing-posture.ts";
 
 function extractResponseText(value: unknown): string {
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return "";
     try {
-      const parsed = JSON.parse(trimmed);
-      // 番号回答は後段の提示済み選択肢との照合へ文字列のまま渡す。
-      if (typeof parsed === "number") return trimmed;
-      return extractResponseText(parsed);
+      return extractResponseText(JSON.parse(trimmed));
     } catch {
       return trimmed;
     }
@@ -108,8 +109,15 @@ try {
     if (humanTurnMintAllowed()) {
       let sessionId = "";
       let humanResponseText = "";
+      // The break-glass phrase counts only when the human TYPED it: the prompt
+      // text of a UserPromptSubmit payload that names no tool. A picked option
+      // (AskUserQuestion PostToolUse, Codex request_user_input, any adapter's
+      // picker payload) arrives under tool_response and never opens it.
+      let typedPrompt = "";
       try {
         const parsed = JSON.parse(input) as {
+          hook_event_name?: unknown;
+          tool_name?: unknown;
           session_id?: unknown;
           prompt?: unknown;
           user_prompt?: unknown;
@@ -131,14 +139,36 @@ try {
             break;
           }
         }
+        if (
+          parsed.hook_event_name === "UserPromptSubmit" &&
+          typeof parsed.tool_name !== "string"
+        ) {
+          typedPrompt =
+            [parsed.prompt, parsed.user_prompt, parsed.message].find(
+              (value): value is string =>
+                typeof value === "string" && value.trim().length > 0,
+            ) ?? "";
+        }
       } catch { /* presence still records without identity on legacy payloads */ }
-      appendAuditEntry("HUMAN_TURN", sessionId ? { Session: sessionId } : {}, projectDir);
-      if (sessionId && humanResponseText) {
-        recordPlanApprovalHumanResponse(
-          projectDir,
-          sessionId,
-          humanResponseText,
-        );
+      try {
+        appendAuditEntry("HUMAN_TURN", sessionId ? { Session: sessionId } : {}, projectDir);
+        if (sessionId && humanResponseText) {
+          recordPlanApprovalHumanResponse(
+            projectDir,
+            sessionId,
+            humanResponseText,
+          );
+        }
+        if (sessionId && typedPrompt) {
+          recordPlanApprovalOverrideRequest(projectDir, sessionId, typedPrompt);
+        }
+      } catch {
+        // Authority bookkeeping remains fail-open for the human's turn.
+      }
+      try {
+        consumeSharedDirectiveAsk(projectDir, humanResponseText);
+      } catch {
+        // Non-authority marker consumption is independently best-effort.
       }
     }
     markHumanTurn(projectDir);

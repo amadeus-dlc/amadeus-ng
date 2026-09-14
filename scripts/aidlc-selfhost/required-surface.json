@@ -11,25 +11,26 @@
     "invoked": "配布資産に `bun .claude/tools/aidlc-<face>.ts <verb>` の呼出し形がある。",
     "mentioned-only": "言及だけで呼出し形が無い (禁止の記述、directive が綴るコマンド、別経路の条件付き入口)。"
   },
+  "sources_note": "sources と出典は、aidlc 2.8.2 へ更新する直前の .claude 配布物 (2.7.1-j5ik2o.1) を固定したフィクスチャ tests/golden/selfhost-stage1/required-surface-sources/ を指す。2.8.2 では呼出し形が `aidlc engine` に変わり、ここで測った出典行が現物から消えたためである。出所と sha256 は同ディレクトリの provenance.json に記録している。",
   "sources": [
-    ".claude/skills/aidlc/SKILL.md",
-    ".claude/aidlc-common/conductor.md",
-    ".claude/aidlc-common/protocols/stage-protocol.md",
-    ".claude/aidlc-common/protocols/stage-protocol-construction.md",
-    ".claude/aidlc-common/protocols/stage-protocol-reviewer.md",
-    ".claude/aidlc-common/protocols/stage-protocol-ensemble.md",
-    ".claude/aidlc-common/protocols/stage-protocol-governance.md",
-    ".claude/aidlc-common/protocols/stage-protocol-recovery.md",
-    ".claude/scopes/aidlc-bugfix.md",
-    ".claude/aidlc-common/stages/initialization/state-init.md",
-    ".claude/aidlc-common/stages/initialization/workspace-detection.md",
-    ".claude/aidlc-common/stages/initialization/workspace-scaffold.md",
-    ".claude/aidlc-common/stages/inception/reverse-engineering.md",
-    ".claude/aidlc-common/stages/inception/requirements-analysis.md",
-    ".claude/aidlc-common/stages/construction/code-generation.md",
-    ".claude/aidlc-common/stages/construction/build-and-test.md",
-    ".claude/aidlc-common/stages/operation/deployment-pipeline.md",
-    ".claude/aidlc-common/stages/operation/deployment-execution.md"
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/conductor.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-governance.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-recovery.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/scopes/aidlc-bugfix.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/state-init.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/workspace-detection.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/workspace-scaffold.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/build-and-test.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/operation/deployment-pipeline.md",
+    "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/operation/deployment-execution.md"
   ],
   "stages": [
     "state-init",
@@ -118,10 +119,10 @@
       "condition": "禁止 — 通常経路では呼ばない。権限を持つ受領は本家側でも拒否される。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:130",
-        ".claude/aidlc-common/protocols/stage-protocol.md:589",
-        ".claude/aidlc-common/protocols/stage-protocol.md:677",
-        ".claude/aidlc-common/protocols/stage-protocol.md:777"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:130",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:589",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:677",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:777"
       ],
       "cite_token": "aidlc-audit.ts"
     },
@@ -134,7 +135,7 @@
       "condition": "ladder の回答を記録するとき。bugfix は skeleton: off で踏まない。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:70"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:70"
       ],
       "cite_token": "aidlc-bolt.ts"
     },
@@ -146,10 +147,10 @@
       "bugfix_required": false,
       "condition": "ステージグラフを再コンパイルするときだけ。",
       "invoked_cites": [
-        ".claude/skills/aidlc/SKILL.md:178"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:178"
       ],
       "cites": [
-        ".claude/skills/aidlc/SKILL.md:178"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:178"
       ],
       "cite_token": "aidlc-graph.ts"
     },
@@ -162,8 +163,8 @@
       "condition": "engine が print directive で綴ったジャンプを逐語で実行するときだけ。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:148",
-        ".claude/aidlc-common/protocols/stage-protocol.md:616"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:148",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:616"
       ],
       "cite_token": "aidlc-jump.ts"
     },
@@ -175,12 +176,12 @@
       "bugfix_required": true,
       "condition": "学びを確定したとき。候補ゼロでも儀式自体は走る。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:1101",
-        ".claude/skills/aidlc/SKILL.md:107"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1101",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:107"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:1101",
-        ".claude/skills/aidlc/SKILL.md:107"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1101",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:107"
       ],
       "cite_token": "aidlc-learnings.ts"
     },
@@ -192,12 +193,12 @@
       "bugfix_required": true,
       "condition": "各ステージ末の学びの儀式 (§13)。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:1091",
-        ".claude/skills/aidlc/SKILL.md:107"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1091",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:107"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:1091",
-        ".claude/skills/aidlc/SKILL.md:107"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1091",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:107"
       ],
       "cite_token": "aidlc-learnings.ts"
     },
@@ -209,28 +210,28 @@
       "bugfix_required": true,
       "condition": "ゲート以外の回答を受けた直後。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:131",
-        ".claude/aidlc-common/protocols/stage-protocol.md:436",
-        ".claude/aidlc-common/protocols/stage-protocol.md:599",
-        ".claude/aidlc-common/stages/construction/code-generation.md:252"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:131",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:436",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:599",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:252"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:71",
-        ".claude/aidlc-common/protocols/stage-protocol.md:1095",
-        ".claude/aidlc-common/protocols/stage-protocol.md:131",
-        ".claude/aidlc-common/protocols/stage-protocol.md:194",
-        ".claude/aidlc-common/protocols/stage-protocol.md:248",
-        ".claude/aidlc-common/protocols/stage-protocol.md:249",
-        ".claude/aidlc-common/protocols/stage-protocol.md:250",
-        ".claude/aidlc-common/protocols/stage-protocol.md:436",
-        ".claude/aidlc-common/protocols/stage-protocol.md:595",
-        ".claude/aidlc-common/protocols/stage-protocol.md:599",
-        ".claude/aidlc-common/protocols/stage-protocol.md:774",
-        ".claude/aidlc-common/stages/construction/code-generation.md:252",
-        ".claude/skills/aidlc/SKILL.md:104",
-        ".claude/skills/aidlc/SKILL.md:107",
-        ".claude/skills/aidlc/SKILL.md:109",
-        ".claude/skills/aidlc/SKILL.md:255"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:71",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1095",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:131",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:194",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:248",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:249",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:250",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:436",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:595",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:599",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:774",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:252",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:104",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:107",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:109",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:255"
       ],
       "cite_token": "aidlc-log.ts"
     },
@@ -242,31 +243,31 @@
       "bugfix_required": true,
       "condition": "ゲート以外の質問を提示する前。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:131",
-        ".claude/aidlc-common/protocols/stage-protocol.md:247",
-        ".claude/aidlc-common/protocols/stage-protocol.md:427",
-        ".claude/aidlc-common/protocols/stage-protocol.md:598",
-        ".claude/aidlc-common/stages/construction/code-generation.md:237",
-        ".claude/skills/aidlc/SKILL.md:255"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:131",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:247",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:427",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:598",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:237",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:255"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:329",
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:71",
-        ".claude/aidlc-common/protocols/stage-protocol.md:1095",
-        ".claude/aidlc-common/protocols/stage-protocol.md:131",
-        ".claude/aidlc-common/protocols/stage-protocol.md:247",
-        ".claude/aidlc-common/protocols/stage-protocol.md:250",
-        ".claude/aidlc-common/protocols/stage-protocol.md:427",
-        ".claude/aidlc-common/protocols/stage-protocol.md:451",
-        ".claude/aidlc-common/protocols/stage-protocol.md:595",
-        ".claude/aidlc-common/protocols/stage-protocol.md:598",
-        ".claude/aidlc-common/protocols/stage-protocol.md:773",
-        ".claude/aidlc-common/stages/construction/code-generation.md:237",
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:178",
-        ".claude/skills/aidlc/SKILL.md:107",
-        ".claude/skills/aidlc/SKILL.md:109",
-        ".claude/skills/aidlc/SKILL.md:255",
-        ".claude/skills/aidlc/SKILL.md:70"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:329",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:71",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1095",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:131",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:247",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:250",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:427",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:451",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:595",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:598",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:773",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:237",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:178",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:107",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:109",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:255",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:70"
       ],
       "cite_token": "aidlc-log.ts"
     },
@@ -278,31 +279,31 @@
       "bugfix_required": true,
       "condition": "reverse-engineering の委譲引継ぎ完了。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:126",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:134",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:142",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:150",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:158",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:166",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:174",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:182",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:26",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:245",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:388"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:126",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:134",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:142",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:150",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:158",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:166",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:174",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:182",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:26",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:245",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:388"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:101",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:126",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:134",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:142",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:150",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:158",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:166",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:174",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:182",
-        ".claude/aidlc-common/protocols/stage-protocol-ensemble.md:26",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:245",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:388"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:101",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:126",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:134",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:142",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:150",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:158",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:166",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:174",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:182",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:26",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:245",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:388"
       ],
       "cite_token": "aidlc-log.ts"
     },
@@ -314,15 +315,15 @@
       "bugfix_required": true,
       "condition": "requirements-analysis と code-generation のレビュー受領。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:108",
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:29"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:108",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:29"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:308",
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:108",
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:189",
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:29",
-        ".claude/skills/aidlc/SKILL.md:72"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:308",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:108",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:189",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:29",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:72"
       ],
       "cite_token": "aidlc-log.ts"
     },
@@ -335,9 +336,9 @@
       "condition": "利用者が自己診断を求めたときだけ (C7)。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:65",
-        ".claude/skills/aidlc/SKILL.md:60",
-        ".claude/skills/aidlc/SKILL.md:8"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:65",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:60",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:8"
       ],
       "cite_token": "--doctor",
       "runnable_source": "利用者が `/aidlc --doctor` として打つ。契約 C7 の公開入力は `--doctor` だけである。"
@@ -350,10 +351,10 @@
       "bugfix_required": false,
       "condition": "継続トークンで同じターンを続けるときだけ。",
       "invoked_cites": [
-        ".claude/skills/aidlc/SKILL.md:82"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:82"
       ],
       "cites": [
-        ".claude/skills/aidlc/SKILL.md:82"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:82"
       ],
       "cite_token": "aidlc-orchestrate.ts"
     },
@@ -365,20 +366,20 @@
       "bugfix_required": true,
       "condition": "すべてのステージ境界で次の手を引く。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:146",
-        ".claude/skills/aidlc/SKILL.md:147",
-        ".claude/skills/aidlc/SKILL.md:149",
-        ".claude/skills/aidlc/SKILL.md:164",
-        ".claude/skills/aidlc/SKILL.md:42"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:146",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:147",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:149",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:164",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:42"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:146",
-        ".claude/aidlc-common/protocols/stage-protocol-recovery.md:253",
-        ".claude/aidlc-common/protocols/stage-protocol.md:820",
-        ".claude/skills/aidlc/SKILL.md:147",
-        ".claude/skills/aidlc/SKILL.md:149",
-        ".claude/skills/aidlc/SKILL.md:164",
-        ".claude/skills/aidlc/SKILL.md:42"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:146",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-recovery.md:253",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:820",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:147",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:149",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:164",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:42"
       ],
       "cite_token": "aidlc-orchestrate.ts"
     },
@@ -390,10 +391,10 @@
       "bugfix_required": false,
       "condition": "作業を中断するときだけ。",
       "invoked_cites": [
-        ".claude/skills/aidlc/SKILL.md:95"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:95"
       ],
       "cites": [
-        ".claude/skills/aidlc/SKILL.md:95"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:95"
       ],
       "cite_token": "aidlc-orchestrate.ts"
     },
@@ -405,51 +406,51 @@
       "bugfix_required": true,
       "condition": "ゲート提示・承認・完了のたび。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:246",
-        ".claude/aidlc-common/protocols/stage-protocol.md:252",
-        ".claude/aidlc-common/protocols/stage-protocol.md:253",
-        ".claude/aidlc-common/protocols/stage-protocol.md:592",
-        ".claude/aidlc-common/protocols/stage-protocol.md:613",
-        ".claude/aidlc-common/protocols/stage-protocol.md:668",
-        ".claude/aidlc-common/stages/construction/build-and-test.md:249",
-        ".claude/aidlc-common/stages/construction/code-generation.md:378",
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:204",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:188",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:397",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:60",
-        ".claude/aidlc-common/stages/operation/deployment-execution.md:91",
-        ".claude/aidlc-common/stages/operation/deployment-pipeline.md:81",
-        ".claude/skills/aidlc/SKILL.md:44",
-        ".claude/skills/aidlc/SKILL.md:70"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:246",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:252",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:253",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:592",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:613",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:668",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/build-and-test.md:249",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:378",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:204",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:188",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:397",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:60",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/operation/deployment-execution.md:91",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/operation/deployment-pipeline.md:81",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:44",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:70"
       ],
       "cites": [
-        ".claude/aidlc-common/conductor.md:35",
-        ".claude/aidlc-common/protocols/stage-protocol-recovery.md:148",
-        ".claude/aidlc-common/protocols/stage-protocol.md:130",
-        ".claude/aidlc-common/protocols/stage-protocol.md:131",
-        ".claude/aidlc-common/protocols/stage-protocol.md:133",
-        ".claude/aidlc-common/protocols/stage-protocol.md:194",
-        ".claude/aidlc-common/protocols/stage-protocol.md:246",
-        ".claude/aidlc-common/protocols/stage-protocol.md:252",
-        ".claude/aidlc-common/protocols/stage-protocol.md:253",
-        ".claude/aidlc-common/protocols/stage-protocol.md:568",
-        ".claude/aidlc-common/protocols/stage-protocol.md:592",
-        ".claude/aidlc-common/protocols/stage-protocol.md:613",
-        ".claude/aidlc-common/protocols/stage-protocol.md:616",
-        ".claude/aidlc-common/protocols/stage-protocol.md:639",
-        ".claude/aidlc-common/protocols/stage-protocol.md:658",
-        ".claude/aidlc-common/protocols/stage-protocol.md:668",
-        ".claude/aidlc-common/protocols/stage-protocol.md:677",
-        ".claude/aidlc-common/stages/construction/build-and-test.md:249",
-        ".claude/aidlc-common/stages/construction/code-generation.md:378",
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:204",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:188",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:397",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:60",
-        ".claude/aidlc-common/stages/operation/deployment-execution.md:91",
-        ".claude/aidlc-common/stages/operation/deployment-pipeline.md:81",
-        ".claude/skills/aidlc/SKILL.md:44",
-        ".claude/skills/aidlc/SKILL.md:70"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/conductor.md:35",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-recovery.md:148",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:130",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:131",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:133",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:194",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:246",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:252",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:253",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:568",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:592",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:613",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:616",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:639",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:658",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:668",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:677",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/build-and-test.md:249",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:378",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:204",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:188",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:397",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:60",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/operation/deployment-execution.md:91",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/operation/deployment-pipeline.md:81",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:44",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:70"
       ],
       "cite_token": "aidlc-orchestrate.ts"
     },
@@ -461,10 +462,10 @@
       "bugfix_required": true,
       "condition": "レビューアへ読取り範囲を渡す。C6 の読取り専用候補。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:61"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:61"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:61"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:61"
       ],
       "cite_token": "aidlc-review-brief.ts"
     },
@@ -476,10 +477,10 @@
       "bugfix_required": true,
       "condition": "レビュー結果の整形。C6 の読取り専用候補。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:205"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:205"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:205"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:205"
       ],
       "cite_token": "aidlc-review-brief.ts"
     },
@@ -491,10 +492,10 @@
       "bugfix_required": true,
       "condition": "要約確認の受領前に決定要旨を出す。C6 の読取り専用候補。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:397"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:397"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:397"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:397"
       ],
       "cite_token": "aidlc-review-brief.ts"
     },
@@ -506,16 +507,16 @@
       "bugfix_required": true,
       "condition": "ステージの phase / 次ステージ / 担当を引く読取り。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:681",
-        ".claude/aidlc-common/protocols/stage-protocol.md:682",
-        ".claude/aidlc-common/protocols/stage-protocol.md:683",
-        ".claude/aidlc-common/protocols/stage-protocol.md:684"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:681",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:682",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:683",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:684"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:681",
-        ".claude/aidlc-common/protocols/stage-protocol.md:682",
-        ".claude/aidlc-common/protocols/stage-protocol.md:683",
-        ".claude/aidlc-common/protocols/stage-protocol.md:684"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:681",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:682",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:683",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:684"
       ],
       "cite_token": "aidlc-state.ts"
     },
@@ -527,10 +528,10 @@
       "bugfix_required": false,
       "condition": "practices-discovery の override のみ。bugfix はこのステージを持たない。",
       "invoked_cites": [
-        ".claude/aidlc-common/conductor.md:130"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/conductor.md:130"
       ],
       "cites": [
-        ".claude/aidlc-common/conductor.md:130"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/conductor.md:130"
       ],
       "cite_token": "aidlc-state.ts"
     },
@@ -542,15 +543,15 @@
       "bugfix_required": false,
       "condition": "既存の走査結果を再利用するときだけ。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:1161",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:151"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1161",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:151"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:1161",
-        ".claude/aidlc-common/protocols/stage-protocol.md:1188",
-        ".claude/aidlc-common/protocols/stage-protocol.md:1207",
-        ".claude/aidlc-common/protocols/stage-protocol.md:677",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:151"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1161",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1188",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1207",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:677",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:151"
       ],
       "cite_token": "aidlc-state.ts"
     },
@@ -563,7 +564,7 @@
       "condition": "禁止 — engine 内部用。ステージ本文は report / scope-change を使う。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:638"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:638"
       ],
       "cite_token": "aidlc-state.ts"
     },
@@ -576,7 +577,7 @@
       "condition": "Unit を持つ Construction のみ。bugfix のゼロ Unit 経路では踏まない。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:310"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:310"
       ],
       "cite_token": "aidlc-state.ts"
     },
@@ -589,7 +590,7 @@
       "condition": "recovery 経路のみ。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-recovery.md:149"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-recovery.md:149"
       ],
       "cite_token": "aidlc-state.ts"
     },
@@ -601,13 +602,13 @@
       "bugfix_required": false,
       "condition": "Unit を持つ Construction のみ。bugfix のゼロ Unit 経路では踏まない。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:302",
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:308"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:302",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:308"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:302",
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:308",
-        ".claude/skills/aidlc/SKILL.md:113"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:302",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:308",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:113"
       ],
       "cite_token": "aidlc-state.ts"
     },
@@ -620,7 +621,7 @@
       "condition": "委譲エージェントへの禁止記述としてだけ現れる。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:821"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:821"
       ],
       "cite_token": "aidlc-state.ts"
     },
@@ -633,7 +634,7 @@
       "condition": "並行レビュー/並行 Construction のみ。bugfix では踏まない。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-reviewer.md:287"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:287"
       ],
       "cite_token": "aidlc-swarm.ts"
     },
@@ -645,12 +646,12 @@
       "bugfix_required": true,
       "condition": "code-generation が Testing Contract の指紋を取る。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/construction/code-generation.md:210",
-        ".claude/aidlc-common/stages/construction/code-generation.md:217"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:210",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:217"
       ],
       "cites": [
-        ".claude/aidlc-common/stages/construction/code-generation.md:210",
-        ".claude/aidlc-common/stages/construction/code-generation.md:217"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:210",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:217"
       ],
       "cite_token": "aidlc-testing-posture.ts"
     },
@@ -662,11 +663,11 @@
       "bugfix_required": true,
       "condition": "code-generation が Testing Contract を描く。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/construction/code-generation.md:152"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:152"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:405",
-        ".claude/aidlc-common/stages/construction/code-generation.md:152"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:405",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:152"
       ],
       "cite_token": "aidlc-testing-posture.ts"
     },
@@ -679,7 +680,7 @@
       "condition": "Team Unit 経路のみ。bugfix のゼロ Unit 経路では踏まない。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:342"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:342"
       ],
       "cite_token": "aidlc-unit.ts"
     },
@@ -692,7 +693,7 @@
       "condition": "同上。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:348"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:348"
       ],
       "cite_token": "aidlc-unit.ts"
     },
@@ -705,7 +706,7 @@
       "condition": "同上。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:351"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:351"
       ],
       "cite_token": "aidlc-unit.ts"
     },
@@ -717,10 +718,10 @@
       "bugfix_required": true,
       "condition": "reverse-engineering / requirements-analysis が保管先を解決する。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:321"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:321"
       ],
       "cites": [
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:321"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:321"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -732,10 +733,10 @@
       "bugfix_required": true,
       "condition": "reverse-engineering が走査結果を保管する。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:353"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:353"
       ],
       "cites": [
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:353"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:353"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -747,14 +748,14 @@
       "bugfix_required": true,
       "condition": "reverse-engineering が対象リポジトリごとに読取り検査を行う。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:308",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:338",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:98"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:308",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:338",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:98"
       ],
       "cites": [
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:308",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:338",
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:98"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:308",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:338",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:98"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -766,10 +767,10 @@
       "bugfix_required": true,
       "condition": "reverse-engineering が走査前に compare-and-swap の写しを取る。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:165"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:165"
       ],
       "cites": [
-        ".claude/aidlc-common/stages/inception/reverse-engineering.md:165"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:165"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -781,10 +782,10 @@
       "bugfix_required": false,
       "condition": "依頼が外部文書を指したときだけ。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:86"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:86"
       ],
       "cites": [
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:86"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:86"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -796,10 +797,10 @@
       "bugfix_required": false,
       "condition": "利用者がスコープ一覧を照会したときだけ。",
       "invoked_cites": [
-        ".claude/skills/aidlc/SKILL.md:7"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:7"
       ],
       "cites": [
-        ".claude/skills/aidlc/SKILL.md:7"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:7"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -811,10 +812,10 @@
       "bugfix_required": false,
       "condition": "作業記録の一覧を照会したときだけ。",
       "invoked_cites": [
-        ".claude/skills/aidlc/SKILL.md:145"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:145"
       ],
       "cites": [
-        ".claude/skills/aidlc/SKILL.md:145"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:145"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -827,11 +828,11 @@
       "condition": "新しい作業記録を作るとき。計画したスモークは新規 intent で始める。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/stages/initialization/workspace-scaffold.md:102",
-        ".claude/aidlc-common/stages/initialization/workspace-scaffold.md:31",
-        ".claude/skills/aidlc/SKILL.md:143",
-        ".claude/skills/aidlc/SKILL.md:147",
-        ".claude/skills/aidlc/SKILL.md:78"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/workspace-scaffold.md:102",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/workspace-scaffold.md:31",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:143",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:147",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:78"
       ],
       "cite_token": "intent-create",
       "runnable_source": "engine が print directive で綴る (`createPrintDirective`)。ステージ本文は決定的な動作の説明だけを持つ。"
@@ -844,10 +845,10 @@
       "bugfix_required": true,
       "condition": "requirements-analysis が依頼原文を逐語で取るための固定コマンド。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:63"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:63"
       ],
       "cites": [
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:63"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:63"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -859,13 +860,13 @@
       "bugfix_required": false,
       "condition": "計画を組み直すときだけ。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:229",
-        ".claude/skills/aidlc/SKILL.md:168"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:229",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:168"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-recovery.md:253",
-        ".claude/aidlc-common/stages/inception/requirements-analysis.md:229",
-        ".claude/skills/aidlc/SKILL.md:168"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-recovery.md:253",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:229",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:168"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -878,7 +879,7 @@
       "condition": "スコープを変えるときだけ。",
       "invoked_cites": [],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:639"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:639"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -890,15 +891,15 @@
       "bugfix_required": true,
       "condition": "state-init がスコープ別の実行数を引く。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/initialization/state-init.md:58",
-        ".claude/skills/aidlc/SKILL.md:178"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/state-init.md:58",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:178"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol.md:302",
-        ".claude/aidlc-common/protocols/stage-protocol.md:850",
-        ".claude/aidlc-common/stages/initialization/state-init.md:58",
-        ".claude/skills/aidlc/SKILL.md:178",
-        ".claude/skills/aidlc/SKILL.md:180"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:302",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:850",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/state-init.md:58",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:178",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:180"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -910,11 +911,11 @@
       "bugfix_required": true,
       "condition": "state-init がコンパイル済みステージ一覧を引く。",
       "invoked_cites": [
-        ".claude/aidlc-common/stages/initialization/state-init.md:59"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/state-init.md:59"
       ],
       "cites": [
-        ".claude/aidlc-common/stages/initialization/state-init.md:59",
-        ".claude/skills/aidlc/SKILL.md:204"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/state-init.md:59",
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:204"
       ],
       "cite_token": "aidlc-utility.ts"
     },
@@ -926,10 +927,10 @@
       "bugfix_required": false,
       "condition": "Bolt worktree を使うときだけ。bugfix では踏まない。",
       "invoked_cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:93"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:93"
       ],
       "cites": [
-        ".claude/aidlc-common/protocols/stage-protocol-construction.md:93"
+        "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:93"
       ],
       "cite_token": "aidlc-worktree.ts"
     }

@@ -2,20 +2,14 @@
 
 ## このプロジェクトの配布元とハーネス
 
-配布元は `vendor/aidlc-workflows/` の Git submodule（`j5ik2o/aidlc-workflows`）で固定する。
+AI-DLC は上流の `aidlc` バイナリ（2.8.2）で導入する。本体の更新は `aidlc update`、
+プロジェクトへの反映は `aidlc config`、検証は `aidlc doctor` で行う。
+配布ファイルは直接修正しない。独自パッチを当てる fork 同期（`scripts/aidlc-sync.ts`）は廃止した。
+`vendor/aidlc-workflows/` の Git submodule は上流ゴールデンの採取・検証専用であり、配布物の同期元ではない。
 AWS Bedrock は使用しない。各ハーネスの通常のログイン・利用者設定を使用する。
-Claude は `.claude/`、Codex は `.codex/` と `.agents/`、Kimi は `.kimi-code/` を使用する。
-更新は `bun scripts/aidlc-sync.ts` で差分を確認し、`--apply` で適用する。
-配布ファイルを直接修正せず、必要な独自修正は `scripts/aidlc-sync/patches/` に記録する。
-設定保持・削除・検証の手順は `bun scripts/aidlc-sync.ts --help` の案内（`--check` / `--apply` /
-`--adopt-from` / `--accept-preserved`）と `scripts/aidlc-sync/installed.json` に従う（手書きの `docs/` は
-2026-09-07 に削除した）。
-
-Kimi では `/skill:aidlc` を使用する。`bun scripts/aidlc-kimi-hooks.ts --trust` で
-ユーザー所有のフックと、この作業ツリーの信頼登録を設定する。
-Kimi は `@` インポートを解釈しないため、計画・レビュー時には
-`aidlc/spaces/<active-space>/memory/` の `org.md`、`team.md`、`project.md` と
-該当する `phases/<phase>.md` を読む。これらは３ハーネスで共有する正本である。
+Claude は `.claude/`、Codex は `.codex/` と `.agents/` を使用する。
+規則の正本は `aidlc/spaces/<active-space>/memory/` の `org.md`、`team.md`、`project.md` と
+該当する `phases/<phase>.md` であり、両ハーネスで共有する。
 
 This project uses AI-DLC (AI-Driven Development Life Cycle) under the OpenAI
 Codex CLI harness (minimum version 0.145.0). Invoke the orchestrator skill with

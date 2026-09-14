@@ -1,3 +1,0 @@
-# Construction
-
-Phase rule body.
