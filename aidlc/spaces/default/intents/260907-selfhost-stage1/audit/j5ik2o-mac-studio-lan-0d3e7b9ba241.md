@@ -41920,3 +41920,193 @@
 **State Validity**: valid
 
 ---
+
+## Session End
+**Timestamp**: 2026-09-14T05:52:52Z
+**Event**: SESSION_ENDED
+**Reason**: other
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-14T06:37:57Z
+**Event**: HUMAN_TURN
+**Session**: 01a09d9f-af07-7ea2-ae85-1780b9671231
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-14T06:41:33Z
+**Event**: HUMAN_TURN
+**Session**: 01a09d9f-af07-7ea2-ae85-1780b9671231
+
+---
+
+## Workflow Parked
+**Timestamp**: 2026-09-14T06:42:08Z
+**Event**: WORKFLOW_PARKED
+**Stage**: code-generation
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-14T06:42:08Z
+**Event**: HUMAN_TURN
+**Session**: 01a09d9f-af07-7ea2-ae85-1780b9671231
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-14T06:43:20Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: 
+**Stage**: code-generation
+**Unit**: (missing marker)
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-14T06:44:47Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: 
+**Stage**: code-generation
+**Unit**: (missing marker)
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-14T06:44:47Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: 
+**Stage**: code-generation
+**Unit**: (missing marker)
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-14T06:48:48Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: 
+**Stage**: code-generation
+**Unit**: (missing marker)
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-14T06:50:00Z
+**Event**: HUMAN_TURN
+**Session**: 01a09d9f-af07-7ea2-ae85-1780b9671231
+
+---
+
+## Workflow Unparked
+**Timestamp**: 2026-09-14T06:50:08Z
+**Event**: WORKFLOW_UNPARKED
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-14T06:52:26Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: gh auth status
+**Stage**: code-generation
+**Unit**: u2-workflow-authority
+
+---
+
+## Plan Approval Blocked
+**Timestamp**: 2026-09-14T06:55:29Z
+**Event**: PLAN_APPROVAL_BLOCKED
+**Tool**: Bash
+**Target**: shell command: rg -n -C 7 'Approve Plan|plan-approval|fingerprint|Step 3|Step 2|plan approval' .codex/aidlc-common/stages/construction/code-generation.md\nsed -n '1,130p' aidlc
+**Stage**: code-generation
+**Unit**: u2-workflow-authority
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-14T06:58:58Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/code-generation-questions.md
+**Context**: construction > u2-workflow-authority > code-generation > code-generation-questions.md
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-14T07:01:07Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/code-generation-questions.md
+**Context**: construction > u2-workflow-authority > code-generation > code-generation-questions.md
+
+---
+
+## Decision Recorded
+**Timestamp**: 2026-09-14T07:01:08Z
+**Event**: DECISION_RECORDED
+**Stage**: code-generation
+**Decision**: Approve this exact Code Generation plan?
+**Options**: Approve Plan,Request Changes
+**Checkpoint**: Code Generation Plan Approval
+**Plan Target**: unit:u2-workflow-authority
+**Intent**: 01a07bfe-d875-7271-8fdd-9aef477ad08d
+**Directive Epoch**: sha256:c2c4614a659d98c375bb65c16841fdff99e687773ab46294d97859db1b0d3ba6
+**Run floor**: GATE_REJECTED:2026-09-12T17:25:56Z#1
+**Approval Fingerprint**: sha256:9de9366200db0c54381ea5f93f8e2ccef186a030b1156add2162cac9dd5b4ee4
+**Questions File**: aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/code-generation-questions.md
+**Questions SHA-256**: 3ad7a958d8d75a48c1c323daa7542ba936e86ba7db2727079172b8a15a97668e
+**Prompt SHA-256**: 3ad7a958d8d75a48c1c323daa7542ba936e86ba7db2727079172b8a15a97668e
+**Session**: 01a09d9f-af07-7ea2-ae85-1780b9671231
+**Unit**: u2-workflow-authority
+
+---
+
+## Human Turn
+**Timestamp**: 2026-09-14T07:03:04Z
+**Event**: HUMAN_TURN
+**Session**: 01a09d9f-af07-7ea2-ae85-1780b9671231
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-14T07:03:29Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/code-generation-questions.md
+**Context**: construction > u2-workflow-authority > code-generation > code-generation-questions.md
+
+---
+
+## Plan Approval Recorded
+**Timestamp**: 2026-09-14T07:03:31Z
+**Event**: PLAN_APPROVAL_RECORDED
+**Stage**: code-generation
+**Details**: Approve Plan
+**Unit**: u2-workflow-authority
+**Checkpoint**: Code Generation Plan Approval
+**Plan Target**: unit:u2-workflow-authority
+**Intent**: 01a07bfe-d875-7271-8fdd-9aef477ad08d
+**Directive Epoch**: sha256:c2c4614a659d98c375bb65c16841fdff99e687773ab46294d97859db1b0d3ba6
+**Run floor**: GATE_REJECTED:2026-09-12T17:25:56Z#1
+**Approval Fingerprint**: sha256:9de9366200db0c54381ea5f93f8e2ccef186a030b1156add2162cac9dd5b4ee4
+**Questions File**: aidlc/spaces/default/intents/260907-selfhost-stage1/construction/u2-workflow-authority/code-generation/code-generation-questions.md
+**Questions SHA-256**: 94993396b733354ade0f23df60c6700e5e68886d7161ffc9848dd546d92baf08
+**Prompt SHA-256**: 3ad7a958d8d75a48c1c323daa7542ba936e86ba7db2727079172b8a15a97668e
+**Session**: 01a09d9f-af07-7ea2-ae85-1780b9671231
+
+---
+
+## Error Logged
+**Timestamp**: 2026-09-14T07:05:28Z
+**Event**: ERROR_LOGGED
+**Tool**: aidlc-state
+**Command**: aidlc-state validate
+**Error**: Unknown subcommand: validate. Valid: get, set, set-skeleton-stance, set-construction-iteration, set-unit-ownership, set-unit-gate-rhythm, refresh-unit-progress, sync-unit-scope-stage, fold-unit-merge, checkbox, count, advance, finalize, complete-workflow, gate-start, approve, reject, revise, skip, resume, acknowledge-compaction, reuse-artifact, lookup, practices-event, practices-promote, fork, merge, unit, park, unpark
+
+---
