@@ -8,6 +8,9 @@
 # 廃止した fork 同期（scripts/aidlc-sync.ts）が作業ツリーに残した退避・排他ロック。
 /.aidlc-sync/
 
+# 利用者ごとの mise ローカル設定（アカウント設定のパスなど個人の環境変数を含む）。
+mise.local.toml
+
 # AI-DLC — the committed-vs-ignored split (workspace layout, re-rooted under aidlc/).
 # Rule of thumb (vision §5.1): per-user session CURSORS and machine-local
 # runtime/derived state are ignored; everything that is the shared work —
