@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn a_descriptor_number_never_becomes_an_operand_of_the_command() {
         // 是正前の本家は `2>&1` の `2` を `rm` の被演算子として拾い、`1` を別コマンドに
-        // していた (`scripts/aidlc-sync/patches/shell-redirection-tokens.patch`)。
+        // していた (旧 fork パッチ `shell-redirection-tokens` で是正、削除済み)。
         assert_eq!(at_root("rm /r/a.md 2>&1"), ["/r/a.md"]);
         assert_eq!(at_root("rm /r/a.md &> /r/log"), ["/r/log", "/r/a.md"]);
         assert_eq!(at_root("rm /r/a.md 2>&-"), ["/r/a.md"]);

@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn a_descriptor_duplication_names_no_word_at_all() {
-        // 本家の既知不具合の是正 (`scripts/aidlc-sync/patches/shell-redirection-tokens.patch`) —
+        // 本家の既知不具合の是正 (旧 fork パッチ `shell-redirection-tokens`、削除済み) —
         // `2>&1` の `&` を区切りと誤認して幽霊コマンド `1` を作らない。
         assert_eq!(words("rm x 2>&1"), ["rm", "x"]);
         assert_eq!(words("rm x 2>&-"), ["rm", "x"]);

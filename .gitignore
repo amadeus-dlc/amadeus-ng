@@ -5,9 +5,8 @@
 !/vendor/
 !/vendor/aidlc-workflows
 
-# 配布物更新時の退避・排他ロック（作業ツリーごと）。
+# 廃止した fork 同期（scripts/aidlc-sync.ts）が作業ツリーに残した退避・排他ロック。
 /.aidlc-sync/
-.kimi-code/local.toml
 
 # AI-DLC — the committed-vs-ignored split (workspace layout, re-rooted under aidlc/).
 # Rule of thumb (vision §5.1): per-user session CURSORS and machine-local
