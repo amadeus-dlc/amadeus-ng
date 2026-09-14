@@ -142,8 +142,10 @@ where
 mod tests {
     use super::*;
     use crate::orchestration::test_support::{
-        InMemoryCompiledDefinitionRepository, InMemoryWorkflowDefinitionRepository, at, compiled,
-        compiled_definition_id, definition, definition_id,
+        ConflictingWorkflowDefinitionRepository, InMemoryCompiledDefinitionRepository,
+        InMemoryWorkflowDefinitionRepository, UnreadableWorkflowDefinitionRepository,
+        WorkflowDefinitionRepositorySpy, at, compiled, compiled_definition_id, definition,
+        definition_id,
     };
     use core_command_domain::workflow_definition::WorkflowDefinitionEvent;
 
@@ -152,7 +154,7 @@ mod tests {
     async fn ingesting_into_an_empty_store_establishes_the_definition() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::serving(compiled(3)),
-            InMemoryWorkflowDefinitionRepository::empty(),
+            WorkflowDefinitionRepositorySpy::new(InMemoryWorkflowDefinitionRepository::empty()),
         );
 
         use_case
@@ -182,7 +184,9 @@ mod tests {
     async fn ingesting_a_changed_distribution_redefines_the_definition() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::serving(compiled(5)),
-            InMemoryWorkflowDefinitionRepository::holding(definition(3)),
+            WorkflowDefinitionRepositorySpy::new(InMemoryWorkflowDefinitionRepository::holding(
+                definition(3),
+            )),
         );
 
         use_case
@@ -212,7 +216,9 @@ mod tests {
     async fn ingesting_an_unchanged_distribution_writes_nothing() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::serving(compiled(3)),
-            InMemoryWorkflowDefinitionRepository::holding(definition(3)),
+            WorkflowDefinitionRepositorySpy::new(InMemoryWorkflowDefinitionRepository::holding(
+                definition(3),
+            )),
         );
 
         use_case
@@ -234,7 +240,7 @@ mod tests {
     async fn ingesting_twice_leaves_a_single_event() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::serving(compiled(3)),
-            InMemoryWorkflowDefinitionRepository::empty(),
+            WorkflowDefinitionRepositorySpy::new(InMemoryWorkflowDefinitionRepository::empty()),
         );
 
         use_case
@@ -258,7 +264,7 @@ mod tests {
     async fn an_unreadable_distribution_propagates_the_repository_refusal() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::unreadable(),
-            InMemoryWorkflowDefinitionRepository::empty(),
+            WorkflowDefinitionRepositorySpy::new(InMemoryWorkflowDefinitionRepository::empty()),
         );
 
         let error = use_case
@@ -284,7 +290,7 @@ mod tests {
     async fn an_unreadable_definition_stops_the_ingestion() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::serving(compiled(3)),
-            InMemoryWorkflowDefinitionRepository::corrupt(),
+            WorkflowDefinitionRepositorySpy::new(UnreadableWorkflowDefinitionRepository),
         );
 
         let error = use_case
@@ -312,7 +318,7 @@ mod tests {
     async fn a_stale_version_propagates_the_repository_conflict() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::serving(compiled(5)),
-            InMemoryWorkflowDefinitionRepository::holding_behind_a_concurrent_write(definition(3)),
+            ConflictingWorkflowDefinitionRepository::new(definition(3)),
         );
 
         let error = use_case
@@ -334,7 +340,9 @@ mod tests {
     async fn an_exhausted_sequence_propagates_the_aggregate_refusal() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::serving(compiled(5)),
-            InMemoryWorkflowDefinitionRepository::holding(definition(3).with_seq_nr(usize::MAX)),
+            WorkflowDefinitionRepositorySpy::new(InMemoryWorkflowDefinitionRepository::holding(
+                definition(3).with_seq_nr(usize::MAX),
+            )),
         );
 
         let error = use_case
@@ -363,7 +371,7 @@ mod tests {
     async fn a_bundle_of_another_lineage_is_refused_and_writes_nothing() {
         let mut use_case = DefineWorkflowUseCase::new(
             InMemoryCompiledDefinitionRepository::serving(compiled(3)),
-            InMemoryWorkflowDefinitionRepository::empty(),
+            WorkflowDefinitionRepositorySpy::new(InMemoryWorkflowDefinitionRepository::empty()),
         );
         let foreign = WorkflowDefinitionId::parse("kiro").expect("別系譜の定義 id");
 

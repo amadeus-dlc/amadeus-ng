@@ -38,11 +38,11 @@ impl<R: PlanApprovalRuntimeRepository, E: IntentExecutionRepository, I: IntentRe
     ) -> Result<(), PlanApprovalCommandError> {
         let execution = self
             .execution_repository
-            .find_for_approval_origin(request.origin())
+            .find_by_id(request.origin().execution_id())
             .await?;
         let intent = self
             .intent_repository
-            .find_for_execution(&execution)
+            .find_by_id(execution.intent_id())
             .await?;
         let input = execution.verify_plan_answer(
             &intent,

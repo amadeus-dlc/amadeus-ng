@@ -44,13 +44,13 @@ impl<R: PlanApprovalRuntimeRepository, E: IntentExecutionRepository, I: IntentRe
         let execution = self.execution_repository.find_by_id(execution_id).await?;
         let intent = self
             .intent_repository
-            .find_for_execution(&execution)
+            .find_by_id(execution.intent_id())
             .await?;
         let mut runtime = self
             .approval_repository
             .find_by_id(&PlanApprovalRuntimeId::Workspace)
             .await?;
-        let approval = execution.code_generation_approval(&intent, input, runtime.receipts());
+        let approval = execution.code_generation_approval(&intent, input, &runtime);
         let event = runtime.request_generation(id, &approval, source_before, at)?;
         self.approval_repository.store(&event, &runtime).await?;
         Ok(())

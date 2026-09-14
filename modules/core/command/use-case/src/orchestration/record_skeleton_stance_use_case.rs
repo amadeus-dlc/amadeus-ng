@@ -83,7 +83,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> RecordSkeletonStanceUseC
             .await?;
         let intent = self
             .intent_repository
-            .find_for_execution(&aggregate)
+            .find_by_id(aggregate.intent_id())
             .await?;
         let event = aggregate
             .record_skeleton_stance(&intent, stance, occurred_at)

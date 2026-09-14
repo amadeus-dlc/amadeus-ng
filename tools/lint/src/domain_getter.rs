@@ -46,3 +46,6 @@ impl DomainIndex {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod repository_lookup_tests;

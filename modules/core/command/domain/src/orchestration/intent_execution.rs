@@ -1256,7 +1256,7 @@ impl IntentExecution {
         &self,
         intent: &Intent,
         input: &super::PlanApprovalInput,
-        receipts: &super::PlanReceipts,
+        approval: &super::PlanApprovalRuntime,
     ) -> super::CodeGenerationApproval {
         let authority = if self.matches(intent) {
             super::CodeGenerationAuthority::resolve(
@@ -1279,7 +1279,7 @@ impl IntentExecution {
             input.target(),
             input.documents(),
             posture,
-            receipts,
+            approval.receipts(),
             input.source_sha256(),
         )
     }
@@ -1384,6 +1384,14 @@ impl IntentExecution {
             )),
             at,
         )
+    }
+
+    /// 発行済みの指示が失効要求の所有者・プロジェクト・状態・セッションに一致するか。
+    #[must_use]
+    pub fn matches_directive_context(&self, request: &super::DirectiveContextInvalidation) -> bool {
+        self.active_directive
+            .as_ref()
+            .is_some_and(|directive| directive.matches_context(request))
     }
 
     /// 所有者と文脈が一致する指示だけを失効させる。

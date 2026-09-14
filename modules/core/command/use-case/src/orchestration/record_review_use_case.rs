@@ -103,7 +103,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
             .await?;
         let intent = self
             .intent_repository
-            .find_for_execution(&aggregate)
+            .find_by_id(aggregate.intent_id())
             .await?;
         let policy = self.review_policy(&intent, request).await?;
         let refused = match request.kind() {
@@ -153,7 +153,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
     ) -> Result<Option<ReviewPolicy>, ReviewLogError> {
         let definition = self
             .workflow_definition_repository
-            .find_for_intent(intent)
+            .find_by_id(intent.definition_id())
             .await?;
         intent
             .resolve_review_policy(&definition, request.stage())
@@ -203,15 +203,14 @@ mod tests {
     /// フィクスチャのレビュアー名。
     const REVIEWER: &str = "aidlc-quality-agent";
 
-    struct Subject {
-        use_case: RecordReviewUseCase<
-            InMemoryIntentExecutionRepository,
-            InMemoryIntentRepository,
-            InMemoryWorkflowDefinitionRepository,
-        >,
+    struct Subject<
+        D: super::super::port::WorkflowDefinitionRepository = InMemoryWorkflowDefinitionRepository,
+    > {
+        use_case:
+            RecordReviewUseCase<InMemoryIntentExecutionRepository, InMemoryIntentRepository, D>,
     }
 
-    impl Subject {
+    impl<D: super::super::port::WorkflowDefinitionRepository> Subject<D> {
         async fn execute(&mut self, request: &ReviewLogRequest) -> Result<(), ReviewLogError> {
             self.use_case.execute(&execution_id(), request, at()).await
         }
@@ -283,15 +282,16 @@ mod tests {
     /// 関連取得で別の定義が返ったら、原因を保持して保存前に拒否する。
     #[tokio::test]
     async fn an_unrelated_definition_is_reported_with_its_cause_before_any_write() {
-        use super::super::test_support::{definition_id, genesis_referencing_other_definition};
+        use super::super::test_support::{
+            MisdirectedWorkflowDefinitionRepository, genesis_referencing_other_definition,
+        };
         use core_command_domain::orchestration::IntentReviewError;
         let (intent, aggregate) = genesis_referencing_other_definition();
         let mut subject = Subject {
             use_case: RecordReviewUseCase::new(
                 InMemoryIntentExecutionRepository::holding(aggregate, 1),
                 InMemoryIntentRepository::holding(intent),
-                InMemoryWorkflowDefinitionRepository::holding(reviewed(None, None))
-                    .misdirecting_related_lookup(definition_id()),
+                MisdirectedWorkflowDefinitionRepository::new(reviewed(None, None)),
             ),
         };
         let refusal = subject

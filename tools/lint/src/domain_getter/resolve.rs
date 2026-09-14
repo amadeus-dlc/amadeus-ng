@@ -171,7 +171,8 @@ impl Index {
         let mut ctx = ctx.clone();
         let mut bounds = Vec::new();
         for p in generics.type_params() {
-            ctx.generics.insert(p.ident.to_string(), Ty::Unknown);
+            ctx.generics
+                .insert(p.ident.to_string(), Ty::Parameter(p.ident.to_string()));
             bounds.push((p.ident.to_string(), &p.bounds));
         }
         if let Some(clause) = &generics.where_clause {

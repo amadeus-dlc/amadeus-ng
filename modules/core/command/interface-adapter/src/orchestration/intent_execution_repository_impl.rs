@@ -334,12 +334,6 @@ where
             P = IntentExecutionEventDto,
         >,
 {
-    async fn find_for_approval_origin(
-        &self,
-        origin: &core_command_domain::orchestration::PlanApprovalOrigin,
-    ) -> Result<IntentExecution, RepositoryError<IntentExecutionId>> {
-        self.find_by_id(origin.execution_id()).await
-    }
     async fn find_by_id(
         &self,
         id: &IntentExecutionId,

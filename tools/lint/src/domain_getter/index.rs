@@ -8,6 +8,7 @@ use syn::{Item, ReturnType, Type};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) enum Ty {
     Named(String),
+    Parameter(String),
     Tuple(Vec<Ty>),
     Wrapper(String, Box<Ty>),
     #[default]
@@ -31,6 +32,7 @@ impl Ty {
 
 #[derive(Clone)]
 pub(super) struct Method {
+    pub(super) inputs: Vec<Ty>,
     pub(super) output: Ty,
     pub(super) getter: bool,
     pub(super) body: Option<syn::Block>,
@@ -39,6 +41,7 @@ pub(super) struct Method {
 
 pub(super) struct Definition {
     pub(super) domain: bool,
+    pub(super) repository: bool,
     pub(super) fields: BTreeMap<String, Ty>,
     pub(super) methods: BTreeMap<String, Method>,
 }
@@ -68,6 +71,7 @@ impl Definition {
     fn new(domain: bool) -> Self {
         Self {
             domain,
+            repository: false,
             fields: BTreeMap::new(),
             methods: BTreeMap::new(),
         }
@@ -183,8 +187,16 @@ impl Index {
                 _ => None,
             };
             if let Some(name) = name {
+                let mut definition = Definition::new(domain);
+                definition.repository = matches!(item, Item::Trait(_))
+                    && ctx
+                        .module
+                        .split("::")
+                        .next()
+                        .is_some_and(|package| package.ends_with("_command_use_case"))
+                    && name.to_string().ends_with("Repository");
                 self.definitions
-                    .insert(format!("{}::{name}", ctx.module), Definition::new(domain));
+                    .insert(format!("{}::{name}", ctx.module), definition);
             }
             if let Item::Use(u) = item
                 && matches!(u.vis, syn::Visibility::Public(_))
@@ -332,10 +344,22 @@ impl Index {
             ReturnType::Type(_, t) => self.ty(&ctx, t),
             _ => Ty::Unknown,
         };
+        let inputs = sig
+            .inputs
+            .iter()
+            .filter_map(|input| {
+                if let syn::FnArg::Typed(input) = input {
+                    Some(self.ty(&ctx, &input.ty))
+                } else {
+                    None
+                }
+            })
+            .collect();
         if let Some(def) = self.definitions.get_mut(owner) {
             def.methods.insert(
                 sig.ident.to_string(),
                 Method {
+                    inputs,
                     output,
                     getter: false,
                     body,

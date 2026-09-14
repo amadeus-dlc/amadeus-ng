@@ -330,7 +330,7 @@ async fn a_journal_row_without_a_snapshot_row_is_corrupt() {
 
     let error = fixture
         .repository()
-        .find_for_intent(&support::intent())
+        .find_by_id(support::intent().definition_id())
         .await
         .expect_err("関連取得も破損を伝播する");
     assert!(
@@ -479,7 +479,7 @@ async fn a_sqlite_repository_reports_its_location_in_its_failures() {
     assert_eq!(path.as_deref(), Some(fixture.path.as_path()));
 
     let error = repository
-        .find_for_intent(&support::intent())
+        .find_by_id(support::intent().definition_id())
         .await
         .expect_err("関連取得も I/O 失敗");
     assert!(

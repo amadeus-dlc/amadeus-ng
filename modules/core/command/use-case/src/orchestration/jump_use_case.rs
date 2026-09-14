@@ -49,13 +49,13 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), JumpError> {
         let mut aggregate = self.executions.find_by_id(execution_id).await?;
-        let intent = self.intents.find_for_execution(&aggregate).await?;
+        let intent = self.intents.find_by_id(aggregate.intent_id()).await?;
         // 別 scope は本家どおり静的な列だけを参照し、state の suffix を見ない。
         let scope = match scope {
             Some(name) => {
                 let definition = self
                     .definitions
-                    .find_for_intent(&intent)
+                    .find_by_id(intent.definition_id())
                     .await
                     .map_err(JumpError::DefinitionRepository)?;
                 Some(

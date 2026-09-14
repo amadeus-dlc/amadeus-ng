@@ -89,6 +89,13 @@ pub(super) fn infer(index: &Index, ctx: &Context, locals: &Locals, expr: &Expr) 
             ty.named()
                 .and_then(|n| index.definitions.get(n))
                 .and_then(|d| d.fields.get(&member_text(&f.member)))
+                .map(|field| match field {
+                    // このimplのSelfのフィールドだけを、このimplの型制約で解決する。
+                    Ty::Parameter(name) if ctx.generics.get("Self") == Some(&ty) => {
+                        ctx.generics.get(name).unwrap_or(field)
+                    }
+                    _ => field,
+                })
                 .cloned()
                 .unwrap_or_default()
         }
@@ -147,7 +154,15 @@ pub(super) fn call_owner(
     let method = path.path.segments.last()?.ident.to_string();
     let owner = if let Some(qself) = &path.qself {
         if qself.position > 0 {
-            return None;
+            let trait_path = path
+                .path
+                .segments
+                .iter()
+                .take(qself.position)
+                .map(|segment| segment.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::");
+            return Some((index.resolve(ctx, &trait_path)?, method));
         }
         index.ty(ctx, &qself.ty).named()?.to_string()
     } else {

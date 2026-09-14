@@ -31,7 +31,7 @@
 
 use std::io::ErrorKind;
 
-use core_command_domain::orchestration::{Intent, IntentEvent, IntentExecution, IntentId};
+use core_command_domain::orchestration::{Intent, IntentEvent, IntentId};
 use core_command_domain::workspace::StorePath;
 use core_command_use_case::orchestration::{IntentRepository, RepositoryError};
 use event_store_adapter_rs::event_envelope::EventEnvelope;
@@ -251,13 +251,6 @@ impl<S> IntentRepository for IntentRepositoryImpl<S>
 where
     S: EventStore<AID = IntentAggregateKeyDto, A = IntentDto, P = IntentEventDto>,
 {
-    async fn find_for_execution(
-        &self,
-        execution: &IntentExecution,
-    ) -> Result<Intent, RepositoryError<IntentId>> {
-        self.find_by_id(execution.intent_id()).await
-    }
-
     async fn find_by_id(&self, id: &IntentId) -> Result<Intent, RepositoryError<IntentId>> {
         // 本家 example (`user_account_repository.rs`) と同型 — スナップショット行 (ある時点の
         // 集約) を基底に、その通番より後のイベントだけを差分再生する (オーナー裁定 2026-08-30)。
@@ -620,7 +613,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn find_for_execution_preserves_corruption_details() {
+    async fn find_by_id_preserves_corruption_details() {
         let mut repository = intent_repository();
         let (intent, event) = genesis();
         repository.store(&event, &intent).await.expect("genesis");
@@ -636,7 +629,7 @@ mod tests {
             .persist_event(envelope, 1)
             .await
             .expect("破損行を追加する");
-        let (execution, _) = IntentExecution::start(
+        let (execution, _) = core_command_domain::orchestration::IntentExecution::start(
             core_command_domain::orchestration::IntentExecutionId::parse(OTHER_INTENT)
                 .expect("UUIDv7"),
             &intent,
@@ -644,7 +637,7 @@ mod tests {
         );
 
         let error = repository
-            .find_for_execution(&execution)
+            .find_by_id(execution.intent_id())
             .await
             .expect_err("破損を伝播する");
 

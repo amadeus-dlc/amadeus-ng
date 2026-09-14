@@ -17,7 +17,7 @@ use super::{
 };
 
 /// 実行が参照する intent を、同居する別の intent と取り違えずに再構成する。
-pub(crate) async fn find_for_execution_resolves_its_intent<F: IntentStoreFixture>(fixture: &F) {
+pub(crate) async fn find_by_id_resolves_its_intent<F: IntentStoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
     store_intent_genesis(&mut repository).await;
     let expected = other_intent();
@@ -29,7 +29,7 @@ pub(crate) async fn find_for_execution_resolves_its_intent<F: IntentStoreFixture
 
     let found = fixture
         .reopen(&repository)
-        .find_for_execution(&execution)
+        .find_by_id(execution.intent_id())
         .await
         .expect("実行の参照先を再構成する");
 
@@ -37,15 +37,13 @@ pub(crate) async fn find_for_execution_resolves_its_intent<F: IntentStoreFixture
 }
 
 /// 関連先が保存されていなければ、その intent の ID を伴う `NotFound` を返す。
-pub(crate) async fn find_for_execution_reports_the_missing_intent<F: IntentStoreFixture>(
-    fixture: &F,
-) {
+pub(crate) async fn find_by_id_reports_the_missing_intent<F: IntentStoreFixture>(fixture: &F) {
     let mut repository = fixture.open();
     store_intent_genesis(&mut repository).await;
     let (execution, _) = IntentExecution::start(execution_id(), &other_intent(), at());
 
     let error = repository
-        .find_for_execution(&execution)
+        .find_by_id(execution.intent_id())
         .await
         .expect_err("参照先は未保存");
 

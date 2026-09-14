@@ -10,7 +10,7 @@ use syn::{
 };
 
 const RULE: &str = "use-case-domain-getter";
-const HELP: &str = "ドメインの保持データを use-case へ取り出さず、判断を所有者へ委譲する。永続化・表示の射影は interface-adapter 層で行う (coding-rules/tell-dont-ask.md)";
+const HELP: &str = "業務判断は状態の所有者へ委譲する。例外は型付きIDをRepositoryのfind_by_idへ直接渡す用途だけであり、IDの比較や他の状態取得は許可しない (coding-rules/tell-dont-ask.md)";
 
 pub(super) fn check(index: &Index, path: &str, file: &syn::File) -> Vec<Finding> {
     let Some(context) = index.contexts.get(path) else {
@@ -34,6 +34,51 @@ struct Usage<'a> {
 }
 
 impl Usage<'_> {
+    fn repository_key(&self, receiver: &Ty, method: &str) -> Option<Ty> {
+        if method != "find_by_id" {
+            return None;
+        }
+        let definition = self.index.definitions.get(receiver.named()?)?;
+        let method = definition.methods.get(method)?;
+        let [key] = method.inputs.as_slice() else {
+            return None;
+        };
+        let name = key.named()?;
+        (definition.repository
+            && name.ends_with("Id")
+            && self.index.definitions.get(name).is_some_and(|d| d.domain))
+        .then(|| key.clone())
+    }
+
+    fn visit_lookup_key(&mut self, expr: &Expr, key: &Ty) {
+        match expr {
+            Expr::Reference(reference) => self.visit_lookup_key(&reference.expr, key),
+            Expr::Paren(paren) => self.visit_lookup_key(&paren.expr, key),
+            Expr::Group(group) => self.visit_lookup_key(&group.expr, key),
+            Expr::MethodCall(call)
+                if call.args.is_empty()
+                    && infer(self.index, &self.context, &self.locals, expr) == *key =>
+            {
+                if call.method == "clone" {
+                    self.visit_lookup_key(&call.receiver, key);
+                } else {
+                    // 引数そのもののID取得だけを許可し、所有者へ至る式は通常どおり検査する。
+                    self.visit_expr(&call.receiver);
+                }
+            }
+            Expr::Call(call)
+                if call.args.len() == 1
+                    && infer(self.index, &self.context, &self.locals, expr) == *key =>
+            {
+                // UFCSで書かれたgetterも同じ扱いにする。引数内の別のgetterは許可しない。
+                for arg in &call.args {
+                    self.visit_expr(arg);
+                }
+            }
+            _ => self.visit_expr(expr),
+        }
+    }
+
     fn bind(&mut self, pat: &Pat, ty: Ty) {
         match pat {
             Pat::Ident(i) => {
@@ -197,6 +242,7 @@ impl<'ast> Visit<'ast> for Usage<'_> {
     }
     fn visit_expr_method_call(&mut self, expr: &'ast syn::ExprMethodCall) {
         let ty = infer(self.index, &self.context, &self.locals, &expr.receiver);
+        let key = self.repository_key(&ty, &expr.method.to_string());
         self.report(
             &ty,
             &expr.method.to_string(),
@@ -204,6 +250,10 @@ impl<'ast> Visit<'ast> for Usage<'_> {
         );
         self.visit_expr(&expr.receiver);
         for arg in &expr.args {
+            if let Some(key) = &key {
+                self.visit_lookup_key(arg, key);
+                continue;
+            }
             if let Expr::Closure(closure) = arg
                 && matches!(&ty, Ty::Wrapper(kind, _) if matches!(kind.as_str(), "Iterator" | "Option" | "Result"))
                 && matches!(
@@ -225,6 +275,13 @@ impl<'ast> Visit<'ast> for Usage<'_> {
         if let Expr::Path(p) = &*expr.func
             && let Some((owner, method)) = call_owner(self.index, &self.context, p)
         {
+            if let Some(key) = self.repository_key(&Ty::Named(owner.clone()), &method)
+                && expr.args.len() == 2
+            {
+                self.visit_expr(&expr.args[0]);
+                self.visit_lookup_key(&expr.args[1], &key);
+                return;
+            }
             self.report(
                 &Ty::Named(owner),
                 &method,
