@@ -1,5 +1,24 @@
 {
+  "schemaVersion": 1,
+  "distribution": "codex",
+  "productName": "Codex CLI",
+  "configNextStep": "run `codex`, then `$aidlc --doctor`",
   "name": "codex",
   "harnessDir": ".codex",
-  "rulesSubdir": "aidlc-rules"
+  "rulesSubdir": "aidlc-rules",
+  "providers": {
+    "schemaVersion": 1,
+    "provider": "other",
+    "acknowledged": true,
+    "pendingActions": [
+      {
+        "id": "non-bedrock-provider-configuration",
+        "status": "done"
+      }
+    ]
+  },
+  "trust": {
+    "schemaVersion": 1,
+    "reviewed": true
+  }
 }

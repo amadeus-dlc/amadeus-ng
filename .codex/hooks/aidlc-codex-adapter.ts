@@ -33,14 +33,14 @@
 //     {"additionalContext": "..."}; Codex expects the hookSpecificOutput
 //     wrapper (verified live, findings E1) — the shim re-wraps.
 //   - bind-bash-session: POSIX Bash input is rewritten through
-//     hookSpecificOutput.permissionDecision=allow + updatedInput so every
-//     command inherits the validated payload session without process inspection.
+//     hookSpecificOutput.updatedInput so every command inherits the validated
+//     payload session without process inspection.
 //   - continue-workflow: {"decision":"block","reason"} passes through VERBATIM — the
 //     contract is identical on Codex (stop_hook_active included).
 //   - everything else: advisory; stdout ignored, exit 0.
 //
 // Usage (wired in .codex/hooks.json):
-//   bun .codex/hooks/aidlc-codex-adapter.ts <target>
+//   aidlc engine adapter codex <target>
 // where <target> ∈ session-start | audit-and-sensors | sync-workflow-state |
 //                  rebuild-stage-graph | validate-state | log-subagent | continue-workflow |
 //                  record-human-turn | state-transition-guard | reviewer-scope |
@@ -175,39 +175,6 @@ function explicitHumanSelectionText(toolResponse: unknown): string {
   return "";
 }
 
-export function wrapUpdatedInput(updatedInput: Record<string, unknown>): string {
-  return `${JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "allow",
-      updatedInput,
-    },
-  })}\n`;
-}
-
-export function normalizePreToolUseUpdatedInput(coreStdout: string): string {
-  try {
-    const parsed = JSON.parse(coreStdout) as {
-      hookSpecificOutput?: {
-        hookEventName?: unknown;
-        updatedInput?: unknown;
-      };
-    };
-    const output = parsed.hookSpecificOutput;
-    if (
-      output?.hookEventName === "PreToolUse" &&
-      output.updatedInput !== null &&
-      typeof output.updatedInput === "object" &&
-      !Array.isArray(output.updatedInput)
-    ) {
-      return wrapUpdatedInput(output.updatedInput as Record<string, unknown>);
-    }
-  } catch {
-    // Unparseable core output is passed through so its established diagnostics survive.
-  }
-  return coreStdout;
-}
-
 export async function run(
   target: string,
   input: string,
@@ -330,7 +297,7 @@ function runCore(hookFile: string, input: string): { stdout: string; code: numbe
   // PATH containing bun (the hook environment often lacks the bun install dir).
   const executable = process.env.AIDLC_COMPILED_EXECUTABLE;
   const command = executable
-    ? [executable, "hook", hookFile.replace(/^aidlc-|\.ts$/g, "")]
+    ? [executable, "engine", "hook", hookFile.replace(/^aidlc-|\.ts$/g, "")]
     : [process.execPath, join(HOOKS_DIR, hookFile)];
   const r = Bun.spawnSync(command, {
     stdin: Buffer.from(input, "utf-8"),
@@ -350,7 +317,7 @@ function runCoreWithStderr(
 ): { stdout: string; stderr: string; code: number } {
   const executable = process.env.AIDLC_COMPILED_EXECUTABLE;
   const command = executable
-    ? [executable, "hook", hookFile.replace(/^aidlc-|\.ts$/g, "")]
+    ? [executable, "engine", "hook", hookFile.replace(/^aidlc-|\.ts$/g, "")]
     : [process.execPath, join(HOOKS_DIR, hookFile)];
   const r = Bun.spawnSync(command, {
     stdin: Buffer.from(input, "utf-8"),
@@ -389,6 +356,39 @@ function wrapContext(coreStdout: string, eventName: string): string {
     // unparseable core output — pass through untouched
   }
   return coreStdout;
+}
+
+function allowUpdatedInput(coreStdout: string): string {
+  try {
+    const parsed = JSON.parse(coreStdout) as {
+      hookSpecificOutput?: {
+        hookEventName?: unknown;
+        permissionDecision?: unknown;
+        updatedInput?: unknown;
+      };
+    };
+    const output = parsed.hookSpecificOutput;
+    if (
+      output?.hookEventName === "PreToolUse" &&
+      output.updatedInput !== undefined &&
+      output.permissionDecision === undefined
+    ) {
+      output.permissionDecision = "allow";
+      return `${JSON.stringify(parsed)}\n`;
+    }
+  } catch {
+    // Unparseable core output is not a successful input rewrite.
+  }
+  return coreStdout;
+}
+
+function wrapUpdatedInput(updatedInput: Record<string, unknown>): string {
+  return allowUpdatedInput(`${JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      updatedInput,
+    },
+  })}\n`);
 }
 
 // --- D-4: SESSION_ENDED reconcile-at-next-start ------------------------------
@@ -547,7 +547,7 @@ switch (target) {
 
   case "log-subagent": {
     // SubagentStop already carries agent_type (real role name since Codex
-    // 0.139.0; the doctor-enforced floor is 0.145.0) + agent_id. Verbatim pipe.
+    // 0.139.0; the doctor-advised floor is 0.145.0) + agent_id. Verbatim pipe.
     runCore("aidlc-log-subagent.ts", rawInput);
     persistResponse("", 0);
     return 0;
@@ -661,13 +661,13 @@ switch (target) {
   }
 
   case "deliver-stage-rules": {
-    // Codex requires permissionDecision:allow whenever a PreToolUse hook emits
-    // updatedInput. The shared core hook recognizes spawn_agent and appends the
-    // exact active-stage bundle to message/items; normalize its successful
-    // rewrite into Codex's stricter envelope before returning it.
+    // Codex 0.145 consumes the same PreToolUse hookSpecificOutput.updatedInput
+    // contract as Claude, plus an explicit allow decision for rewritten input.
+    // The core hook recognizes spawn_agent and appends the exact active-stage
+    // bundle to message/items; the adapter completes the Codex envelope.
     const r = runCoreWithStderr("aidlc-deliver-stage-rules.ts", rawInput);
     const answeredCode = r.code === 2 ? 2 : 0;
-    const stdout = normalizePreToolUseUpdatedInput(r.stdout);
+    const stdout = r.code === 2 ? r.stdout : allowUpdatedInput(r.stdout);
     persistResponse(stdout, answeredCode, r.stderr);
     if (stdout) process.stdout.write(stdout);
     if (r.code === 2) {
@@ -775,20 +775,26 @@ switch (target) {
     // state existing (same self-gate as the core record-human-turn hook) so a prompt in a
     // project that never ran the framework does not scaffold audit shards.
     // Fail-open: a record-human-turn failure must never block the turn. Advisory, no stdout.
-    const responseText =
-      explicitHumanSelectionText(codex.tool_response) ||
-      codex.prompt ||
-      codex.user_prompt ||
-      codex.message ||
-      "";
-    runCoreWithStderr(
-      "aidlc-record-human-turn.ts",
-      JSON.stringify({
-        hook_event_name: "UserPromptSubmit",
-        ...(codex.session_id ? { session_id: codex.session_id } : {}),
-        prompt: responseText,
-      }),
-    );
+    //
+    // A structured request_user_input selection is forwarded as the tool
+    // response it is, never as typed prompt text: the core hook records the
+    // Plan Approval choice from either channel, but the break-glass override
+    // phrase counts only when the human typed it as a prompt.
+    const selectionText = explicitHumanSelectionText(codex.tool_response);
+    const forwarded =
+      codex.tool_name === "request_user_input"
+        ? {
+            hook_event_name: "PostToolUse",
+            ...(codex.session_id ? { session_id: codex.session_id } : {}),
+            tool_name: "request_user_input",
+            tool_response: { answer: selectionText },
+          }
+        : {
+            hook_event_name: "UserPromptSubmit",
+            ...(codex.session_id ? { session_id: codex.session_id } : {}),
+            prompt: codex.prompt || codex.user_prompt || codex.message || "",
+          };
+    runCoreWithStderr("aidlc-record-human-turn.ts", JSON.stringify(forwarded));
     persistResponse("", 0);
     return 0;
   }
