@@ -18,7 +18,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::Write as _;
+use std::io::{ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -169,6 +169,9 @@ impl Workspace {
     }
 
     /// 登録されたコマンド行を、Claude Code と同じく `sh -c` と `CLAUDE_PROJECT_DIR` で起動する。
+    ///
+    /// 起動できない登録では、子は標準入力を読まずに終わる。書き込みより先に終わると書き込みは
+    /// `BrokenPipe` になるが、それは起動失敗の現れであって、判定は終了コードと出力で行う。
     fn fire(&self, command: &str, stdin: &str) -> Output {
         let mut child = Command::new("/bin/sh")
             .arg("-c")
@@ -187,12 +190,14 @@ impl Workspace {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(stdin.as_bytes())
-            .unwrap();
+        let written = child.stdin.take().unwrap().write_all(stdin.as_bytes());
+        if let Err(error) = written {
+            assert_eq!(
+                error.kind(),
+                ErrorKind::BrokenPipe,
+                "標準入力を渡せない: {error}"
+            );
+        }
         child.wait_with_output().unwrap()
     }
 
