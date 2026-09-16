@@ -271,9 +271,10 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
             Completion::refused(wording::unknown_learnings_subcommand(given.as_deref()))
         }
     };
-    if Face::of(argv0) == Face::Log {
+    // 起動名ではなく実行した面で選ぶ — 本家 2.8.2 は二段形の log も同じ `emitError` で終える。
+    if face == Face::Log {
         log_failure::finish(&layout, "aidlc-log", args, completion).await
-    } else if Face::of(argv0) == Face::Jump {
+    } else if face == Face::Jump {
         log_failure::finish(&layout, "aidlc-jump", args, completion).await
     } else {
         completion
