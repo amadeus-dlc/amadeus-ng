@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 use core_query_use_case::orchestration::IntentReposDao;
 
+use crate::registry_row::record_dir_matches;
+
 /// intent 登録簿を読む実装。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentReposDaoImpl {
@@ -49,33 +51,4 @@ impl IntentReposDao for IntentReposDaoImpl {
             })
             .unwrap_or_default()
     }
-}
-
-/// 登録簿の行が、この記録ディレクトリのものか (upstream `recordDirMatches`)。
-///
-/// 記録された `dirName` が在ればそれを逐語で突き合わせる。無い行 (spike 以前の行や手書きの
-/// フィクスチャ) だけが `<slug>-<id8>` の形へ後退する — slug の接頭辞と、uuid の末尾 hex に
-/// 一致する接尾辞である。
-fn record_dir_matches(entry: &serde_json::Value, record_dir_name: &str) -> bool {
-    if let Some(dir_name) = entry.get("dirName").and_then(serde_json::Value::as_str) {
-        return dir_name == record_dir_name;
-    }
-    let (Some(slug), Some(uuid)) = (
-        entry.get("slug").and_then(serde_json::Value::as_str),
-        entry.get("uuid").and_then(serde_json::Value::as_str),
-    ) else {
-        return false;
-    };
-    let Some(suffix) = record_dir_name.strip_prefix(&format!("{slug}-")) else {
-        return false;
-    };
-    if suffix.is_empty()
-        || !suffix
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    {
-        return false;
-    }
-    let hex: String = uuid.chars().filter(|c| *c != '-').collect();
-    hex.len() >= suffix.len() && hex.ends_with(suffix)
 }

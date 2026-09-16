@@ -191,6 +191,10 @@ mod record_pipeline_link_use_case;
 pub use record_pipeline_link_use_case::RecordPipelineLinkUseCase;
 mod pipeline_link_command_error;
 pub use pipeline_link_command_error::PipelineLinkCommandError;
+mod record_artifact_reuse_use_case;
+pub use record_artifact_reuse_use_case::RecordArtifactReuseUseCase;
+mod artifact_reuse_command_error;
+pub use artifact_reuse_command_error::ArtifactReuseCommandError;
 
 mod session_audit_command_error;
 pub use session_audit_command_error::SessionAuditCommandError;

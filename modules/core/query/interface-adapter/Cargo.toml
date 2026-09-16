@@ -30,6 +30,9 @@ rusqlite = { workspace = true }
 # 自己診断の観測 (`DoctorObservationDaoImpl`) が heartbeat と監査行の ISO 8601 を本家 `Date.parse` と
 # 同じ意味でミリ秒へ解釈するため。観測の材料であり、ドメイン型ではない。
 chrono = { workspace = true }
+# 顧客が名指した 1 ファイルを `O_NOFOLLOW` / `O_NONBLOCK` で開く (`DocumentInputDaoImpl`)。
+# 検査と `open` の間の差し替えと、FIFO による `open` の停止を閉じるのに要る。
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

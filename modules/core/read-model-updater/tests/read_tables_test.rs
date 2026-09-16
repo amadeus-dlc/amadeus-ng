@@ -2062,6 +2062,69 @@ fn a_plan_fingerprint_row_carries_the_refusal_instead_of_a_fingerprint() {
     assert!(row.error().is_some(), "拒否理由が行に載る");
 }
 
+/// 開始可否の行も、実行と依頼が揃わなければ組めない（計画指紋の行と同じ前提）。
+#[test]
+fn a_code_generation_approval_row_names_the_missing_execution_or_intent() {
+    use core_command_domain::orchestration::PlanReceipts;
+    use core_read_model_updater::read_tables::CodeGenerationApprovalRow;
+    let unknown = IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0777").expect("UUIDv7");
+    assert_eq!(
+        CodeGenerationApprovalRow::project(
+            &history(),
+            &unknown,
+            &empty_plan_input(),
+            &PlanReceipts::default()
+        ),
+        Err(ReadTablesError::IntentUnavailable {
+            execution_id: unknown.as_str().to_string(),
+            intent_id: String::new(),
+        })
+    );
+}
+
+/// 受領が 1 件も無い履歴は「開始できない」と、ドメインの理由つきで投影される。
+///
+/// 固定値ではなく実際の判断が載ることを、理由が**materialを名指す**ことで観測する。
+#[test]
+fn a_code_generation_approval_row_carries_the_domain_refusal() {
+    use core_command_domain::orchestration::PlanReceipts;
+    use core_read_model_updater::read_tables::CodeGenerationApprovalRow;
+    let row = CodeGenerationApprovalRow::project(
+        &history(),
+        &execution_a(),
+        &empty_plan_input(),
+        &PlanReceipts::default(),
+    )
+    .expect("実行と intent がある");
+    assert_eq!(row.execution_id(), EXECUTION_A);
+    assert_eq!(row.target_id(), "stage:code-generation");
+    assert!(!row.ok(), "受領の無い履歴から開始できてはならない");
+    assert_eq!(row.unit(), None, "段階全体の対象は Unit を名乗らない");
+    assert_eq!(row.contract_hash(), None, "契約が立たなければ指紋も無い");
+    assert!(
+        !row.reason().is_empty() && row.reason() != "approved",
+        "拒否理由が行に載る — {}",
+        row.reason()
+    );
+}
+
+/// 同じ材料からは同じ照合子が出る（投影は壁時計を読まない）。
+#[test]
+fn a_code_generation_approval_row_is_reproducible_from_the_same_material() {
+    use core_command_domain::orchestration::PlanReceipts;
+    use core_read_model_updater::read_tables::CodeGenerationApprovalRow;
+    let project = || {
+        CodeGenerationApprovalRow::project(
+            &history(),
+            &execution_a(),
+            &empty_plan_input(),
+            &PlanReceipts::default(),
+        )
+        .expect("実行と intent がある")
+    };
+    assert_eq!(project(), project());
+}
+
 /// セッション監査の事実（record 相対の観測領域 `spaces/default/intents/260907-x`）。
 fn session_event(
     kind: core_command_domain::workspace::EventType,

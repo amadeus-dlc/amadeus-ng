@@ -26,17 +26,22 @@ mod continuation;
 mod continuation_cursor;
 mod dispatch_rules;
 mod doctor;
+mod document_input;
 mod fold_usage;
+mod intent_listing;
 mod jump;
 mod learnings;
 mod log_failure;
 mod pipeline_link;
 mod plan_approval;
+mod reuse_artifact;
+mod review_brief;
 mod review_documents;
 mod review_guards;
 mod runtime_graph;
 mod session_hooks;
 mod session_start;
+mod statusline;
 mod task_sync;
 mod testing_posture;
 mod workflow_authority;
@@ -81,7 +86,7 @@ use core_read_model_updater::orchestration::{
     ReadModelUpdater, SteeringSource,
 };
 
-use crate::cli::{Face, IntentCreateArgs, Invocation, Request, parse};
+use crate::cli::{EngineRoute, Face, IntentCreateArgs, Invocation, Request, parse};
 use crate::execution_cursor::{ExecutionCursor, ExecutionCursorError};
 use crate::layout::Layout;
 use crate::presenter::{DIRECTIVE_MAX_BYTES, Presenter};
@@ -187,14 +192,31 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         .project_dir()
         .map_or_else(|| cwd.to_path_buf(), std::path::PathBuf::from);
     let layout = Layout::resolve(&project_dir);
-    let completion = match parse(Face::of(argv0), invocation.rest()) {
+    // 2.8.2 の二段形はここで既存の面・動詞へ解決してから `parse` へ渡す。`engine` で
+    // 始まらない起動はこの分岐を素通りし、argv[0] basename の multi-call 面が変わらない。
+    let (face, rest) = match EngineRoute::resolve(invocation.rest()) {
+        Some(EngineRoute::Mapped { face, argv }) => (face, std::borrow::Cow::Owned(argv)),
+        Some(EngineRoute::NotWired { noun, verb }) => {
+            return Completion::refused(wording::engine_route_not_wired(&noun, verb.as_deref()));
+        }
+        Some(EngineRoute::Unknown { noun, verb }) => {
+            return Completion::refused(wording::engine_noun_error(&noun, verb.as_deref()));
+        }
+        None => (
+            Face::of(argv0),
+            std::borrow::Cow::Borrowed(invocation.rest()),
+        ),
+    };
+    let completion = match parse(face, rest.as_ref()) {
         Request::TestingPosture { args } => testing_posture::run(&layout, &args).await,
+        Request::ReviewBrief { args } => review_brief::run(&layout, &args),
         Request::Hook { name } => run_hook(&layout, &name).await,
         Request::Next(input) => emit(next(&layout, *input).await),
         Request::Continue { token } => emit(resume(&layout, &token).await),
         Request::Report(args) => report(&layout, &args).await,
         Request::Park => park(&layout).await,
         Request::Doctor { extra } => doctor::run(&layout, &extra).await,
+        Request::Statusline => statusline::run(&layout),
         Request::IntentCreate(args) => create_intent(&layout, &args).await,
         Request::UnknownOrchestrateVerb { given } => {
             Completion::refused(wording::unknown_orchestrate_subcommand(given.as_deref()))
@@ -219,6 +241,8 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         Request::UtilityScopeTable => workflow_authority::scope_table(&layout),
         Request::UtilityStageTable => workflow_authority::stage_table(&layout),
         Request::UtilityProjectDescription => codekb_authority::project_description(&layout),
+        Request::UtilityDocumentInput => document_input::run(&layout),
+        Request::UtilityIntent(args) => intent_listing::run(&layout, &args),
         Request::UtilityCodekbPath(flags) => codekb_authority::codekb_path(&layout, &flags),
         Request::UtilityCodekbScopeDiff(flags) => {
             codekb_authority::codekb_scope_diff(&layout, &flags)
@@ -228,6 +252,7 @@ pub async fn run(argv0: &str, args: &[String], cwd: &Path) -> Completion {
         }
         Request::UtilityCodekbPublish(flags) => codekb_write::codekb_publish(&layout, &flags).await,
         Request::StatePracticesPromote(args) => practices_promote(&layout, &args).await,
+        Request::StateReuseArtifact(args) => reuse_artifact::run(&layout, &args).await,
         Request::StateNotWired { verb } => {
             Completion::refused(wording::state_verb_not_wired(&verb))
         }

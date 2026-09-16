@@ -49,13 +49,11 @@ impl PlanApprovalTables {
     /// 誕生のない履歴・通番の欠落。
     /// # Panics
     /// ドメインの不変条件を破る履歴は、集約の再生規則に従って停止する。
+    ///
+    /// 再生そのものは [`replay_runtime`] が唯一の owner である — 同じ履歴から別の投影
+    /// （開始可否）も起こすので、検査と再生を 2 か所に書かない。
     pub fn project(entries: &[PlanApprovalJournalEntry]) -> Result<Self, JournalReadError> {
-        let corrupt = || JournalReadError::Corrupt {
-            aggregate_id: "workspace".to_string(),
-            seq_nr: None,
-            cause: CorruptCause::InvariantViolation,
-        };
-        let Some((first, delta)) = entries.split_first() else {
+        let Some(runtime) = replay_runtime(entries)? else {
             return Ok(Self::new(
                 Vec::new(),
                 Vec::new(),
@@ -66,23 +64,6 @@ impl PlanApprovalTables {
                 false,
             ));
         };
-        let PlanApprovalEvent::Created(created) = first.event() else {
-            return Err(corrupt());
-        };
-        if first.sequence() != 1
-            || entries
-                .iter()
-                .enumerate()
-                .any(|(index, entry)| entry.sequence() != index + 1)
-        {
-            return Err(corrupt());
-        }
-        let runtime = PlanApprovalRuntime::replay(
-            PlanApprovalRuntime::from((created.clone(), first.occurred_at())),
-            delta
-                .iter()
-                .map(|entry| (entry.event().clone(), entry.sequence(), entry.occurred_at())),
-        );
         let mut rows: Vec<_> = runtime
             .applied_operations()
             .iter()
@@ -247,6 +228,45 @@ impl PlanApprovalTables {
     pub fn anchor_event_id(&self) -> Option<&str> {
         self.anchor_event_id.as_deref()
     }
+}
+
+/// 共有承認の履歴から集約を起こす。誕生の無い履歴は `None`（承認面がまだ無い）。
+///
+/// この履歴から起こす投影は 2 つある（操作の一覧と、対象ごとの開始可否）。誕生の検査と
+/// 通番の検査をどちらにも書くと、片方だけ緩めても気づけないので、ここを唯一の owner にする。
+///
+/// # Errors
+/// 誕生のない履歴・通番の欠落。
+/// # Panics
+/// ドメインの不変条件を破る履歴は、集約の再生規則に従って停止する。
+pub(crate) fn replay_runtime(
+    entries: &[PlanApprovalJournalEntry],
+) -> Result<Option<PlanApprovalRuntime>, JournalReadError> {
+    let corrupt = || JournalReadError::Corrupt {
+        aggregate_id: "workspace".to_string(),
+        seq_nr: None,
+        cause: CorruptCause::InvariantViolation,
+    };
+    let Some((first, delta)) = entries.split_first() else {
+        return Ok(None);
+    };
+    let PlanApprovalEvent::Created(created) = first.event() else {
+        return Err(corrupt());
+    };
+    if first.sequence() != 1
+        || entries
+            .iter()
+            .enumerate()
+            .any(|(index, entry)| entry.sequence() != index + 1)
+    {
+        return Err(corrupt());
+    }
+    Ok(Some(PlanApprovalRuntime::replay(
+        PlanApprovalRuntime::from((created.clone(), first.occurred_at())),
+        delta
+            .iter()
+            .map(|entry| (entry.event().clone(), entry.sequence(), entry.occurred_at())),
+    )))
 }
 
 // 固定本家 aidlc-lib.ts の writePlanApprovalReceipt / clearPlanApprovalReceipt /

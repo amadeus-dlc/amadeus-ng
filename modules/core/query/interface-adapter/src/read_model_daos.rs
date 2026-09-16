@@ -102,6 +102,12 @@ impl ReadModelDaos {
         super::PlanFingerprintDaoImpl::new(Rc::clone(&self.store))
     }
 
+    /// 開始可否を読む実装。
+    #[must_use]
+    pub fn code_generation_approval(&self) -> crate::CodeGenerationApprovalDaoImpl {
+        crate::CodeGenerationApprovalDaoImpl::new(Rc::clone(&self.store))
+    }
+
     /// テスト契約を読む実装。
     #[must_use]
     pub fn testing_contract(&self) -> super::TestingContractDaoImpl {

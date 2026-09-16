@@ -779,7 +779,7 @@ async fn testing_posture_refuses_unknown_verbs_and_malformed_targets() {
     let none = workspace.invoke("aidlc-testing-posture", &[]).await;
     assert_eq!(
         posture_error(&none),
-        "Unknown subcommand: (none). Valid: resolve, render, fingerprint, verify, begin"
+        "Unknown subcommand: (none). Valid: resolve, render, fingerprint, verify, begin, brief"
     );
     let verify = workspace.invoke("aidlc-testing-posture", &["verify"]).await;
     assert_eq!(

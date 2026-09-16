@@ -21,6 +21,11 @@ pub enum Face {
     Bolt,
     /// `aidlc-learnings`（§13 の学びの儀式 — `surface` と `persist`）。
     Learnings,
+    /// `aidlc-review-brief`（レビュー判断の文脈 — `review` / `context` / `summary`）。
+    ///
+    /// 本家 2.8.2 の ROUTES 表も noun `review-brief` をこの面（`TOOLS.reviewBrief`）へ
+    /// 委譲する。engine 自身が受ける `routeOnly` ルートではない。
+    ReviewBrief,
 }
 
 impl Face {
@@ -40,6 +45,7 @@ impl Face {
             "aidlc-state" => Face::State,
             "aidlc-bolt" => Face::Bolt,
             "aidlc-learnings" => Face::Learnings,
+            "aidlc-review-brief" => Face::ReviewBrief,
             _ => Face::Orchestrate,
         }
     }
@@ -66,6 +72,12 @@ mod tests {
         assert_eq!(Face::of("aidlc-learnings"), Face::Learnings);
         assert_eq!(Face::of("/usr/local/bin/aidlc-learnings"), Face::Learnings);
         assert_eq!(Face::of("aidlc-learnings.exe"), Face::Learnings);
+        assert_eq!(Face::of("aidlc-review-brief"), Face::ReviewBrief);
+        assert_eq!(
+            Face::of("/usr/local/bin/aidlc-review-brief"),
+            Face::ReviewBrief
+        );
+        assert_eq!(Face::of("aidlc-review-brief.exe"), Face::ReviewBrief);
         assert_eq!(Face::of("aidlc-orchestrate"), Face::Orchestrate);
         assert_eq!(Face::of("aidlc"), Face::Orchestrate);
         // 未知の名前はエンジンに倒す（配布物の既定の顔）。

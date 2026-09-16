@@ -49,16 +49,16 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    ArtifactPaths, AutonomyMode, AutonomyModeSet, CodeGenerationAuthority, CommandFailed,
-    CommandFailure, Created, GateApproved, GateOpened, GateRejected, HealthCheckResult,
-    HealthChecked, Intent, IntentEvent, IntentEventId, IntentExecution, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Jumped, Parked, PipelineLinkCompleted,
-    PipelineReceipt, PlanAnswerInput, PlanAnswerLogged, PlanApprovalEvidence,
-    PlanApprovalOperationId, PlanApprovalOrigin, PlanChoice, PlanDecisionEvidence, PlanSession,
-    PlanTarget, PracticesAffirmed, Recomposed, ReviewCompleted, ReviewRequested, ReviewVerdict,
-    SingleStageRunCommitted, SingleStageRunStarted, SkeletonStance, SkeletonStanceRecorded,
-    StageDisplay, StageEntries, StageEntry, StageRevised, StageSkipped, StageSlugSet, StartRequest,
-    TaskSynchronized, Unparked, WorkspaceScan,
+    ArtifactPaths, ArtifactReuseReceipt, ArtifactReused, AutonomyMode, AutonomyModeSet,
+    CodeGenerationAuthority, CommandFailed, CommandFailure, Created, GateApproved, GateOpened,
+    GateRejected, HealthCheckResult, HealthChecked, Intent, IntentEvent, IntentEventId,
+    IntentExecution, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId, IntentId,
+    Jumped, Parked, PipelineLinkCompleted, PipelineReceipt, PlanAnswerInput, PlanAnswerLogged,
+    PlanApprovalEvidence, PlanApprovalOperationId, PlanApprovalOrigin, PlanChoice,
+    PlanDecisionEvidence, PlanSession, PlanTarget, PracticesAffirmed, Recomposed, ReviewCompleted,
+    ReviewRequested, ReviewVerdict, SingleStageRunCommitted, SingleStageRunStarted, SkeletonStance,
+    SkeletonStanceRecorded, StageDisplay, StageEntries, StageEntry, StageRevised, StageSkipped,
+    StageSlugSet, StartRequest, TaskSynchronized, Unparked, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, CompiledDefinition, CompiledDefinitionId, DefinitionRevision,
@@ -1136,6 +1136,18 @@ fn every_execution_variant() -> Vec<IntentExecutionEvent> {
             )
             .expect("整合した受領証"),
         )),
+        IntentExecutionEvent::ArtifactReused(ArtifactReused::new(
+            ev(),
+            agg(),
+            ArtifactReuseReceipt::new(
+                "reverse-engineering".to_string(),
+                "keep".to_string(),
+                "aidlc/spaces/default/codekb/app/".to_string(),
+                Some("app".to_string()),
+                true,
+            )
+            .expect("整合した再利用受領証"),
+        )),
         IntentExecutionEvent::PlanAnswerLogged(Box::new(PlanAnswerLogged::new(
             ev(),
             agg(),
@@ -1225,7 +1237,7 @@ fn every_execution_variant_written_by_the_command_side_is_read_back_by_the_proje
     // `aggregate_id` が加わり、`Unparked` は単位変種から構造体へ変わったので、変種ごとに
     // 書いて読み戻す照合をここに置く (ITF 駆動の経路は park / jump / recompose を通らない)。
     let cases = every_execution_variant();
-    assert_eq!(cases.len(), 29, "現在の実行イベント全変種を列挙する");
+    assert_eq!(cases.len(), 30, "現在の実行イベント全変種を列挙する");
     let mut variants = std::collections::HashSet::new();
     for event in cases {
         assert!(

@@ -52,6 +52,8 @@ pub enum IntentExecutionEventDto {
     SingleStageRunStarted(super::single_stage_run_started_dto::SingleStageRunStartedDto),
     /// Pipeline link完了の受領。
     PipelineLinkCompleted(super::pipeline_link_completed_dto::PipelineLinkCompletedDto),
+    /// 成果物再利用の受領。
+    ArtifactReused(super::artifact_reused_dto::ArtifactReusedDto),
     /// 指示発行の事実。
     DirectiveIssued(DirectiveIssuedDto),
     /// 保存済み指示の文脈失効。
@@ -165,6 +167,9 @@ impl IntentExecutionEventDto {
             IntentExecutionEvent::PipelineLinkCompleted(event) => Self::PipelineLinkCompleted(
                 super::pipeline_link_completed_dto::PipelineLinkCompletedDto::of(event),
             ),
+            IntentExecutionEvent::ArtifactReused(event) => {
+                Self::ArtifactReused(super::artifact_reused_dto::ArtifactReusedDto::of(event))
+            }
             IntentExecutionEvent::TaskSynchronized(payload) => {
                 Self::TaskSynchronized(TaskSynchronizedDto::of(payload))
             }
@@ -267,6 +272,7 @@ impl IntentExecutionEventDto {
             Self::PipelineLinkCompleted(event) => {
                 IntentExecutionEvent::PipelineLinkCompleted(event.to_domain()?)
             }
+            Self::ArtifactReused(event) => IntentExecutionEvent::ArtifactReused(event.to_domain()?),
             Self::TaskSynchronized(payload) => {
                 IntentExecutionEvent::TaskSynchronized(payload.to_domain()?)
             }

@@ -1,41 +1,52 @@
 {
   "source": {
     "repository": "https://github.com/amadeus-dlc/amadeus-ng",
-    "commit": "688bd6e846441bed481afaaf4d90546c8751f66a",
-    "version": "2.7.1-j5ik2o.1",
     "distribution": ".claude",
-    "upstream_fork": {
-      "repository": "https://github.com/j5ik2o/aidlc-workflows",
-      "commit": "801c570062f67dc8f4952ee5fc601381d09db7ec"
-    },
-    "files": 18
+    "version": "2.8.2",
+    "version_source": [
+      ".claude/tools/aidlc-version.ts:4",
+      ".claude/tools/data/aidlc-manifest.json:3"
+    ],
+    "captured_at": "2026-09-15",
+    "captured_from": "作業ツリーの .claude/ 配下の実バイト (aidlc 2.8.2 の配布物)",
+    "files": 21
   },
   "fixture_kind": "required-surface-sources",
-  "capture_method": "aidlc 2.8.2 へ更新する直前の amadeus-ng main（fork 同期で導入した 2.7.1-j5ik2o.1 の .claude 配布物）から `git show` で写した、scripts/aidlc-selfhost/required-surface.json の sources 18 ファイル。2.8.2 では配布物の呼出し形が `aidlc engine` に変わり、U4 で測った出典行が現物から消えたため、列挙はこの固定バイトに対して検証する（modules/app/aidlc/tests/required_surface_contract.rs）。",
+  "capture_method": "bugfix スコープ 1 周が踏む入口を列挙するための出典を、aidlc 2.8.2 の配布物の実バイトからそのまま写した。列挙はこの固定バイトに対して検証する (modules/app/aidlc/tests/required_surface_contract.rs)。",
+  "selection": {
+    "stage_and_protocol_assets": "bugfix スコープ 1 周 (初期化 3 + reverse-engineering + requirements-analysis + code-generation + build-and-test + deployment-pipeline + deployment-execution) が読むスキル・conductor・プロトコル・スコープ定義・ステージ定義。",
+    "settings_json": "オーナー裁定 D10 によりファイル全体を出典に加える。フック登録 18 件と statusLine が起動形の正本である。",
+    "tools_aidlc_ts": "オーナー裁定 D10 によりファイル全体を出典に加える。ROUTES 表が noun/verb の正本である。",
+    "bugfix_skill": "bugfix スコープは runner: true (.claude/scopes/aidlc-bugfix.md) であり、.claude/skills/aidlc-bugfix/SKILL.md が 1 周の起動形を直接綴る。実測で起動が辿れる資産のため出典に加えた。"
+  },
   "files": [
     {
       "path": ".claude/skills/aidlc/SKILL.md",
-      "sha256": "dfd3efbc2010cfdb42cf2164c05dad13188537b84a283d12059fcce17c6a5ba0"
+      "sha256": "15a45f23c9f7b73dbe7e562ae4faac487214040d9549067492080238b91cb35b"
+    },
+    {
+      "path": ".claude/skills/aidlc-bugfix/SKILL.md",
+      "sha256": "60136506f7f21b4b4fe907496bf409966f3129a0ca6f860f29c7d22ca3864d45"
     },
     {
       "path": ".claude/aidlc-common/conductor.md",
-      "sha256": "7033010b0bbb3dcc44afddd9007d7511fb59d37c05d78a48845f5984ee4c07c7"
+      "sha256": "f355fc74412e1ad604546798a4f291c374ab301fc765a5a42be8a4053c6ec0c0"
     },
     {
       "path": ".claude/aidlc-common/protocols/stage-protocol.md",
-      "sha256": "2aa09470ff0d10da41d423f66a6aeeefddd7e50d2900f1954432201acba3b4ca"
+      "sha256": "efcbb18785d3bb7b496f7ef2f79595fa28fb0d699fbed7cbdc40494bacef22cf"
     },
     {
       "path": ".claude/aidlc-common/protocols/stage-protocol-construction.md",
-      "sha256": "78876f8b99f4f3383ae7bc5fb931bf9ab4faed4ed0f26c071c9380d0d7f73af1"
+      "sha256": "b4edeaa585b9ec2553ae1b1f16dcdae7fb8037c392ae165bbf4445c11cff249c"
     },
     {
       "path": ".claude/aidlc-common/protocols/stage-protocol-reviewer.md",
-      "sha256": "64de95bae05d75f69fe2a2d7861b933655e7dbee3df63a15d4484a155071856a"
+      "sha256": "714cb1414f6cc53be85a18529d2de49da01603361c6f4532b1ab049b2be30abe"
     },
     {
       "path": ".claude/aidlc-common/protocols/stage-protocol-ensemble.md",
-      "sha256": "475273620fa1cc8a221ad78f476d9858589e00699c3f4d5c6f1842886c6a0284"
+      "sha256": "05699adeff669dc4cbfc7a792fd838f9e909de947dfeb4ff10a821d6ea3f2847"
     },
     {
       "path": ".claude/aidlc-common/protocols/stage-protocol-governance.md",
@@ -47,11 +58,11 @@
     },
     {
       "path": ".claude/scopes/aidlc-bugfix.md",
-      "sha256": "9e4f674a7081ee10a2eba6164a644ec9952c33ca65675bd647d846cbde5ecd8f"
+      "sha256": "bb7ed4120cb78f32bab55202df0bfc9320d75ba24488daafebced59cc6df87af"
     },
     {
       "path": ".claude/aidlc-common/stages/initialization/state-init.md",
-      "sha256": "a57491ceb077cd1b15a4a266368b4d1a697b7686631848e183602f34115fb7b9"
+      "sha256": "e4e870b09485442b1d7e593dcaa87265f67f036231ddced8a9dc37ae2fedc1d2"
     },
     {
       "path": ".claude/aidlc-common/stages/initialization/workspace-detection.md",
@@ -63,27 +74,35 @@
     },
     {
       "path": ".claude/aidlc-common/stages/inception/reverse-engineering.md",
-      "sha256": "fa2222f2d1729a54537867d6e704d8e15576f950d138c625b73fe3ff17afdd90"
+      "sha256": "ffa29027036009999b2ea2ac145c613755420537a38ef17d4f1b42a061f82ed8"
     },
     {
       "path": ".claude/aidlc-common/stages/inception/requirements-analysis.md",
-      "sha256": "5666747cddd595ac59f1343af3e57b2ecef2915748e1f27dbf1001188493f63b"
+      "sha256": "b18e9e84ef2306adc980ae7a294854a12d53a32e1a970661ec915121f112be93"
     },
     {
       "path": ".claude/aidlc-common/stages/construction/code-generation.md",
-      "sha256": "59065ee553bda694892effa9c06c2ce5bdc7e22368858637813972bed01e4d76"
+      "sha256": "629effca89b0fc6973d6754633a42096fdc75d0e8cfdb761eb73d4782a474e9d"
     },
     {
       "path": ".claude/aidlc-common/stages/construction/build-and-test.md",
-      "sha256": "74cb6d0482dab0cb140946b2173c6c94c6fb62670de4fe7c34430ca56442681e"
+      "sha256": "795a8fa7f4d17d50cfac748fd6be3ee968c0eff5ac10707b9630c01b062017c3"
     },
     {
       "path": ".claude/aidlc-common/stages/operation/deployment-pipeline.md",
-      "sha256": "7be448d09e43fe1c6e17b8b4a7b5fb35779c1bf9612004e16d946a51d3fa4c8d"
+      "sha256": "397b679c95982106c149eb6e2404e3f416a06054105ac94bd502293d8bd1bada"
     },
     {
       "path": ".claude/aidlc-common/stages/operation/deployment-execution.md",
-      "sha256": "7a3bb6a01c11f0bfc619e5aee2b26d75841fa7b48b2ef2107efc6cb2739f5219"
+      "sha256": "5e442376a2157384c52455a0d9af601ae475b5d673a4ce1b3bc662d6909a8604"
+    },
+    {
+      "path": ".claude/settings.json",
+      "sha256": "a8855b37d3891f2d5da90e0f6d2d68146f42a0be6cf24a24a2e0f4a8e771750e"
+    },
+    {
+      "path": ".claude/tools/aidlc.ts",
+      "sha256": "382e9f4ffb0941c8a49e8c7cfea67f888b64b40ec15edda5341e946ecbd5da2c"
     }
   ]
 }

@@ -571,6 +571,14 @@ pub use pipeline_record::PipelineRecord;
 
 pub use intent_execution_event::PipelineLinkCompleted;
 
+mod artifact_reuse_error;
+pub use artifact_reuse_error::ArtifactReuseError;
+
+mod artifact_reuse_receipt;
+pub use artifact_reuse_receipt::ArtifactReuseReceipt;
+
+pub use intent_execution_event::ArtifactReused;
+
 mod pipeline_history;
 pub use pipeline_history::PipelineHistory;
 

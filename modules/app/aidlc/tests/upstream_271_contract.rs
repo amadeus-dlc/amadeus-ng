@@ -5014,6 +5014,86 @@ fn workspace_with_approved_plan() -> Workspace {
     workspace
 }
 
+/// `brief` は読取専用なので、承認済みワークスペース内に新規ファイルを作らない形で起動する。
+fn worker_brief(workspace: &Workspace) -> std::process::Output {
+    Command::new(workspace.path().join("bin/aidlc-testing-posture"))
+        .args(["brief", "--stage-level"])
+        .current_dir(workspace.path())
+        .env_clear()
+        .envs(coverage_profile_env())
+        .env("HOME", workspace.path().join("aidlc/.capture-home"))
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap()
+}
+
+/// 承認済みの計画があれば、ブリーフは契約の指紋と承認済みの 2 文書を運ぶ。
+///
+/// 投影 → SQL → DAO → ブリーフ組立の終端まで通ることを外から観測する。途中のどこかが
+/// 固定値を返す実装なら、承認済みの 2 文書の本文はここに現れない。
+#[test]
+fn a_worker_brief_for_an_approved_plan_carries_the_contract_hash_and_both_documents() {
+    let workspace = workspace_with_approved_plan();
+    let before = workspace.state();
+    let output = worker_brief(&workspace);
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let mut lines = stdout.lines();
+    assert_eq!(lines.next(), Some("AIDLC-STAGE: code-generation"));
+    let hash = lines
+        .next()
+        .and_then(|line| line.strip_prefix("AIDLC-TESTING-CONTRACT: "))
+        .unwrap_or_default();
+    assert!(!hash.is_empty(), "契約の指紋の行が無い — {stdout}");
+    for section in [
+        "## Approved plan",
+        "## Approved unit-test instructions",
+        // 承認済みの 2 文書の本文そのもの。
+        "## Steps\n- [ ] Implement",
+        "Run cargo test.",
+    ] {
+        assert!(stdout.contains(section), "{section} が無い — {stdout}");
+    }
+    assert_eq!(
+        workspace.state(),
+        before,
+        "読取専用のブリーフが状態ファイルを動かした"
+    );
+}
+
+/// 計画が未承認なら、ブリーフはドメインの理由を名指して拒否される。
+///
+/// 承認の判断そのものへ到達していることを観測する — 権限の解決で止まる形とは別である。
+#[test]
+fn a_worker_brief_without_an_approved_plan_names_the_domain_reason() {
+    let workspace = workspace_at_code_generation();
+    // 権限は発行済みの指示から解決するので、まず `next` を通す。
+    let issued = Command::new(env!("CARGO_BIN_EXE_aidlc"))
+        .arg("next")
+        .current_dir(workspace.path())
+        .env_clear()
+        .envs(coverage_profile_env())
+        .env("HOME", workspace.path().join("aidlc/.capture-home"))
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    assert!(issued.status.success(), "{issued:?}");
+    let output = worker_brief(&workspace);
+    assert_ne!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Cannot assemble a worker brief for the stage-level target: code-generation-plan.md is missing or empty"
+        ),
+        "承認の判断まで到達していない — {stderr}"
+    );
+    assert!(
+        !stderr.contains("AIDLC-STAGE") && !stderr.contains("## Approved plan"),
+        "承認が無いのにブリーフ本文が漏れた — {stderr}"
+    );
+}
+
 #[test]
 fn stop_observation_preserves_an_approved_code_generation_receipt() {
     let workspace = workspace_with_approved_plan();

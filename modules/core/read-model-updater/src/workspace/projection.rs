@@ -482,6 +482,24 @@ fn project_one(
             ));
             Ok(())
         }
+        IntentExecutionEvent::ArtifactReused(event) => {
+            let receipt = event.receipt();
+            let mut fields = AuditFields::new()
+                .with(key("Stage")?, receipt.stage())
+                .with(key("Decision")?, receipt.decision())
+                .with(key("Artifacts")?, receipt.artifacts());
+            if let Some(repo) = receipt.repo() {
+                fields = fields.with(key("Repo")?, repo);
+            }
+            if receipt.is_single() {
+                fields = fields.with(
+                    key("Workflow")?,
+                    &format!("single-stage:{}", receipt.stage()),
+                );
+            }
+            read_model.append_audit(&render_audit_block(EventType::ArtifactReused, at, &fields));
+            Ok(())
+        }
         IntentExecutionEvent::DirectiveContextInvalidated(event) => {
             read_model.apply_directive_issue(event.directive());
             Ok(())

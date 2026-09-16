@@ -8,127 +8,11 @@ use std::{
 };
 
 pub(super) fn read(layout: &Layout, stage: &str) -> ReviewDocuments {
-    let captured = (|| -> Result<ReviewDocuments, String> {
-        let graph: Vec<Value> = serde_json::from_slice(
-            &fs::read(layout.definition_data_dir().join("stage-graph.json"))
-                .map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
-        let node = graph
-            .iter()
-            .find(|n| n.get("slug").and_then(Value::as_str) == Some(stage))
-            .ok_or("missing stage")?;
-        let phase = node
-            .get("phase")
-            .and_then(Value::as_str)
-            .ok_or("missing phase")?;
-        let target = node
-            .get("review_artifact")
-            .and_then(Value::as_str)
-            .ok_or("missing review_artifact")?;
-        let record = layout.record_dir().ok_or("missing record")?;
-        let per_unit = node.get("for_each").and_then(Value::as_str) == Some("unit-of-work");
-        let require_artifacts = !per_unit;
-        let mut artifacts = Vec::new();
-        let mut reads = Vec::new();
-        for (field, required) in [("produces", true), ("optional_produces", false)] {
-            for name in node
-                .get(field)
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-            {
-                let filename = if name == "traceability" {
-                    "traceability.json".into()
-                } else {
-                    format!("{name}.md")
-                };
-                let logical = format!("{phase}/{stage}/{filename}");
-                let path = record.join(&logical);
-                inspect_path(record, &path)?;
-                let metadata = match fs::symlink_metadata(&path) {
-                    Ok(metadata) => Some(metadata),
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-                    Err(e) => return Err(e.to_string()),
-                };
-                let Some(metadata) = metadata else {
-                    artifacts.push(ReviewArtifact::new(
-                        logical,
-                        None,
-                        true,
-                        required,
-                        name == target,
-                    ));
-                    reads.push((path, None, None));
-                    continue;
-                };
-                if !metadata.is_file() {
-                    artifacts.push(ReviewArtifact::new(
-                        logical,
-                        None,
-                        false,
-                        required,
-                        name == target,
-                    ));
-                    reads.push((path, Some(metadata), None));
-                    continue;
-                }
-                let mut options = fs::OpenOptions::new();
-                options.read(true);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt as _;
-                    options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-                }
-                let mut file = options.open(&path).map_err(|e| e.to_string())?;
-                let opened = file.metadata().map_err(|e| e.to_string())?;
-                if !same(&metadata, &opened) || !single_link(&opened) {
-                    return Err("unstable review file".into());
-                }
-                let mut body = Vec::new();
-                use std::io::Read as _;
-                file.read_to_end(&mut body).map_err(|e| e.to_string())?;
-                if !same(&opened, &file.metadata().map_err(|e| e.to_string())?) {
-                    return Err("changed review file".into());
-                }
-                artifacts.push(ReviewArtifact::new(
-                    logical,
-                    Some(body),
-                    true,
-                    required,
-                    name == target,
-                ));
-                reads.push((path, Some(opened), Some(file)));
-            }
-        }
-        for (path, previous, file) in reads {
-            inspect_path(record, &path)?;
-            let current = match fs::symlink_metadata(&path) {
-                Ok(meta) => Some(meta),
-                Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-                Err(e) => return Err(e.to_string()),
-            };
-            match (previous, current) {
-                (None, None) => (),
-                (Some(a), Some(b)) if same(&a, &b) => {
-                    if let Some(file) = file
-                        && !same(&a, &file.metadata().map_err(|e| e.to_string())?)
-                    {
-                        return Err("changed review file".into());
-                    }
-                }
-                _ => return Err("changed review set".into()),
-            }
-        }
-        let source = if node.get("workspace_requires") == Some(&Value::Bool(true)) {
-            Some(
-                crate::source_fingerprint::read(layout.project_dir())
-                    .unwrap_or_else(|_| "unbindable".into()),
-            )
-        } else {
-            None
-        };
+    let captured = observe(layout, stage).and_then(|(artifacts, require_artifacts, workspace)| {
+        let source = workspace.then(|| {
+            crate::source_fingerprint::read(layout.project_dir())
+                .unwrap_or_else(|_| "unbindable".into())
+        });
         let mut nonce = [0u8; 16];
         getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
         let nonce = nonce.iter().map(|byte| format!("{byte:02x}")).collect();
@@ -139,8 +23,152 @@ pub(super) fn read(layout: &Layout, stage: &str) -> ReviewDocuments {
             nonce,
             true,
         ))
-    })();
+    });
     captured.unwrap_or_else(|_| ReviewDocuments::new(Vec::new(), true, None, String::new(), false))
+}
+
+/// 宣言されたレビュー成果物だけを観測する（読取専用の面が使う入口）。
+///
+/// [`read`] と同じ観測を共有しつつ、ソース指紋と nonce を採らない。どちらも束縛
+/// （`bind` / `certify`）のための材料であって、描くだけの面には要らないからである。
+/// # 観測できないことは「所見なし」ではない
+///
+/// 観測の失敗は呼び手へ返す。畳んで空にすると、成果物がハードリンク化・差し替え中・
+/// symlink 越し・読取不能のときに「開いた所見は無い」という本文が承認ゲートへ出てしまう
+/// （同じ観測を [`read`] 経路はドメインの `ArtifactsUnavailable` で拒否するので、
+/// 同一状態で 2 入口の答えが食い違う）。upstream `aidlc-review-brief.ts` も読取りの失敗を
+/// `throw` して exit 1 で終える。
+///
+/// 空へ倒すのは**記録がまだ選ばれていない**ときだけである（upstream `aidlc-lib.ts` の
+/// `recordDir === null` と同じ 1 分岐）。そのときは描けるレビュー成果物が 1 つも無い。
+/// # Errors
+/// 記録は在るが、定義グラフ・成果物のいずれかを安定した原文として観測できない場合。
+pub(super) fn artifacts(layout: &Layout, stage: &str) -> Result<Vec<ReviewArtifact>, String> {
+    if layout.record_dir().is_none() {
+        return Ok(Vec::new());
+    }
+    observe(layout, stage).map(|(artifacts, _, _)| artifacts)
+}
+
+/// 宣言された成果物の観測と、`require_artifacts` / `workspace_requires` の宣言。
+fn observe(layout: &Layout, stage: &str) -> Result<(Vec<ReviewArtifact>, bool, bool), String> {
+    let graph: Vec<Value> = serde_json::from_slice(
+        &fs::read(layout.definition_data_dir().join("stage-graph.json"))
+            .map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    let node = graph
+        .iter()
+        .find(|n| n.get("slug").and_then(Value::as_str) == Some(stage))
+        .ok_or("missing stage")?;
+    let phase = node
+        .get("phase")
+        .and_then(Value::as_str)
+        .ok_or("missing phase")?;
+    let target = node
+        .get("review_artifact")
+        .and_then(Value::as_str)
+        .ok_or("missing review_artifact")?;
+    let record = layout.record_dir().ok_or("missing record")?;
+    let per_unit = node.get("for_each").and_then(Value::as_str) == Some("unit-of-work");
+    let require_artifacts = !per_unit;
+    let mut artifacts = Vec::new();
+    let mut reads = Vec::new();
+    for (field, required) in [("produces", true), ("optional_produces", false)] {
+        for name in node
+            .get(field)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            let filename = if name == "traceability" {
+                "traceability.json".into()
+            } else {
+                format!("{name}.md")
+            };
+            let logical = format!("{phase}/{stage}/{filename}");
+            let path = record.join(&logical);
+            inspect_path(record, &path)?;
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(metadata) => Some(metadata),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+                Err(e) => return Err(e.to_string()),
+            };
+            let Some(metadata) = metadata else {
+                artifacts.push(ReviewArtifact::new(
+                    logical,
+                    None,
+                    true,
+                    required,
+                    name == target,
+                ));
+                reads.push((path, None, None));
+                continue;
+            };
+            if !metadata.is_file() {
+                artifacts.push(ReviewArtifact::new(
+                    logical,
+                    None,
+                    false,
+                    required,
+                    name == target,
+                ));
+                reads.push((path, Some(metadata), None));
+                continue;
+            }
+            let mut options = fs::OpenOptions::new();
+            options.read(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt as _;
+                options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+            }
+            let mut file = options.open(&path).map_err(|e| e.to_string())?;
+            let opened = file.metadata().map_err(|e| e.to_string())?;
+            if !same(&metadata, &opened) || !single_link(&opened) {
+                return Err("unstable review file".into());
+            }
+            let mut body = Vec::new();
+            use std::io::Read as _;
+            file.read_to_end(&mut body).map_err(|e| e.to_string())?;
+            if !same(&opened, &file.metadata().map_err(|e| e.to_string())?) {
+                return Err("changed review file".into());
+            }
+            artifacts.push(ReviewArtifact::new(
+                logical,
+                Some(body),
+                true,
+                required,
+                name == target,
+            ));
+            reads.push((path, Some(opened), Some(file)));
+        }
+    }
+    for (path, previous, file) in reads {
+        inspect_path(record, &path)?;
+        let current = match fs::symlink_metadata(&path) {
+            Ok(meta) => Some(meta),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e.to_string()),
+        };
+        match (previous, current) {
+            (None, None) => (),
+            (Some(a), Some(b)) if same(&a, &b) => {
+                if let Some(file) = file
+                    && !same(&a, &file.metadata().map_err(|e| e.to_string())?)
+                {
+                    return Err("changed review file".into());
+                }
+            }
+            _ => return Err("changed review set".into()),
+        }
+    }
+    Ok((
+        artifacts,
+        require_artifacts,
+        node.get("workspace_requires") == Some(&Value::Bool(true)),
+    ))
 }
 fn inspect_path(root: &Path, path: &Path) -> Result<(), String> {
     let mut current = PathBuf::from(root);

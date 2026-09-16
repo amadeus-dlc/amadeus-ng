@@ -50,7 +50,13 @@ mod doctor_check_dao;
 mod doctor_observation_dao;
 mod doctor_report_dao;
 mod doctor_view;
+mod document_input_bytes;
+mod document_input_dao;
+mod document_input_read_error;
+mod document_input_view;
 mod execution_dao;
+mod intent_listing_dao;
+mod intent_listing_row_view;
 mod intent_repos_dao;
 mod jump_dao;
 mod jump_phase_dao;
@@ -88,7 +94,13 @@ pub use doctor_view::{
     StateFileObservationView, StateVersionKindView, StateVersionView, StoreObservationView,
     StoreSchemaView, TimestampView, WiredHookView, WorkspaceShellView,
 };
+pub use document_input_bytes::DocumentInputBytes;
+pub use document_input_dao::DocumentInputDao;
+pub use document_input_read_error::DocumentInputReadError;
+pub use document_input_view::DocumentInputView;
 pub use execution_dao::ExecutionDao;
+pub use intent_listing_dao::IntentListingDao;
+pub use intent_listing_row_view::IntentListingRowView;
 pub use intent_repos_dao::IntentReposDao;
 pub use jump_dao::JumpDao;
 pub use jump_phase_dao::JumpPhaseDao;
@@ -137,6 +149,10 @@ mod plan_fingerprint_view;
 pub use plan_fingerprint_view::PlanFingerprintView;
 mod plan_fingerprint_dao;
 pub use plan_fingerprint_dao::PlanFingerprintDao;
+mod code_generation_approval_view;
+pub use code_generation_approval_view::CodeGenerationApprovalView;
+mod code_generation_approval_dao;
+pub use code_generation_approval_dao::CodeGenerationApprovalDao;
 
 mod plan_approval_operation_view;
 pub use plan_approval_operation_view::PlanApprovalOperationView;

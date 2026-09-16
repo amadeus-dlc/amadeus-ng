@@ -150,6 +150,8 @@ mod memory_journals_observed_dto;
 mod pipeline_link_completed_dto;
 pub use pipeline_link_completed_dto::PipelineLinkCompletedDto;
 
+mod artifact_reused_dto;
+
 mod pipeline_record_dto;
 
 mod session_audit_record_dto;

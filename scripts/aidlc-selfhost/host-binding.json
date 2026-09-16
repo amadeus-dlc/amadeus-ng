@@ -39,8 +39,12 @@
     },
     {
       "id": "doctor_pass",
-      "status": "unmet",
-      "evidence": null,
+      "status": "met",
+      "evidence": {
+        "command": "cargo build --release -p aidlc && target/release/aidlc --doctor",
+        "ran_at": "2026-09-15T10:42:57Z",
+        "result": "28 passed, 0 failed, 終了コード 0。Native engine entry points は required-surface.json の bugfix 必須 26 件の二段形と NATIVE_HOOKS の 14 名前を確認対象に含む。実行されなかった検査 ID は D2.c / D4.a / D4.b / D4.c / D5.a / D5.b の 6 件で、いずれも合格に数えていない。"
+      },
       "how": "同じ実体で target/release/aidlc --doctor を本リポジトリで実行し、終了コード 0 と失敗 0 を採る。"
     },
     {
