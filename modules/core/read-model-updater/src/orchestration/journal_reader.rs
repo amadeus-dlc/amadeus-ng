@@ -154,6 +154,13 @@ pub trait JournalReader {
         &mut self,
         row: &crate::read_tables::PlanFingerprintRow,
     ) -> Result<(), JournalReadError>;
+    /// 対象ごとの開始可否の参照面を差し替える。
+    /// # Errors
+    /// 読取りモデルへ保存できない場合。
+    async fn replace_code_generation_approval(
+        &mut self,
+        row: &crate::read_tables::CodeGenerationApprovalRow,
+    ) -> Result<(), JournalReadError>;
     /// Pipelineの参照入力面を原子的に置き換える。
     /// # Errors
     /// この参照投影を提供しない実装または保存失敗。

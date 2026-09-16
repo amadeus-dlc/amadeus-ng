@@ -51,10 +51,12 @@ mod diff_codekb_scope_use_case;
 mod directive;
 mod directive_digest;
 mod directive_schema;
+mod document_input_error;
 mod engine_command;
 mod find_continuation_use_case;
 mod find_definition_stage_use_case;
 mod find_definition_use_case;
+mod find_document_input_use_case;
 mod find_execution_use_case;
 mod find_jump_use_case;
 mod find_next_answer_use_case;
@@ -68,6 +70,8 @@ mod find_scope_use_case;
 mod find_state_file_use_case;
 mod find_steering_use_case;
 mod gate_field;
+mod intent_listing_view;
+mod list_intents_use_case;
 mod list_scope_catalog_use_case;
 mod list_stage_graph_use_case;
 mod load_steering_directive;
@@ -157,6 +161,14 @@ pub use port::{
     StageGraphDao, SteeringPartDao, SteeringPlanDao,
 };
 
+// ポート (trait) — `read_*` 表ではなく、人が書いたファイルを引く 2 本と、その値・拒否。
+// 直接入力は転送ファイルと名指された 1 ファイルの 2 面を、依頼一覧は登録簿と記録ディレクトリを
+// 見る。どちらも 1 表 1 ポートの数には入らない (`StateFileDao` と同じ例外条項)。
+pub use port::{
+    DocumentInputBytes, DocumentInputDao, DocumentInputReadError, DocumentInputView,
+    IntentListingDao, IntentListingRowView,
+};
+
 // ポート (trait) — upstream 互換の人間可読リードモデル (`aidlc-state.md`) を生テキストで
 // 引く 1 本。表ではないので View も持たない (`port/mod.rs` の例外条項)。
 pub use port::StateFileDao;
@@ -181,6 +193,7 @@ pub use diff_codekb_scope_use_case::DiffCodekbScopeUseCase;
 pub use find_continuation_use_case::FindContinuationUseCase;
 pub use find_definition_stage_use_case::FindDefinitionStageUseCase;
 pub use find_definition_use_case::FindDefinitionUseCase;
+pub use find_document_input_use_case::{EXTRACT_OUTPUT_CHAR_CAP, FindDocumentInputUseCase};
 pub use find_execution_use_case::FindExecutionUseCase;
 pub use find_jump_use_case::FindJumpUseCase;
 pub use find_next_answer_use_case::FindNextAnswerUseCase;
@@ -193,6 +206,8 @@ pub use find_scope_keyword_use_case::FindScopeKeywordUseCase;
 pub use find_scope_use_case::FindScopeUseCase;
 pub use find_state_file_use_case::FindStateFileUseCase;
 pub use find_steering_use_case::FindSteeringUseCase;
+pub use intent_listing_view::IntentListingView;
+pub use list_intents_use_case::ListIntentsUseCase;
 pub use list_scope_catalog_use_case::ListScopeCatalogUseCase;
 pub use list_stage_graph_use_case::ListStageGraphUseCase;
 pub use mint_codekb_fingerprint_use_case::MintCodekbFingerprintUseCase;
@@ -204,6 +219,7 @@ pub use port::ReadModelReadError;
 // 拒否 (値の復号 — ビューではないので `View` 接尾辞を付けない)
 pub use blank_stage_name::BlankStageName;
 pub use compare_codekb_scope_error::CompareCodekbScopeError;
+pub use document_input_error::DocumentInputError;
 pub use project_description_error::ProjectDescriptionError;
 pub use scope_slug_error::ScopeSlugError;
 pub use stage_slug_error::StageSlugError;
@@ -234,6 +250,9 @@ pub use find_testing_contract_use_case::FindTestingContractUseCase;
 pub use port::{TestingContractDao, TestingContractView};
 mod find_plan_fingerprint_use_case;
 pub use find_plan_fingerprint_use_case::FindPlanFingerprintUseCase;
+mod find_code_generation_approval_use_case;
+pub use find_code_generation_approval_use_case::FindCodeGenerationApprovalUseCase;
+pub use port::{CodeGenerationApprovalDao, CodeGenerationApprovalView};
 pub use port::{PlanFingerprintDao, PlanFingerprintView};
 
 pub use port::{PlanApprovalOperationDao, PlanApprovalOperationView};

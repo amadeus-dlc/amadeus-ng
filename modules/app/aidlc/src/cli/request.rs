@@ -13,12 +13,14 @@ use core_query_use_case::orchestration::{NextTurnInput, NounFamily, NounToken, R
 
 use super::codekb_args::{CodekbArgs, parse_codekb};
 use super::face::Face;
+use super::intent_args::{IntentArgs, parse_intent};
 use super::intent_create_args::{IntentCreateArgs, parse_intent_create};
 use super::interaction_args::{InteractionArgs, parse_interaction};
 use super::learnings_args::{LearningsArgs, parse_learnings};
 use super::link_args::{LinkArgs, parse_link};
 use super::promote_args::{PromoteArgs, parse_promote};
 use super::report_args::{ReportArgs, parse_report};
+use super::reuse_artifact_args::{ReuseArtifactArgs, parse_reuse_artifact};
 use super::review_args::{ReviewArgs, parse_review};
 use super::set_autonomy_args::{SetAutonomyArgs, parse_set_autonomy};
 
@@ -29,6 +31,11 @@ pub enum Request {
     Jump(Vec<String>),
     /// テスト契約の公開入口。
     TestingPosture {
+        /// 本家の動詞/フラグ列。
+        args: Vec<String>,
+    },
+    /// レビュー判断の文脈の公開入口（読取専用）。
+    ReviewBrief {
         /// 本家の動詞/フラグ列。
         args: Vec<String>,
     },
@@ -55,6 +62,11 @@ pub enum Request {
     },
     /// `intent-create` — utility 面。
     IntentCreate(IntentCreateArgs),
+    /// `statusline` — 端末の状態表示へ 1 行を描く（読取専用・引数なし）。
+    ///
+    /// upstream の ROUTES 表では面を持たない engine 自身の入口（`routeOnly`）であり、
+    /// フックと同じくこの build のエンジン面が受ける。
+    Statusline,
     /// エンジン面の未知動詞 — **自己防衛拒否**（stderr + exit 1）。
     UnknownOrchestrateVerb {
         /// 与えられた動詞（無ければ `None`）。
@@ -68,6 +80,16 @@ pub enum Request {
     ///
     /// 引数を取らない（upstream `handleProjectDescription(projectDir)` も同様）。
     UtilityProjectDescription,
+    /// `aidlc-utility intent [list] [--json]` — 空間の依頼一覧（読取専用・副作用なし）。
+    ///
+    /// 位置動詞をそのまま運ぶ。`list` と動詞なしが一覧で、それ以外（切替）はこの build が
+    /// 配線していないので消費側が名指して拒否する。
+    UtilityIntent(IntentArgs),
+    /// `aidlc-utility document-input` — 活動記録が名指す 1 ファイルを直接入力として出す（群 B）。
+    ///
+    /// 引数を取らない — 読む対象は活動記録直下の転送ファイルが名指す（upstream
+    /// `handleDocumentInput(projectDir)` も同様で、顧客由来の綴りを argv に載せない）。
+    UtilityDocumentInput,
     /// `aidlc-utility codekb-path` — codekb の保管先を出す（群 C・読取専用・副作用なし）。
     UtilityCodekbPath(CodekbArgs),
     /// `aidlc-utility codekb-scope-diff` — 走査範囲の突合（群 C・読取専用）。
@@ -106,6 +128,8 @@ pub enum Request {
     },
     /// `aidlc-state practices-promote` — フラグ一式。
     StatePracticesPromote(PromoteArgs),
+    /// `aidlc-state reuse-artifact` — 既存成果物の再利用の受領（記録専用）。
+    StateReuseArtifact(ReuseArtifactArgs),
     /// `aidlc-state <他の動詞>` — **この build に無い**（自己防衛拒否）。
     StateNotWired {
         /// 認識はしているが配線されていない動詞。
@@ -159,9 +183,10 @@ const RECOGNISED_BOLT_VERBS: [&str; 7] = [
 /// `unit` は upstream の `Valid:` 一覧には現れないが switch は受理するので、こちらでも
 /// 「認識はする」側に置く — 未知動詞の逐語に混ぜると「綴りが違う」と読まれる。
 ///
-/// `lookup` は群 A で**この build に配線した**ので、この未配線集合からは外れている
-/// （配線アーム `(Face::State, Some("lookup"))` が先に受ける）。
-const RECOGNISED_STATE_VERBS: [&str; 23] = [
+/// `lookup` と `reuse-artifact` は**この build に配線した**ので、この未配線集合からは
+/// 外れている（それぞれの配線アームが先に受ける）。`reuse-artifact` はオーナー裁定 D12 の
+/// 受領証イベントへ配線した。
+const RECOGNISED_STATE_VERBS: [&str; 22] = [
     "get",
     "set",
     "set-skeleton-stance",
@@ -178,7 +203,6 @@ const RECOGNISED_STATE_VERBS: [&str; 23] = [
     "skip",
     "resume",
     "acknowledge-compaction",
-    "reuse-artifact",
     "practices-event",
     "fork",
     "merge",
@@ -195,6 +219,9 @@ pub fn parse(face: Face, args: &[String]) -> Request {
     match (face, verb) {
         (Face::Jump, _) => Request::Jump(args.to_vec()),
         (Face::TestingPosture, _) => Request::TestingPosture {
+            args: args.to_vec(),
+        },
+        (Face::ReviewBrief, _) => Request::ReviewBrief {
             args: args.to_vec(),
         },
         (Face::Orchestrate, Some("hook")) => Request::Hook {
@@ -215,6 +242,7 @@ pub fn parse(face: Face, args: &[String]) -> Request {
         (Face::Orchestrate, Some("--doctor")) => Request::Doctor {
             extra: rest.to_vec(),
         },
+        (Face::Orchestrate, Some("statusline")) => Request::Statusline,
         (Face::Orchestrate, given) => Request::UnknownOrchestrateVerb {
             given: given.map(str::to_string),
         },
@@ -224,6 +252,8 @@ pub fn parse(face: Face, args: &[String]) -> Request {
         (Face::Utility, Some("scope-table")) => Request::UtilityScopeTable,
         (Face::Utility, Some("stage-table")) => Request::UtilityStageTable,
         (Face::Utility, Some("project-description")) => Request::UtilityProjectDescription,
+        (Face::Utility, Some("document-input")) => Request::UtilityDocumentInput,
+        (Face::Utility, Some("intent")) => Request::UtilityIntent(parse_intent(rest)),
         (Face::Utility, Some("codekb-path")) => Request::UtilityCodekbPath(parse_codekb(rest)),
         (Face::Utility, Some("codekb-scope-diff")) => {
             Request::UtilityCodekbScopeDiff(parse_codekb(rest))
@@ -250,6 +280,9 @@ pub fn parse(face: Face, args: &[String]) -> Request {
         },
         (Face::State, Some("practices-promote")) => {
             Request::StatePracticesPromote(parse_promote(rest))
+        }
+        (Face::State, Some("reuse-artifact")) => {
+            Request::StateReuseArtifact(parse_reuse_artifact(rest))
         }
         (Face::State, Some(verb)) if RECOGNISED_STATE_VERBS.contains(&verb) => {
             Request::StateNotWired {
@@ -699,7 +732,7 @@ mod tests {
         }
     }
 
-    /// 状態面は `practices-promote` だけを配線し、認識する 24 動詞は not-wired へ落とす。
+    /// 状態面は配線済みの動詞だけを受け、認識する残りは not-wired へ落とす。
     #[test]
     fn the_state_face_routes_the_wired_verb_and_recognises_the_rest() {
         let flags = expect_promote(parse(

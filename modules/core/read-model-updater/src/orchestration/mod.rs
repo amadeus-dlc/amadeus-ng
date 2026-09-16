@@ -81,7 +81,7 @@ mod plan_source;
 pub use plan_source::PlanSource;
 
 mod plan_approval_journal_reader;
-pub use plan_approval_journal_reader::PlanApprovalJournalReader;
+pub use plan_approval_journal_reader::{PlanApprovalJournalReader, plan_approval_receipts};
 
 mod plan_approval_journal_reader_impl;
 pub use plan_approval_journal_reader_impl::PlanApprovalJournalReaderImpl;

@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS read_plan_fingerprint (
     as_of INTEGER NOT NULL,
     UNIQUE(execution_id,target_id)
 );
+CREATE TABLE IF NOT EXISTS read_code_generation_approval (
+    id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    ok INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    unit TEXT,
+    contract_hash TEXT,
+    source_digest TEXT NOT NULL,
+    as_of INTEGER NOT NULL,
+    UNIQUE(execution_id,target_id)
+);
 CREATE TABLE IF NOT EXISTS read_testing_contract (
     id TEXT PRIMARY KEY,
     contract TEXT,
@@ -432,7 +444,7 @@ DELETE FROM read_steering_part;
 /// 行の正本はジャーナルであって読み面ではないので、**作り直しは情報を失わない**。
 /// 「後方互換を残さない」(`coding-rules/no-backward-compatibility.md`) はコードの規則で
 /// あり、機械が読む媒体を捨てて描き直すのはその帰結である。
-pub(crate) const READ_SCHEMA_VERSION: i64 = 6;
+pub(crate) const READ_SCHEMA_VERSION: i64 = 7;
 
 /// 17 表の `DROP` (版が動いたときだけ打つ — 索引は表と一緒に落ちる)。
 ///
@@ -465,6 +477,7 @@ DROP TABLE IF EXISTS read_steering_plan;
 DROP TABLE IF EXISTS read_steering_part;
 DROP TABLE IF EXISTS read_testing_contract;
 DROP TABLE IF EXISTS read_plan_fingerprint;
+DROP TABLE IF EXISTS read_code_generation_approval;
 ";
 
 /// 保存されている読み面スキーマの版 (未設定の DB は `0`)。
@@ -1064,6 +1077,31 @@ pub(crate) fn replace_testing(
     for row in tables.rows() {
         transaction.execute("INSERT INTO read_testing_contract (id,contract,rendered,error,source_digest,as_of) VALUES (?1,?2,?3,?4,?5,?6)", params![row.id(), row.contract(), row.rendered(), row.error(), tables.source_digest(), as_of])?;
     }
+    Ok(())
+}
+
+pub(crate) fn replace_code_generation_approval(
+    transaction: &Transaction<'_>,
+    row: &super::CodeGenerationApprovalRow,
+) -> Result<(), rusqlite::Error> {
+    use rusqlite::OptionalExtension as _;
+    let previous: Option<(i64, String)> = transaction
+        .query_row(
+            "SELECT as_of,source_digest FROM read_code_generation_approval WHERE id=?1",
+            [row.id()],
+            |record| Ok((record.get(0)?, record.get(1)?)),
+        )
+        .optional()?;
+    let as_of = i64::try_from(row.as_of().to_u64())
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    if previous.is_some_and(|(prior, digest)| prior > as_of || digest == row.source_digest()) {
+        return Ok(());
+    }
+    transaction.execute(
+        "DELETE FROM read_code_generation_approval WHERE id=?1",
+        [row.id()],
+    )?;
+    transaction.execute("INSERT INTO read_code_generation_approval (id,execution_id,target_id,ok,reason,unit,contract_hash,source_digest,as_of) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![row.id(), row.execution_id(), row.target_id(), i64::from(row.ok()), row.reason(), row.unit(), row.contract_hash(), row.source_digest(), as_of])?;
     Ok(())
 }
 

@@ -30,6 +30,11 @@ impl WorkflowUsage {
             .update(session_key, |session| session.fold(row, stage));
     }
 
+    /// この作業の中の 1 session ぶんの集計。
+    pub(crate) fn session(&self, session_key: &str) -> Option<&UsageAggregate> {
+        self.sessions.get(session_key)
+    }
+
     /// JSON の `{totals, byStage, byModel, byAgent, sessions}`。
     pub(crate) fn to_json(&self) -> JsonValue {
         let mut fields = self.aggregate.to_members();

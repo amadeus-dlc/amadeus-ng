@@ -606,8 +606,13 @@ mod plan_fingerprint_row;
 pub use plan_fingerprint_row::PlanFingerprintRow;
 pub(crate) use sql::replace_plan_fingerprint;
 
+mod code_generation_approval_row;
+pub use code_generation_approval_row::CodeGenerationApprovalRow;
+pub(crate) use sql::replace_code_generation_approval;
+
 mod plan_approval_tables;
 pub use plan_approval_tables::PlanApprovalTables;
+pub(crate) use plan_approval_tables::replay_runtime;
 
 mod plan_approval_operation_row;
 pub use plan_approval_operation_row::PlanApprovalOperationRow;

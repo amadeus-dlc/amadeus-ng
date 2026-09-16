@@ -49,7 +49,7 @@ fn phase_of(layout: &Layout, args: &[String]) -> Completion {
     };
     match resolve(layout, slug) {
         Ok(Some(stage)) => Completion::emitted(stage.phase().to_string()),
-        Ok(None) => Completion::refused(wording::lookup_unknown_stage(slug)),
+        Ok(None) => Completion::refused(wording::state_unknown_stage(slug)),
         Err(error) => Completion::refused(read_failure(&error)),
     }
 }
@@ -61,7 +61,7 @@ fn agent_for(layout: &Layout, args: &[String]) -> Completion {
     };
     match resolve(layout, slug) {
         Ok(Some(stage)) => Completion::emitted(stage.lead_agent().to_string()),
-        Ok(None) => Completion::refused(wording::lookup_unknown_stage(slug)),
+        Ok(None) => Completion::refused(wording::state_unknown_stage(slug)),
         Err(error) => Completion::refused(read_failure(&error)),
     }
 }

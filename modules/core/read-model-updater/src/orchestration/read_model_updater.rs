@@ -524,6 +524,34 @@ impl<R: JournalReader> ReadModelUpdater<R> {
         Ok(())
     }
 
+    /// 対象ごとの開始可否の参照面を、空間側の履歴と共有側の受領から再投影する。
+    ///
+    /// 判断の材料は 2 つのジャーナルにまたがる — 空間側の集約（`IntentExecution` /
+    /// `Intent`）はここで `replay` し、共有ランタイム側の受領は
+    /// [`super::plan_approval_receipts`] が読んだものを受け取る。投影核
+    /// （[`crate::read_tables::CodeGenerationApprovalRow::project`]）はどちらの読み手も
+    /// 知らず、材料だけを受け取る。
+    ///
+    /// # Errors
+    /// 履歴の再構成、または参照面の書込みに失敗した場合。
+    pub async fn catch_up_code_generation_approval(
+        reader: &mut R,
+        execution_id: &core_command_domain::orchestration::IntentExecutionId,
+        input: &core_command_domain::orchestration::PlanApprovalInput,
+        receipts: &core_command_domain::orchestration::PlanReceipts,
+    ) -> Result<(), CatchUpError> {
+        reader.prepare_read_model()?;
+        let history = reader.events_after(GlobalSeqNr::ZERO).await?;
+        let row = crate::read_tables::CodeGenerationApprovalRow::project(
+            &history,
+            execution_id,
+            input,
+            receipts,
+        )?;
+        reader.replace_code_generation_approval(&row).await?;
+        Ok(())
+    }
+
     /// テスト契約の参照面を最新化する。純粋な表示や承認の入力確認から呼ぶ。
     /// # Errors
     /// 履歴、規則、参照面の読書きに失敗した場合。

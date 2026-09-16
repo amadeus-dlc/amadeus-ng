@@ -40,13 +40,16 @@ mod codekb_source_fingerprint_dao_impl;
 mod continue_token_dto;
 mod definition_dao_impl;
 mod definition_stage_dao_impl;
+mod display_slug;
 mod doctor_check_dao_impl;
 mod doctor_environment;
 mod doctor_observation_dao_impl;
 mod doctor_paths;
 mod doctor_report_dao_impl;
+mod document_input_dao_impl;
 mod execution_dao_impl;
 mod hook_health_dao_impl;
+mod intent_listing_dao_impl;
 mod intent_repos_dao_impl;
 mod jump_dao_impl;
 mod jump_phase_dao_impl;
@@ -58,6 +61,7 @@ mod project_description_dao_impl;
 mod read_model_daos;
 mod read_model_failure;
 mod read_model_store;
+mod registry_row;
 mod run_stage_columns;
 mod run_stage_dao_impl;
 mod scope_change_dao_impl;
@@ -99,11 +103,20 @@ pub use state_file_dao_impl::StateFileDaoImpl;
 // 「upstream 互換・人間可読」の面なので、`ReadModelDaos` の住人ではない (群 B)。
 pub use project_description_dao_impl::ProjectDescriptionDaoImpl;
 
+// 直接入力の 2 面 (転送ファイルと、そこが名指す 1 ファイル) を読む実 Gateway。顧客が書いた
+// バイトをプロジェクトルートへ封じ込めるのがこの実装の要であり、同じく `ReadModelDaos` の
+// 住人ではない (群 B)。
+pub use document_input_dao_impl::DocumentInputDaoImpl;
+
 // codekb の読取面 (群 C) — 走査範囲ブロック・intent 登録簿・作業ツリーの内容指紋。いずれも
 // SQLite の `read_*` 表とは別の面なので `ReadModelDaos` の住人ではない。
 pub use codekb_scope_dao_impl::CodekbScopeDaoImpl;
 pub use codekb_source_fingerprint_dao_impl::CodekbSourceFingerprintDaoImpl;
+pub use intent_listing_dao_impl::IntentListingDaoImpl;
 pub use intent_repos_dao_impl::IntentReposDaoImpl;
+
+// 登録簿に行が無い記録の表示名 — 依頼一覧と端末の状態行が同じ規則で名乗るための唯一の owner。
+pub use display_slug::display_slug_from_dir_name;
 
 // コンパイル済み定義のファイル面 (`stage-graph.json` / `scope-grid.json` / `scopes/aidlc-*.md`)
 // を読む実 Gateway。SQLite の `read_*` 表とは別の面なので `ReadModelDaos` の住人ではない
@@ -135,6 +148,8 @@ mod testing_contract_dao_impl;
 pub use testing_contract_dao_impl::TestingContractDaoImpl;
 mod plan_fingerprint_dao_impl;
 pub use plan_fingerprint_dao_impl::PlanFingerprintDaoImpl;
+mod code_generation_approval_dao_impl;
+pub use code_generation_approval_dao_impl::CodeGenerationApprovalDaoImpl;
 
 mod plan_approval_operation_dao_impl;
 pub use plan_approval_operation_dao_impl::PlanApprovalOperationDaoImpl;

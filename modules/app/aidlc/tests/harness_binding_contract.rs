@@ -1,8 +1,8 @@
-//! 配布フック登録 → この build のフック面 (`aidlc hook <name>`) の接続契約 (C6 / C8)。
+//! 配布フック登録 → この build のフック面 (`aidlc engine hook <name>`) の接続契約 (C6 / C8)。
 //!
 //! 配布 `.claude/settings.json` の `hooks` ブロックが名指す 16 本を、接続定義
 //! (`scripts/aidlc-selfhost/hook-binding.json`) が漏れなく分類することと、native 側へ向けた
-//! 登録が Claude Code と同じ起動形 (`sh -c "<command>"`、`CLAUDE_PROJECT_DIR` だけを頼る) で
+//! 登録が Claude Code と同じ起動形 (`sh -c "<command>"`、`aidlc` は `PATH` から解決する) で
 //! この build を起動し、標準入力・終了コード・標準出力/標準エラーの契約を守ることを確かめる。
 //!
 //! 検証はすべて一時ワークスペースで行い、本リポジトリの実ファイルは読むだけである。
@@ -105,11 +105,20 @@ fn hook_name_of(command: &str) -> Option<String> {
 }
 
 /// 接続定義の起動形を 1 本ぶんに展開する。
+///
+/// 2.8.2 の登録は `aidlc engine hook <name>` であり、`aidlc` を `PATH` から解決する。
+/// 一段形のまま展開すると、この後の起動は「実体が見つからない」(127) で落ち、接続の契約を
+/// 見たのか定義の取り違えを見たのか区別できなくなる。だからここで先に止める。
 fn render(definition: &serde_json::Value, hook: &str) -> String {
-    definition["command_template"]
+    let rendered = definition["command_template"]
         .as_str()
         .expect("command_template")
-        .replace("{hook}", hook)
+        .replace("{hook}", hook);
+    assert!(
+        rendered.starts_with("aidlc engine hook "),
+        "接続定義の起動形が 2.8.2 の二段形ではない — {rendered}"
+    );
+    rendered
 }
 
 /// Claude Code と同じ起動形を再現した一時ワークスペース。
@@ -118,7 +127,10 @@ struct Workspace {
 }
 
 impl Workspace {
-    /// `<ws>/target/release/aidlc` にこの build を置き、bun の無い `PATH` を用意する。
+    /// `PATH` 上の `aidlc` としてこの build を置き、bun の無い `PATH` を用意する。
+    ///
+    /// 2.8.2 の登録は `aidlc engine hook <name>` であり、`aidlc` を `PATH` から解決する
+    /// (`.claude/settings.json` はパスを綴らない)。だから接続の実体も `PATH` に置く。
     ///
     /// bun を外すのは、登録が配布 `.ts` へ落ちていれば `bun` が見つからず失敗する —
     /// つまり「この build が起動した」ことの証明になるからである。
@@ -137,21 +149,23 @@ impl Workspace {
     fn with_binary(present: bool) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("workspace");
-        for relative in [
-            ".claude/hooks",
-            "aidlc/spaces/default/memory",
-            "target/release",
-        ] {
+        for relative in [".claude/hooks", "aidlc/spaces/default/memory"] {
             fs::create_dir_all(root.join(relative)).unwrap();
         }
+        fs::create_dir_all(temp.path().join("bin")).unwrap();
         if present {
-            place_binary(&root.join("target/release/aidlc"));
+            place_binary(&temp.path().join("bin/aidlc"));
         }
         Self { temp }
     }
 
     fn root(&self) -> PathBuf {
         self.temp.path().join("workspace")
+    }
+
+    /// `aidlc` を解決できる `PATH` (bun は載せない)。
+    fn path_env(&self) -> String {
+        format!("{}:/usr/bin:/bin", self.temp.path().join("bin").display())
     }
 
     /// 登録されたコマンド行を、Claude Code と同じく `sh -c` と `CLAUDE_PROJECT_DIR` で起動する。
@@ -163,7 +177,7 @@ impl Workspace {
             .env_clear()
             .envs(coverage_profile_env())
             .env("HOME", self.temp.path())
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", self.path_env())
             .env("CLAUDE_PROJECT_DIR", self.root())
             .env("LANG", "C.UTF-8")
             .env("LC_ALL", "C.UTF-8")

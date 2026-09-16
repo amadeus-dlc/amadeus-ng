@@ -27,8 +27,24 @@ pub(super) fn observe(
     let settings = harness.join("settings.json");
     let raw = std::fs::read_to_string(&settings)
         .map_err(|error| ObservationFailure::new(error.to_string()));
+    let bindings = raw
+        .as_ref()
+        .map_err(Clone::clone)
+        .and_then(|raw| bindings_of(raw, facts.native_hook_names()));
     let wired_hooks = raw.as_ref().map(|raw| {
         let mut names = wired_hook_names(raw);
+        // 2.8.2 は登録を `aidlc engine hook <name>` で綴り、設定本文に `aidlc-*.ts` を
+        // 1 つも残さない。名前から配線先の実体 `.claude/hooks/aidlc-<name>.ts` を導いて、
+        // D2.a が 2.7.1 形と同じ意味 (配線先の実体があるか) を保てるようにする。
+        // 旧形の直書きの拾い方は残す — 挙動ゴールデンがその判定を固定している。
+        if let Ok(bindings) = bindings.as_ref() {
+            names.extend(
+                bindings
+                    .iter()
+                    .filter_map(|binding| two_stage_hook_name(binding.command()))
+                    .map(|name| format!("aidlc-{name}.ts")),
+            );
+        }
         names.sort();
         names.dedup();
         names
@@ -39,10 +55,6 @@ pub(super) fn observe(
             })
             .collect()
     });
-    let bindings = raw
-        .as_ref()
-        .map_err(Clone::clone)
-        .and_then(|raw| bindings_of(raw));
     HookWiringView::new(
         settings.exists(),
         wired_hooks.map_err(Clone::clone),
@@ -212,7 +224,10 @@ fn boolean_field(path: &Path, key: &str) -> Option<bool> {
 }
 
 /// `hooks` ブロックの登録を順に写す (JSON として読めなければ原因)。
-fn bindings_of(raw: &str) -> Result<Vec<HookBindingView>, ObservationFailure> {
+fn bindings_of(
+    raw: &str,
+    native_names: &[String],
+) -> Result<Vec<HookBindingView>, ObservationFailure> {
     let parsed: serde_json::Value = serde_json::from_str(raw)
         .map_err(|error| ObservationFailure::new(format!("invalid JSON: {error}")))?;
     let mut bindings = Vec::new();
@@ -239,7 +254,7 @@ fn bindings_of(raw: &str) -> Result<Vec<HookBindingView>, ObservationFailure> {
                     event.clone(),
                     matcher.to_string(),
                     command.to_string(),
-                    classify(command),
+                    classify(command, native_names),
                 ));
             }
         }
@@ -247,8 +262,25 @@ fn bindings_of(raw: &str) -> Result<Vec<HookBindingView>, ObservationFailure> {
     Ok(bindings)
 }
 
+/// 二段形 `… engine hook <name>` の `<name>` (二段形でなければ `None`)。
+///
+/// 2.8.2 の登録はこの形だけを綴り、実体の解決を `aidlc` 側へ委ねる
+/// (`.claude/tools/aidlc.ts` の `hook` ルートが `.claude/hooks/aidlc-<name>.ts` を読む)。
+fn two_stage_hook_name(command: &str) -> Option<String> {
+    let words = shell_words(command);
+    let index = words.iter().position(|word| word == "hook")?;
+    if words.get(index.checked_sub(1)?)? != "engine" {
+        return None;
+    }
+    words.get(index + 1).cloned()
+}
+
 /// コマンド行の呼出し先を識別する — 配布 `.ts` か、この build のフック面か。
-fn classify(command: &str) -> HookBindingTarget {
+///
+/// 2.8.2 は 16 名すべてを同じ二段形で登録するので、設定本文からは native と配布の別が
+/// 読めない。二段形はこの build が供する名前 (`native_names`) かどうかで分ける。
+/// 一段形の規則は変えない — 挙動ゴールデンと D2.e の既存判定がそれを固定している。
+fn classify(command: &str, native_names: &[String]) -> HookBindingTarget {
     let words = shell_words(command);
     for word in &words {
         let base = word.rsplit(['/', '\\']).next().unwrap_or(word);
@@ -258,6 +290,13 @@ fn classify(command: &str) -> HookBindingTarget {
         {
             return HookBindingTarget::Distributed(stem.to_string());
         }
+    }
+    if let Some(name) = two_stage_hook_name(command) {
+        return if native_names.contains(&name) {
+            HookBindingTarget::Native(name)
+        } else {
+            HookBindingTarget::Distributed(name)
+        };
     }
     for (index, word) in words.iter().enumerate() {
         if word != "hook" || index == 0 {

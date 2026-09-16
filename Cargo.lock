@@ -219,6 +219,7 @@ dependencies = [
  "core-infrastructure",
  "core-query-use-case",
  "core-read-model-updater",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",

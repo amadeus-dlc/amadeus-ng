@@ -23,6 +23,16 @@ impl Totals {
         }
     }
 
+    /// 数えたトークン量。
+    pub(crate) const fn tokens(&self) -> TranscriptTokenCounts {
+        self.tokens
+    }
+
+    /// 値付けできた分の USD。
+    pub(crate) const fn usd(&self) -> f64 {
+        self.usd
+    }
+
     /// JSON の `{tokens, usd}`。
     pub(crate) fn to_json(self) -> JsonValue {
         let mut tokens = ObjectMembers::new();

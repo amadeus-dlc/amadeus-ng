@@ -17,6 +17,7 @@
 //! | `aidlc-state` | 状態ファイルの書込 | `practices-promote`（b49 の範囲） |
 //! | `aidlc-bolt` | Construction の Bolt | `set-autonomy`（b50 の範囲） |
 //! | `aidlc-learnings` | §13 の学びの儀式 | `surface` / `persist` |
+//! | `aidlc-review-brief` | レビュー判断の文脈（読取専用） | `review` / `context` / `summary` |
 //! | `aidlc` | トップ | 上の 4 動詞をそのまま通す（top-passthrough） |
 //!
 //! **ディスパッチャの noun 形（`aidlc <noun> <verb>` の 30 経路）は実装していない。**
@@ -32,6 +33,7 @@
 
 mod codekb_args;
 mod face;
+mod intent_args;
 mod intent_create_args;
 mod invocation;
 mod promote_args;
@@ -42,6 +44,7 @@ mod set_autonomy_args;
 
 pub use codekb_args::CodekbArgs;
 pub use face::Face;
+pub use intent_args::IntentArgs;
 pub use intent_create_args::IntentCreateArgs;
 pub use invocation::Invocation;
 pub use promote_args::PromoteArgs;
@@ -58,3 +61,9 @@ pub use link_args::LinkArgs;
 
 mod learnings_args;
 pub use learnings_args::{LearningsArgs, parse_learnings};
+
+mod engine_route;
+pub use engine_route::EngineRoute;
+
+mod reuse_artifact_args;
+pub use reuse_artifact_args::ReuseArtifactArgs;

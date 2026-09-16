@@ -29,6 +29,8 @@ mod single_stage_run_started;
 pub use single_stage_run_started::SingleStageRunStarted;
 mod pipeline_link_completed;
 pub use pipeline_link_completed::PipelineLinkCompleted;
+mod artifact_reused;
+pub use artifact_reused::ArtifactReused;
 mod answer_recorded;
 mod plan_answer_logged;
 pub use plan_answer_logged::PlanAnswerLogged;
@@ -110,6 +112,8 @@ pub enum IntentExecutionEvent {
     SingleStageRunStarted(SingleStageRunStarted),
     /// 宣言されたpipeline linkの完了受領。
     PipelineLinkCompleted(PipelineLinkCompleted),
+    /// 既存成果物を再利用すると決めた受領（記録専用）。
+    ArtifactReused(ArtifactReused),
     /// 保護された計画回答を元の実行へ監査記録した。
     PlanAnswerLogged(Box<PlanAnswerLogged>),
     /// ハーネスへ指示を発行した事実。
@@ -203,6 +207,7 @@ impl IntentExecutionEvent {
             ),
             Self::SingleStageRunStarted(_)
             | Self::PipelineLinkCompleted(_)
+            | Self::ArtifactReused(_)
             | Self::PlanAnswerLogged(_)
             | Self::DirectiveIssued(_)
             | Self::DirectiveContextInvalidated(_)
@@ -246,6 +251,7 @@ impl IntentExecutionEvent {
             IntentExecutionEvent::PromptObserved(payload) => payload.id(),
             IntentExecutionEvent::SingleStageRunStarted(payload) => payload.id(),
             IntentExecutionEvent::PipelineLinkCompleted(payload) => payload.id(),
+            IntentExecutionEvent::ArtifactReused(payload) => payload.id(),
             IntentExecutionEvent::PlanAnswerLogged(payload) => payload.id(),
             IntentExecutionEvent::AnswerRecorded(payload) => payload.id(),
             IntentExecutionEvent::DirectiveIssued(payload) => payload.id(),
@@ -285,6 +291,7 @@ impl IntentExecutionEvent {
             IntentExecutionEvent::PromptObserved(payload) => payload.aggregate_id(),
             IntentExecutionEvent::SingleStageRunStarted(payload) => payload.aggregate_id(),
             IntentExecutionEvent::PipelineLinkCompleted(payload) => payload.aggregate_id(),
+            IntentExecutionEvent::ArtifactReused(payload) => payload.aggregate_id(),
             IntentExecutionEvent::PlanAnswerLogged(payload) => payload.aggregate_id(),
             IntentExecutionEvent::AnswerRecorded(payload) => payload.aggregate_id(),
             IntentExecutionEvent::DirectiveIssued(payload) => payload.aggregate_id(),
@@ -473,6 +480,18 @@ mod tests {
                     2,
                     2,
                     None,
+                )
+                .unwrap(),
+            )),
+            IntentExecutionEvent::ArtifactReused(ArtifactReused::new(
+                evid(),
+                agg(),
+                crate::orchestration::ArtifactReuseReceipt::new(
+                    "reverse-engineering".into(),
+                    "keep".into(),
+                    "aidlc/spaces/default/codekb/app/".into(),
+                    Some("app".into()),
+                    true,
                 )
                 .unwrap(),
             )),
@@ -786,6 +805,7 @@ mod tests {
                 IntentExecutionEvent::LearningsCaptured(_) => "LearningsCaptured",
                 IntentExecutionEvent::SingleStageRunStarted(_) => "SingleStageRunStarted",
                 IntentExecutionEvent::PipelineLinkCompleted(_) => "PipelineLinkCompleted",
+                IntentExecutionEvent::ArtifactReused(_) => "ArtifactReused",
                 IntentExecutionEvent::Reported(_) => "Reported",
                 IntentExecutionEvent::Started(_) => "Started",
                 IntentExecutionEvent::GateOpened(_) => "GateOpened",
@@ -814,6 +834,7 @@ mod tests {
             "AnswerRecorded",
             "PromptObserved",
             "PipelineLinkCompleted",
+            "ArtifactReused",
             "HealthChecked",
             "CommandFailed",
             "DecisionRecorded",
@@ -840,6 +861,6 @@ mod tests {
         let named: Vec<&'static str> = every_variant().iter().map(name).collect();
         assert_eq!(named, expected);
         let distinct: HashSet<&'static str> = named.iter().copied().collect();
-        assert_eq!(distinct.len(), 29);
+        assert_eq!(distinct.len(), 30);
     }
 }

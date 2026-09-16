@@ -15,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// 既定の space 名（ディスクに何も無くても常に有効な特例 — 11 §2.1）。
-const DEFAULT_SPACE: &str = "default";
+pub(crate) const DEFAULT_SPACE: &str = "default";
 
 /// ワークスペース根から導いた配置。
 #[derive(Debug, Clone, PartialEq, Eq)]

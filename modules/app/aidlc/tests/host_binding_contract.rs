@@ -120,9 +120,13 @@ fn an_unverified_side_carries_no_tag_and_is_never_called_stable() {
     );
 }
 
-/// 切替の前提条件は C8 の 3 つで、どれも「済み」と書かれていない。
+/// 切替の前提条件は C8 の 3 つで、済みと書けるのはローカルで実測した自己診断だけである。
+///
+/// 自己診断はこの工程で実際に走らせるので、実行したコマンド・日時・結果の要約を伴って
+/// `met` になる。実地スモークと CI 全ジョブは人が別途行うため `unmet` のまま残る —
+/// ローカル検証を CI 全ジョブ成功へ読み替えない。
 #[test]
-fn the_three_switch_preconditions_are_present_and_none_is_marked_met() {
+fn only_the_locally_measured_doctor_precondition_is_marked_met() {
     let manifest = manifest();
     let preconditions = field(&manifest, "switch_preconditions")
         .as_array()
@@ -144,18 +148,44 @@ fn the_three_switch_preconditions_are_present_and_none_is_marked_met() {
     );
     for entry in preconditions {
         let id = text(entry, "id");
+        assert!(
+            !text(entry, "how").is_empty(),
+            "{id}: 確かめ方が書かれていない"
+        );
+        if id == "doctor_pass" {
+            assert_eq!(
+                text(entry, "status"),
+                "met",
+                "{id}: ローカルで実測した自己診断が済みになっていない"
+            );
+            let evidence = field(entry, "evidence");
+            assert!(
+                evidence.is_object(),
+                "{id}: 証拠がコマンド・日時・結果の記録になっていない"
+            );
+            let command = text(evidence, "command");
+            assert!(
+                command.contains("--doctor"),
+                "{id}: 証拠が実行したコマンドを名指していない ({command})"
+            );
+            assert!(
+                !text(evidence, "ran_at").is_empty(),
+                "{id}: 証拠に実行日時が無い"
+            );
+            assert!(
+                !text(evidence, "result").is_empty(),
+                "{id}: 証拠に結果の要約が無い"
+            );
+            continue;
+        }
         assert_eq!(
             text(entry, "status"),
             "unmet",
-            "{id}: 未実施の前提を済みと書いている"
+            "{id}: 人が別途行う前提を済みと書いている"
         );
         assert!(
             field(entry, "evidence").is_null(),
             "{id}: 証拠が無いのに証拠欄が埋まっている"
-        );
-        assert!(
-            !text(entry, "how").is_empty(),
-            "{id}: 確かめ方が書かれていない"
         );
     }
 }
@@ -257,7 +287,6 @@ fn preparation_is_never_recorded_as_achievement() {
         "\"smoke_passed\": true",
         "\"switched\": true",
         "\"doctor_passed\": true",
-        "\"status\": \"met\"",
         "\"status\": \"verified\"",
     ] {
         assert!(
@@ -265,6 +294,21 @@ fn preparation_is_never_recorded_as_achievement() {
             "達成を先取りした記述がある: {claim}"
         );
     }
+    // 済みと書けるのは、この工程でローカルに実測した自己診断だけである。
+    let met: BTreeSet<String> = field(&manifest, "switch_preconditions")
+        .as_array()
+        .expect("switch_preconditions は配列")
+        .iter()
+        .filter(|entry| text(entry, "status") == "met")
+        .map(|entry| text(entry, "id"))
+        .collect();
+    assert_eq!(
+        met,
+        ["doctor_pass".to_string()]
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        "ローカル検証だけで済ませられない前提まで達成と書いている"
+    );
     assert_eq!(
         text(&manifest, "binding_selected"),
         "distributed-typescript",

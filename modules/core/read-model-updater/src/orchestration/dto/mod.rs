@@ -112,6 +112,8 @@ mod memory_journals_observed_dto;
 mod pipeline_link_completed_dto;
 pub use pipeline_link_completed_dto::PipelineLinkCompletedDto;
 
+mod artifact_reused_dto;
+
 mod single_stage_run_started_dto;
 pub use single_stage_run_started_dto::SingleStageRunStartedDto;
 

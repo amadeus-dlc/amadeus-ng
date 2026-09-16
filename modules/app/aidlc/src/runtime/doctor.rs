@@ -54,7 +54,7 @@ use core_read_model_updater::orchestration::WorkspaceDoctorReadModelUpdater;
 mod observation;
 
 use super::{Completion, NATIVE_HOOKS, active_execution, catch_up_with, store_path};
-use crate::cli::{Face, Request, parse};
+use crate::cli::{EngineRoute, Face, Request, parse};
 use crate::layout::Layout;
 use crate::wording;
 
@@ -258,10 +258,63 @@ fn missing_entry_points() -> Vec<String> {
         })
         .map(|(_, _, display)| (*display).to_string())
         .collect();
+    missing.extend(missing_two_stage_entry_points());
     for hook in NATIVE_HOOKS {
         let argv = vec!["hook".to_string(), hook.to_string()];
         if !matches!(parse(Face::Orchestrate, &argv), Request::Hook { name } if name == hook) {
             missing.push(format!("aidlc hook {hook}"));
+        }
+    }
+    missing
+}
+
+/// bugfix 1 周が踏む入口の正本（`scripts/aidlc-selfhost/required-surface.json`）。
+///
+/// **コンパイル時に埋め込む。** doctor が照合するのは、実行時のワークスペースの内容では
+/// なく**この build 自身の配線**だからである（D1.b は「この build の入口」の診断であり、
+/// 手元のリポジトリの中身を見に行くと、別のワークスペースで走らせたときに意味が変わる）。
+const REQUIRED_SURFACE: &str =
+    include_str!("../../../../../scripts/aidlc-selfhost/required-surface.json");
+
+/// bugfix 必須と実測した二段形の入口のうち、この build の配線表に無いもの（D13 の `WT-2`）。
+///
+/// 入口を**実行しない** — 二段形を [`EngineRoute::resolve`] に通し、既存の面へ写せた
+/// （`Mapped`）ものだけを `parse` + [`is_wired`] で見る。写せなかったもの（`NotWired` /
+/// `Unknown`）はそこで不足である。
+fn missing_two_stage_entry_points() -> Vec<String> {
+    missing_from(REQUIRED_SURFACE)
+}
+
+/// 与えた必要集合に対して同じ照合を行う。
+///
+/// probe の出所を引数に開いておくのは、**この照合そのものを観測できるようにする**ためである
+/// （`missing_two_stage_entry_points` は不足分しか返さないので、出所が正しいかを結果からは
+/// 読み取れない）。
+fn missing_from(surface: &str) -> Vec<String> {
+    let Ok(surface) = serde_json::from_str::<serde_json::Value>(surface) else {
+        return vec![wording::REQUIRED_SURFACE_UNREADABLE.to_string()];
+    };
+    let Some(entries) = surface.get("entries").and_then(serde_json::Value::as_array) else {
+        return vec![wording::REQUIRED_SURFACE_UNREADABLE.to_string()];
+    };
+    let mut missing = Vec::new();
+    for entry in entries {
+        if entry.get("bugfix_required") != Some(&serde_json::Value::Bool(true)) {
+            continue;
+        }
+        let Some(noun) = entry.get("noun").and_then(serde_json::Value::as_str) else {
+            missing.push(wording::REQUIRED_SURFACE_UNREADABLE.to_string());
+            continue;
+        };
+        let verb = entry.get("verb").and_then(serde_json::Value::as_str);
+        let mut argv = vec!["engine".to_string(), noun.to_string()];
+        argv.extend(verb.map(str::to_string));
+        let resolved = matches!(
+            EngineRoute::resolve(&argv),
+            Some(EngineRoute::Mapped { face, argv: target }) if is_wired(&parse(face, &target))
+        );
+        if !resolved {
+            missing.push(wording::engine_entry_point(noun, verb));
         }
     }
     missing
@@ -346,6 +399,85 @@ mod tests {
     #[test]
     fn every_selfhost_entry_point_is_wired_in_this_build() {
         assert_eq!(missing_entry_points(), Vec::<String>::new());
+    }
+
+    /// 二段形の確認対象は `required-surface.json` の bugfix 必須集合そのものである。
+    ///
+    /// 出所を固定するだけでは「加え忘れ」を検出できないので、集合の件数と、今回配線した
+    /// 入口が確認対象に入っていることを、埋め込んだ正本から直接数えて突き合わせる。
+    #[test]
+    fn the_two_stage_probes_are_the_bugfix_required_set_of_the_frozen_surface() {
+        let surface: serde_json::Value =
+            serde_json::from_str(REQUIRED_SURFACE).expect("埋め込んだ必要集合は JSON である");
+        let required: Vec<(String, Option<String>)> = surface
+            .get("entries")
+            .and_then(serde_json::Value::as_array)
+            .expect("entries")
+            .iter()
+            .filter(|entry| entry.get("bugfix_required") == Some(&serde_json::Value::Bool(true)))
+            .map(|entry| {
+                (
+                    entry
+                        .get("noun")
+                        .and_then(serde_json::Value::as_str)
+                        .expect("noun")
+                        .to_string(),
+                    entry
+                        .get("verb")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string),
+                )
+            })
+            .collect();
+        assert_eq!(required.len(), 26, "bugfix 必須集合の件数が変わった");
+        for expected in [
+            ("review-brief", Some("context")),
+            ("review-brief", Some("review")),
+            ("review-brief", Some("summary")),
+            ("testing-posture", Some("brief")),
+            ("statusline", None),
+        ] {
+            assert!(
+                required
+                    .iter()
+                    .any(|(noun, verb)| noun == expected.0 && verb.as_deref() == expected.1),
+                "{expected:?} が確認対象に入っていない"
+            );
+        }
+        assert_eq!(missing_two_stage_entry_points(), Vec::<String>::new());
+    }
+
+    /// 配線の無い二段形の入口は、その綴りのまま不足として名指される。
+    ///
+    /// 照合が本当に働いていることの証拠である — 常に空を返す実装ならこの行は出ない。
+    #[test]
+    fn a_two_stage_entry_this_build_does_not_wire_is_reported_as_missing() {
+        let surface = r#"{"entries":[
+            {"noun":"state","verb":"practices-event","bugfix_required":true},
+            {"noun":"frobnicate","verb":"run","bugfix_required":true},
+            {"noun":"recompose","verb":null,"bugfix_required":true},
+            {"noun":"orchestrate","verb":"next","bugfix_required":true},
+            {"noun":"state","verb":"fork","bugfix_required":false}
+        ]}"#;
+        assert_eq!(
+            missing_from(surface),
+            vec![
+                "aidlc engine state practices-event".to_string(),
+                "aidlc engine frobnicate run".to_string(),
+                "aidlc engine recompose".to_string(),
+            ]
+        );
+    }
+
+    /// 読めない必要集合は合格へ倒さない。
+    #[test]
+    fn an_unreadable_required_surface_is_reported_rather_than_passed() {
+        for broken in ["{", r#"{"no-entries": true}"#] {
+            assert_eq!(
+                missing_from(broken),
+                vec![wording::REQUIRED_SURFACE_UNREADABLE.to_string()]
+            );
+        }
     }
 
     #[test]

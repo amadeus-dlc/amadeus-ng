@@ -1083,6 +1083,20 @@ impl JournalReader for JournalReaderImpl {
         transaction.commit().at_store(path.as_path())
     }
 
+    async fn replace_code_generation_approval(
+        &mut self,
+        row: &crate::read_tables::CodeGenerationApprovalRow,
+    ) -> Result<(), JournalReadError> {
+        let path = self.path.clone();
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .at_store(path.as_path())?;
+        crate::read_tables::replace_code_generation_approval(&transaction, row)
+            .at_store(path.as_path())?;
+        transaction.commit().at_store(path.as_path())
+    }
+
     async fn replace_pipeline(
         &mut self,
         tables: &crate::read_tables::PipelineTables,
@@ -1383,8 +1397,8 @@ pub(super) mod tests {
                 .iter()
                 .filter(|name| name.starts_with("read_"))
                 .count(),
-            25,
-            "構造化リードモデルは 25 表 (v5: 22 表に answer/jump/report の結果表 3 つを加えた)"
+            26,
+            "構造化リードモデルは 26 表 (v7: 25 表に開始可否の参照面 read_code_generation_approval を加えた)"
         );
     }
 

@@ -186,6 +186,8 @@ fn journal() -> Vec<JournalEntry> {
 #[derive(Debug, Default)]
 struct FakeReader {
     plan_fingerprints: BTreeMap<String, core_read_model_updater::read_tables::PlanFingerprintRow>,
+    code_generation_approvals:
+        BTreeMap<String, core_read_model_updater::read_tables::CodeGenerationApprovalRow>,
     testing: Option<core_read_model_updater::read_tables::TestingTables>,
     publications: Rc<RefCell<BTreeMap<ProjectionName, (PublicationBatch, bool)>>>,
     journal: Vec<JournalEntry>,
@@ -396,6 +398,14 @@ impl JournalReader for FakeReader {
             .insert(row.id().to_string(), row.clone());
         Ok(())
     }
+    async fn replace_code_generation_approval(
+        &mut self,
+        row: &core_read_model_updater::read_tables::CodeGenerationApprovalRow,
+    ) -> Result<(), JournalReadError> {
+        self.code_generation_approvals
+            .insert(row.id().to_string(), row.clone());
+        Ok(())
+    }
     async fn testing_source_digest(&self) -> Result<Option<String>, JournalReadError> {
         Ok(self
             .testing
@@ -526,6 +536,7 @@ impl Fixture {
         let updater = ReadModelUpdater::new(
             FakeReader {
                 plan_fingerprints: BTreeMap::new(),
+                code_generation_approvals: BTreeMap::new(),
                 testing: None,
                 journal,
                 intents,
@@ -565,6 +576,7 @@ impl Fixture {
         ReadModelUpdater::new(
             FakeReader {
                 plan_fingerprints: BTreeMap::new(),
+                code_generation_approvals: BTreeMap::new(),
                 testing: None,
                 journal,
                 intents,
@@ -603,6 +615,7 @@ impl Fixture {
         let updater = ReadModelUpdater::new(
             FakeReader {
                 plan_fingerprints: BTreeMap::new(),
+                code_generation_approvals: BTreeMap::new(),
                 testing: None,
                 journal,
                 intents,
@@ -1472,6 +1485,7 @@ async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
     let mut updater = ReadModelUpdater::new(
         FakeReader {
             plan_fingerprints: BTreeMap::new(),
+            code_generation_approvals: BTreeMap::new(),
             testing: None,
             journal: journal(),
             intents: intents(),
@@ -1572,6 +1586,7 @@ impl RegistryFixture {
         ReadModelUpdater::new(
             FakeReader {
                 plan_fingerprints: BTreeMap::new(),
+                code_generation_approvals: BTreeMap::new(),
                 testing: None,
                 journal: journal(),
                 intents: vec![(1, named_intent())],

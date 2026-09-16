@@ -142,7 +142,10 @@ fn current_stage(layout: &Layout) -> Option<String> {
 }
 
 /// `sessions` の鍵。会話履歴のパスが session の安定した識別子である（本家 `sessionUsageKey`）。
-fn session_usage_key(transcript: &str, session: &str) -> String {
+///
+/// 台帳へ**書く**側と**読む**側は同じ鍵で引かなければならないので、鍵の作り方はここが唯一の
+/// owner である（本家も `aidlc-usage.ts` の 1 実装を producer と consumer が共有する）。
+pub(super) fn session_usage_key(transcript: &str, session: &str) -> String {
     let trimmed = core_infrastructure::ecmascript::trim(transcript);
     if !trimmed.is_empty() {
         return format!("transcript:{trimmed}");
@@ -156,7 +159,9 @@ fn session_usage_key(transcript: &str, session: &str) -> String {
 
 /// `workflows` の鍵。session が刻んだ intent の UUID、無ければ配置が指す intent の UUID、
 /// UUID を持たない legacy/孤児の record は space と record 名（本家 `intentUsageKey`）。
-fn workflow_usage_key(layout: &Layout, stamp: Option<String>) -> String {
+///
+/// [`session_usage_key`] と同じ理由で、書く側と読む側が共有する唯一の owner である。
+pub(super) fn workflow_usage_key(layout: &Layout, stamp: Option<String>) -> String {
     if let Some(stamp) = stamp {
         return format!("intent:{stamp}");
     }

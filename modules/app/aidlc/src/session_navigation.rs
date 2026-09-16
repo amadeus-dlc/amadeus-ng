@@ -172,6 +172,23 @@ impl SessionNavigation {
             transcript.as_bytes(),
         );
     }
+    /// この session で直前に観測した会話履歴のパス（本家 `readCurrentTranscriptPath`）。
+    ///
+    /// 読むのは session 付きの写しだけである — 名乗る session が無いときに
+    /// `current.transcript` へ落ちると、よその会話の集計を自分のものとして引くことになる
+    /// （本家も session を受け取ったときは session 付きの候補しか見ない）。
+    pub(crate) fn transcript(&self) -> Option<String> {
+        fs::read(
+            self.directory()
+                .join(format!("{}.transcript", self.session)),
+        )
+        .ok()
+        .map(|bytes| {
+            core_infrastructure::ecmascript::trim(&String::from_utf8_lossy(&bytes)).to_string()
+        })
+        .filter(|value| !value.is_empty())
+    }
+
     pub(crate) fn bootstrap(layout: &Layout) {
         use std::io::Write as _;
         let shared = Layout::shared(layout.project_dir());

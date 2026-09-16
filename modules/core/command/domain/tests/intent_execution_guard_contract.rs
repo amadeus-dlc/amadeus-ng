@@ -210,6 +210,50 @@ fn the_pipeline_commands_refuse_a_foreign_intent_without_moving_state() {
     assert_eq!(execution, before, "拒否では状態が動かない");
 }
 
+/// 記録専用の受領も、別 intent と定義に無い段を**状態を動かさずに**拒む。
+///
+/// `record_artifact_reuse` は進捗を動かさないが、受領を監査へ残す唯一の経路である。
+/// 別 intent の取り違えと、定義グラフに無い段の受領は、どちらもここで止まる。
+#[test]
+fn the_artifact_reuse_receipt_refuses_a_foreign_intent_and_an_undefined_stage() {
+    use core_command_domain::orchestration::{
+        ArtifactReuseError, ArtifactReuseReceipt, IntentExecutionEvent,
+    };
+    let (own, foreign, mut execution) = started();
+    let definition = definition();
+    let receipt = |stage: &str| {
+        ArtifactReuseReceipt::new(
+            stage.to_string(),
+            "keep".to_string(),
+            "docs/a.md".to_string(),
+            None,
+            false,
+        )
+        .unwrap()
+    };
+    let before = execution.clone();
+    assert!(matches!(
+        execution
+            .record_artifact_reuse(&foreign, &definition, receipt("code-generation"), at())
+            .unwrap_err(),
+        ArtifactReuseError::Command(CommandError::IntentMismatch)
+    ));
+    assert_eq!(execution, before, "別 intent の拒否では状態が動かない");
+    let undefined = execution
+        .record_artifact_reuse(&own, &definition, receipt("frobnicate"), at())
+        .unwrap_err();
+    assert!(
+        matches!(&undefined, ArtifactReuseError::UnknownStage { slug } if slug == "frobnicate"),
+        "{undefined:?}"
+    );
+    assert_eq!(execution, before, "段の不在の拒否では状態が動かない");
+    // 定義グラフに在る段の受領だけが、受領証イベントとして成立する。
+    let event = execution
+        .record_artifact_reuse(&own, &definition, receipt("code-generation"), at())
+        .unwrap();
+    assert!(matches!(event, IntentExecutionEvent::ArtifactReused(_)));
+}
+
 #[test]
 fn a_report_that_needs_no_completion_evidence_or_runs_with_pipeline_disabled_passes() {
     let (own, _, execution) = started();
@@ -250,13 +294,12 @@ fn the_plan_approval_queries_refuse_a_foreign_intent() {
             .to_string(),
         MISMATCH
     );
-    let approval =
-        execution.code_generation_approval(&foreign, &input, &PlanApprovalRuntime::create(at()).0);
+    let runtime = PlanApprovalRuntime::create(at()).0;
+    let approval = execution.code_generation_approval(&foreign, &input, &runtime);
     assert!(!approval.ok());
     assert_eq!(approval.reason(), MISMATCH);
     // 自分の intent でも、発行済みの指示が無ければ権限は解決できない。
-    let approval =
-        execution.code_generation_approval(&own, &input, &PlanApprovalRuntime::create(at()).0);
+    let approval = execution.code_generation_approval(&own, &input, &runtime);
     assert!(!approval.ok());
     assert!(
         approval.reason().contains("run a fresh `next`"),

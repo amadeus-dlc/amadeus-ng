@@ -8,16 +8,16 @@
 
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
-    ArtifactPaths, CapturedLearning, CapturedLearnings, CodeGenerationAuthority, Created,
-    DecisionPrompt, DecisionRecorded, GateRejected, Intent, IntentEventId, IntentExecutionEvent,
-    IntentExecutionEventId, IntentExecutionId, IntentId, Learning, LearningCandidateId,
-    LearningDisposition, LearningProvenance, LearningScope, LearningSource, LearningsCaptured,
-    PipelineHandoff, PipelineLinkCompleted, PipelineReceipt, PlanAnswerInput, PlanAnswerLogged,
-    PlanApprovalEvidence, PlanApprovalOperationId, PlanApprovalOrigin, PlanChoice,
-    PlanDecisionEvidence, PlanSession, PlanTarget, PracticeHeading, PromptObserved, ReportId,
-    ReportResult, ReportTransition, Reported, SingleStageRunStarted, StageDisplay, StageEntries,
-    StageEntry, StageValidation, StartRequest, TaskSynchronized, TransitionStep, TransitionSteps,
-    WorkspaceScan,
+    ArtifactPaths, ArtifactReuseReceipt, ArtifactReused, CapturedLearning, CapturedLearnings,
+    CodeGenerationAuthority, Created, DecisionPrompt, DecisionRecorded, GateRejected, Intent,
+    IntentEventId, IntentExecutionEvent, IntentExecutionEventId, IntentExecutionId, IntentId,
+    Learning, LearningCandidateId, LearningDisposition, LearningProvenance, LearningScope,
+    LearningSource, LearningsCaptured, PipelineHandoff, PipelineLinkCompleted, PipelineReceipt,
+    PlanAnswerInput, PlanAnswerLogged, PlanApprovalEvidence, PlanApprovalOperationId,
+    PlanApprovalOrigin, PlanChoice, PlanDecisionEvidence, PlanSession, PlanTarget, PracticeHeading,
+    PromptObserved, ReportId, ReportResult, ReportTransition, Reported, SingleStageRunStarted,
+    StageDisplay, StageEntries, StageEntry, StageValidation, StartRequest, TaskSynchronized,
+    TransitionStep, TransitionSteps, WorkspaceScan,
 };
 use core_command_domain::workflow_definition::{
     BrownfieldGreenfield, DefinitionRevision, PhaseId, PlanAction, StageNumber, StageSlug,
@@ -254,6 +254,51 @@ fn a_pipeline_link_row_carries_the_repo_and_the_single_stage_workflow_when_prese
     assert!(!audit.contains("**Repo**"), "{audit}");
     assert!(!audit.contains("**Workflow**"), "{audit}");
     assert_eq!(with.state(), SKELETON);
+}
+
+/// 再利用受領は ARTIFACT_REUSED を 1 行積み、任意フィールドは値があるときだけ載せる。
+///
+/// 記録専用の受領なので状態ファイルは動かない (`affects_progress()` が `false`)。
+#[test]
+fn an_artifact_reuse_row_carries_the_repo_and_the_single_stage_workflow_when_present() {
+    let receipt = |repo: Option<&str>, single: bool| {
+        IntentExecutionEvent::ArtifactReused(ArtifactReused::new(
+            event_id(),
+            execution_id(),
+            ArtifactReuseReceipt::new(
+                "reverse-engineering".to_string(),
+                "keep".to_string(),
+                "aidlc/spaces/default/codekb/app/".to_string(),
+                repo.map(str::to_string),
+                single,
+            )
+            .unwrap(),
+        ))
+    };
+    let with = run(receipt(Some("app"), true)).unwrap();
+    let audit = with.appended_audit();
+    assert!(audit.contains("**Event**: ARTIFACT_REUSED"), "{audit}");
+    assert!(audit.contains("**Stage**: reverse-engineering"), "{audit}");
+    assert!(audit.contains("**Decision**: keep"), "{audit}");
+    assert!(
+        audit.contains("**Artifacts**: aidlc/spaces/default/codekb/app/"),
+        "{audit}"
+    );
+    assert!(audit.contains("**Repo**: app"), "{audit}");
+    assert!(
+        audit.contains("**Workflow**: single-stage:reverse-engineering"),
+        "{audit}"
+    );
+    let without = run(receipt(None, false)).unwrap();
+    let audit = without.appended_audit();
+    assert!(!audit.contains("**Repo**"), "{audit}");
+    assert!(!audit.contains("**Workflow**"), "{audit}");
+    assert_eq!(with.state(), SKELETON, "記録専用の受領は状態を動かさない");
+    assert_eq!(
+        without.state(),
+        SKELETON,
+        "記録専用の受領は状態を動かさない"
+    );
 }
 
 #[test]

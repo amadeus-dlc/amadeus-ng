@@ -363,6 +363,48 @@ impl IntentExecution {
         .map_err(E::Command)
     }
 
+    /// 既存成果物の再利用の決定を、記録専用の受領として保存可能にする。
+    ///
+    /// 進捗・カーソル・状態は動かさない — `affects_progress()` が `false` であり
+    /// `mutate` にも腕が無い。監査へ 1 行積むだけの受領である。
+    ///
+    /// 記録専用でも段は定義グラフで引く。配布実装
+    /// (`.claude/tools/aidlc-state.ts` の `handleReuseArtifact` が `findStageBySlug` を
+    /// 通す) と同じく、定義に無い段の受領を監査へ残さないためである。段を**読む**ことは
+    /// 状態・カーソル・進捗を動かさないので、記録専用という性質は変わらない。
+    /// # Errors
+    /// 別intentの場合、段が定義グラフに無い場合、または通番が枯渇した場合。
+    pub fn record_artifact_reuse(
+        &mut self,
+        intent: &Intent,
+        definition: &WorkflowDefinition,
+        receipt: super::ArtifactReuseReceipt,
+        at: DateTime<Utc>,
+    ) -> Result<IntentExecutionEvent, super::ArtifactReuseError> {
+        use super::ArtifactReuseError as E;
+        if !self.matches(intent) {
+            return Err(E::Command(CommandError::IntentMismatch));
+        }
+        if StageSlug::parse(receipt.stage())
+            .ok()
+            .and_then(|stage| definition.graph().get(&stage))
+            .is_none()
+        {
+            return Err(E::UnknownStage {
+                slug: receipt.stage().to_string(),
+            });
+        }
+        self.commit(
+            IntentExecutionEvent::ArtifactReused(super::ArtifactReused::new(
+                Self::next_event_id(),
+                self.id.clone(),
+                receipt,
+            )),
+            at,
+        )
+        .map_err(E::Command)
+    }
+
     /// 現ステージの承認・改訂、または対話中の未回答質問を待つ。
     #[must_use]
     pub fn continuation_wait(&self) -> Option<super::ContinuationWait> {
@@ -1258,6 +1300,21 @@ impl IntentExecution {
         input: &super::PlanApprovalInput,
         approval: &super::PlanApprovalRuntime,
     ) -> super::CodeGenerationApproval {
+        self.code_generation_approval_from_receipts(intent, input, approval.receipts())
+    }
+
+    /// 同じ判断を、共有集約ではなく**受領だけ**から下す。
+    ///
+    /// 判断が読むのは受領だけなので、材料を受領へ絞ると、共有ランタイムの履歴を持たない
+    /// 投影核（RMU の読取表）からも同じ判断を呼べる。受領がまだ 1 件も無いワークスペースは
+    /// 空の受領で呼ぶ — 集約をでっち上げずに「一致する受領が無い」を同じ経路で言える。
+    #[must_use]
+    pub fn code_generation_approval_from_receipts(
+        &self,
+        intent: &Intent,
+        input: &super::PlanApprovalInput,
+        receipts: &super::PlanReceipts,
+    ) -> super::CodeGenerationApproval {
         let authority = if self.matches(intent) {
             super::CodeGenerationAuthority::resolve(
                 self.active_directive(),
@@ -1279,7 +1336,7 @@ impl IntentExecution {
             input.target(),
             input.documents(),
             posture,
-            approval.receipts(),
+            receipts,
             input.source_sha256(),
         )
     }
@@ -2559,7 +2616,8 @@ impl IntentExecution {
         self.slots.apply_progress(event);
         match event {
             IntentExecutionEvent::SingleStageRunStarted(_)
-            | IntentExecutionEvent::PipelineLinkCompleted(_) => {}
+            | IntentExecutionEvent::PipelineLinkCompleted(_)
+            | IntentExecutionEvent::ArtifactReused(_) => {}
             IntentExecutionEvent::DirectiveIssued(event) => {
                 if let Some(id) = event.directive().approval_operation_id() {
                     self.approval_publications.insert(id.clone());

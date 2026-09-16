@@ -1,8 +1,159 @@
 {
-  "format": 1,
-  "note": "U4 (selfhost-stage1) の配布フック接続定義。配布 .claude/settings.json が登録する 16 本を、この build のフック面 (aidlc hook <name>) へ向けるものと、配布 TypeScript のまま残すものに分類する。live の .claude/settings.json をこの定義どおりに書き換えるかは切替工程の裁定事項であり、この定義の存在は切替の完了を意味しない。",
+  "format": 2,
+  "note": "aidlc 2.8.2 の配布 .claude/settings.json が登録するフックを、この build のフック面 (aidlc engine hook <name>) へ向けるものと、配布 TypeScript のまま残すものに分類する。2.8.2 では登録の綴りが全件 `aidlc engine hook <name>` に統一され、native と配布の区別は設定本文からは読めなくなった。区別を語るのはこの定義である。live の .claude/settings.json をこの定義どおりに書き換えるかは切替工程の裁定事項であり、この定義の存在は切替の完了を意味しない。",
   "binary": "target/release/aidlc",
-  "command_template": "\"$CLAUDE_PROJECT_DIR/target/release/aidlc\" hook {hook}",
+  "command_template": "aidlc engine hook {hook}",
+  "command_template_note": "配布 .claude/settings.json (:28 ほか) が綴るのと同じ二段形。パスを綴らず PATH 上の aidlc を解決するため、切替の起動条件は『PATH 上の aidlc が本 build であること』だけである。",
+  "registration_count": 18,
+  "hook_name_count": 16,
+  "counts_note": "登録件数と名前数は別物である。fold-usage は PreToolUse と PostToolUse、record-human-turn は UserPromptSubmit と PostToolUse へ二重登録されているため、18 登録 / 16 名前になる。",
+  "bugfix_fires_note": "発火判定はマッチャ条件 (イベント名・matcher) を第一の根拠とし、それで決まらないものは scopes/aidlc-bugfix.md のステージ構成で判定し、それでも決まらないものは発火する側に含める (order.md §3 / §5.1 の 6)。basis はどの根拠で決めたかを示す。",
+  "registrations": [
+    {
+      "event": "PostToolUse",
+      "matcher": "",
+      "hook": "fold-usage",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が空で PostToolUse の全ツール呼出しに一致する。"
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "AskUserQuestion",
+      "hook": "record-human-turn",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が AskUserQuestion に一致する。承認ゲートは構造化質問で提示される。"
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "hook": "rebuild-stage-graph",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が Bash に一致する。bugfix 1 周は build-and-test で必ず Bash を使う。"
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "TaskUpdate",
+      "hook": "sync-workflow-state",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が TaskUpdate に一致する。ステージ進行はタスク更新で状態へ反映される (protocols/stage-protocol.md:615)。"
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "Write|Edit",
+      "hook": "run-sensors",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "同上。センサー実装自体は本作業の範囲外だが、登録が発火するかどうかはマッチャ条件で決まる。"
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "Write|Edit",
+      "hook": "write-audit-log",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が Write|Edit に一致する。bugfix 1 周は成果物を書き込む。"
+    },
+    {
+      "event": "PreCompact",
+      "matcher": "",
+      "hook": "validate-state",
+      "bugfix_fires": true,
+      "basis": "undecided",
+      "reason": "matcher は空で PreCompact に一致するが、圧縮が起きるかはセッション長に依存し、マッチャ条件でもステージ構成でも決まらない。order.md §3 / §5.1 の 6 に従い発火する側に含める。"
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "",
+      "hook": "fold-usage",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が空で PreToolUse の全ツール呼出しに一致する。bugfix 1 周は必ずツールを使う。"
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "Edit|MultiEdit|Write|NotebookEdit|Bash|Task|Agent",
+      "hook": "plan-approval-guard",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が書込・実行・派遣に一致する。bugfix 1 周は code-generation で必ず書き込む。"
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "Read|NotebookRead|Edit|MultiEdit|Write|NotebookEdit|LS|Glob|Grep|Bash",
+      "hook": "review-freeze",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "同上。"
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "Read|NotebookRead|Edit|MultiEdit|Write|NotebookEdit|LS|Glob|Grep|Bash",
+      "hook": "reviewer-scope",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "同上。"
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "Read|NotebookRead|Edit|MultiEdit|Write|NotebookEdit|LS|Glob|Grep|Bash",
+      "hook": "state-transition-guard",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が読み書き系ツール全般に一致する。bugfix 1 周は必ず Read/Edit/Bash を使う。"
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "Task|Agent",
+      "hook": "deliver-stage-rules",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が Task|Agent に一致する。bugfix は review_cap: advisory (scopes/aidlc-bugfix.md:11) によりレビュワーを Task で派遣するため発火する。"
+    },
+    {
+      "event": "SessionEnd",
+      "matcher": "",
+      "hook": "session-end",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が空でセッション終了に一致する。"
+    },
+    {
+      "event": "SessionStart",
+      "matcher": "",
+      "hook": "session-start",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が空でセッション開始に一致する。"
+    },
+    {
+      "event": "Stop",
+      "matcher": "",
+      "hook": "continue-workflow",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が空でターン終了に一致する。"
+    },
+    {
+      "event": "SubagentStop",
+      "matcher": "",
+      "hook": "log-subagent",
+      "bugfix_fires": true,
+      "basis": "scope-stages",
+      "reason": "matcher は空だが、発火はサブエージェントを派遣するかどうかに依存する。scopes/aidlc-bugfix.md:11 の review_cap: advisory によりレビュワー経路が走るため発火する。"
+    },
+    {
+      "event": "UserPromptSubmit",
+      "matcher": "",
+      "hook": "record-human-turn",
+      "bugfix_fires": true,
+      "basis": "matcher",
+      "reason": "matcher が空で全プロンプト投入に一致する。"
+    }
+  ],
   "native_hooks": [
     "record-human-turn",
     "state-transition-guard",
@@ -30,5 +181,6 @@
       "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-run-sensors.ts\"",
       "reason": "センサーは本 intent のスコープ外 (project.md Forbidden)。この build のフック面に無く、native 名としては受け付けない。"
     }
-  ]
+  ],
+  "split_note": "native_hooks / distributed_hooks の分割は 2.7.1 基準の宣言をそのまま引き継いでいる。2.8.2 は 16 名すべてを同じ二段形 aidlc engine hook <name> で登録するため、設定本文からは native と配布の別が読めない。分割をどこで表現するかはオーナー裁定 D13 (WT-1) で決着しており、所属はこの資料の native_hooks が正本である。観測側の判定は modules/core/query/interface-adapter/src/doctor_observation_dao_impl/settings.rs の classify が担い、二段形の <name> が native_hooks にあれば Native、無ければ Distributed とする (一段形と配布 .ts の判定規則は変えない)。"
 }

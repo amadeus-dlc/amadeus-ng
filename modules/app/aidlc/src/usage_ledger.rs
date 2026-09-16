@@ -123,6 +123,11 @@ impl UsageLedger {
         Self::new(cursors, UsageAggregate::of_json(Some(value)), workflows)
     }
 
+    /// 1 つの作業（intent）の集計。記録が無ければ `None`。
+    pub(crate) fn workflow(&self, workflow_key: &str) -> Option<&WorkflowUsage> {
+        self.workflows.get(workflow_key)
+    }
+
     /// 本家の鍵順で JSON にする。
     pub(crate) fn to_json(&self) -> JsonValue {
         let mut fields = ObjectMembers::new();

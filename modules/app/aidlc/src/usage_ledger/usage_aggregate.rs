@@ -44,6 +44,11 @@ impl UsageAggregate {
         }
     }
 
+    /// この境界の合計。
+    pub(crate) const fn totals(&self) -> Totals {
+        self.totals
+    }
+
     /// `{totals, byStage, byModel, byAgent}` のメンバ列（上位が `sessions` を足せる形）。
     pub(crate) fn to_members(&self) -> ObjectMembers {
         let mut fields = ObjectMembers::new();

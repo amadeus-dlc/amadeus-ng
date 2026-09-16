@@ -501,6 +501,79 @@ fn hook_bindings_are_classified_by_their_target() {
     );
 }
 
+/// aidlc 2.8.2 の登録形 `aidlc engine hook <name>` も、この build のフック面として識別する。
+///
+/// 2.8.2 の配布 `.claude/settings.json` はフックを二段形で登録し、`aidlc` を `PATH` から
+/// 解決する。一段形 (`aidlc hook <name>`) と配布 `.ts` の識別はそのまま保つ — 2.8.2 の
+/// 識別を**加えて**、どちらの形も取り違えないことをここで固定する。
+#[test]
+fn the_two_stage_registration_form_is_classified_as_this_builds_hook_face() {
+    let workspace = Workspace::shipped();
+    fs::write(
+        workspace.root().join(".claude/settings.json"),
+        r#"{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit", "hooks": [
+        {"type": "command", "command": "aidlc engine hook write-audit-log"},
+        {"type": "command", "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-run-sensors.ts\""}
+      ]}
+    ],
+    "UserPromptSubmit": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "aidlc engine hook record-human-turn"}]}
+    ]
+  }
+}"#,
+    )
+    .unwrap();
+    let hooks = workspace.root().join(".claude/hooks");
+    for entry in fs::read_dir(&hooks).unwrap().flatten() {
+        fs::remove_file(entry.path()).unwrap();
+    }
+    fs::write(hooks.join("aidlc-write-audit-log.ts"), "").unwrap();
+    fs::write(hooks.join("aidlc-run-sensors.ts"), "").unwrap();
+
+    let observed = workspace.observe(None);
+    let bindings = observed.hook_wiring().bindings().as_ref().unwrap();
+    assert_eq!(bindings.len(), 3);
+    assert_eq!(
+        bindings[0].target(),
+        &HookBindingTarget::Native("write-audit-log".to_string()),
+        "二段形の登録がこの build のフック面として識別されていない"
+    );
+    assert_eq!(
+        bindings[1].target(),
+        &HookBindingTarget::Distributed("run-sensors".to_string()),
+        "配布 .ts の識別が壊れている"
+    );
+    assert_eq!(
+        bindings[2].target(),
+        &HookBindingTarget::Native("record-human-turn".to_string()),
+        "二段形の登録がこの build のフック面として識別されていない"
+    );
+
+    // D2.a の材料 — 二段形で登録したフックも、実体の有無つきで観測される。
+    let wired = observed.hook_wiring().wired_hooks().as_ref().unwrap();
+    let observed_names: Vec<String> = wired.iter().map(|hook| hook.name().to_string()).collect();
+    for (name, present) in [
+        ("write-audit-log", true),
+        ("run-sensors", true),
+        ("record-human-turn", false),
+    ] {
+        let hook = wired
+            .iter()
+            .find(|hook| hook.name().contains(name))
+            .unwrap_or_else(|| {
+                panic!("{name}: 二段形の登録がフックの観測に現れていない — {observed_names:?}")
+            });
+        assert_eq!(
+            hook.present(),
+            present,
+            "{name}: フック実体の有無が観測と食い違う"
+        );
+    }
+}
+
 #[test]
 fn heartbeat_observation_reads_health_dir_audit_and_state_together() {
     let workspace = Workspace::shipped();
