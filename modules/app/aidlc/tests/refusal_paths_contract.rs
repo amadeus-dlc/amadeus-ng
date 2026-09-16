@@ -375,6 +375,50 @@ async fn log_answer_refuses_malformed_arguments_before_touching_any_record() {
     );
 }
 
+/// 本家 2.8.2 の engine は `log` noun を同じプロセスの `aidlc-log` へ委譲するので、二段形の
+/// 拒否も一段形と同じ `emitError`（`{"error":…}` と `ERROR_LOGGED`）で終わる。記録される
+/// コマンドは委譲前の引数列の綴りである。
+#[tokio::test]
+async fn a_two_stage_log_refusal_ends_through_the_same_log_failure_as_the_one_stage_face() {
+    let workspace = Workspace::new();
+    workspace.mint("bugfix", "engine-log").await;
+    let counts = || {
+        let audit = audit_text(&workspace);
+        (
+            audit.matches("**Event**: ERROR_LOGGED").count(),
+            audit.matches("**Tool**: aidlc-log\n").count(),
+            audit
+                .matches(
+                    "**Command**: aidlc-log engine log answer --stage x --details --project-dir <project-dir>\n",
+                )
+                .count(),
+        )
+    };
+    let (errors_before, _, two_stage_commands_before) = counts();
+    assert_eq!(two_stage_commands_before, 0);
+
+    let one_stage = workspace
+        .invoke("aidlc-log", &["answer", "--stage", "x", "--details"])
+        .await;
+    let (errors_after_one_stage, tools_after_one_stage, two_stage_commands_after_one_stage) =
+        counts();
+    assert_eq!(errors_after_one_stage, errors_before + 1);
+    assert_eq!(two_stage_commands_after_one_stage, 0);
+
+    let two_stage = workspace
+        .invoke(
+            "aidlc",
+            &["engine", "log", "answer", "--stage", "x", "--details"],
+        )
+        .await;
+    assert_eq!(two_stage, one_stage);
+    assert_eq!(refused_error(&two_stage), "Missing value for --details");
+    assert_eq!(
+        counts(),
+        (errors_after_one_stage + 1, tools_after_one_stage + 1, 1)
+    );
+}
+
 #[tokio::test]
 async fn log_answer_plan_approval_requires_one_target_and_a_known_choice() {
     let workspace = Workspace::new();
