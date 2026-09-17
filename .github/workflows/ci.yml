@@ -51,6 +51,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test TAKT account handoff
+        run: |
+          bash -n scripts/run-takt.sh
+          python3 -B -m unittest discover -s scripts/tests -p 'test_run_takt.py'
+
       # read_only_reuse_contract (C6) は配布 TypeScript を実際に回して副作用の無さを見る。
       # bun は本プロジェクトの前提 (CLAUDE.md Prerequisites) であり、aidlc-distribution
       # ジョブと同じ版・同じ固定 Action を使う。
