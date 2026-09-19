@@ -38,7 +38,7 @@
         "Approve"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage reverse-engineering --link <agent>`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.\"}\n",
+      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. After each link returns, run `aidlc engine log link --stage reverse-engineering --link <agent>`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.\"}\n",
       "stderr": ""
     },
     {
@@ -54,7 +54,7 @@
         "Approve"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage reverse-engineering --link <agent>`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.\"}\n",
+      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. After each link returns, run `aidlc engine log link --stage reverse-engineering --link <agent>`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.\"}\n",
       "stderr": ""
     },
     {
@@ -68,7 +68,7 @@
         "Approve"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage reverse-engineering --link <agent>`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.\"}\n",
+      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. After each link returns, run `aidlc engine log link --stage reverse-engineering --link <agent>`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.\"}\n",
       "stderr": ""
     },
     {
@@ -114,7 +114,7 @@
         "Approve"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-architect-agent. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage reverse-engineering --link <agent>`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.\"}\n",
+      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. After each link returns, run `aidlc engine log link --stage reverse-engineering --link <agent>`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.\"}\n",
       "stderr": ""
     },
     {
@@ -155,7 +155,7 @@
         "Approve"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage reverse-engineering --link <agent>`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.\"}\n",
+      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. After each link returns, run `aidlc engine log link --stage reverse-engineering --link <agent>`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.\"}\n",
       "stderr": ""
     },
     {
@@ -173,7 +173,7 @@
         "test revision"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Recorded rejected for \\\"reverse-engineering\\\".\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Recorded rejected for \\\"reverse-engineering\\\". The rejection starts a new pipeline attempt; prior receipts no longer apply. Re-run `aidlc engine orchestrate next`, then dispatch every missing link in directive.pipeline order with the exact human feedback. Each link must perform fresh work and return before its new receipt is recorded. Preserve the configured topology and reviewer policy; a targeted artifact edit does not permit the conductor to replace the pipeline or reuse its previous handoffs. Report revised only after the fresh chain completes.\"}\n",
       "stderr": ""
     },
     {
@@ -189,7 +189,7 @@
         "Approve"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage reverse-engineering --link <agent>`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.\"}\n",
+      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. After each link returns, run `aidlc engine log link --stage reverse-engineering --link <agent>`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.\"}\n",
       "stderr": ""
     },
     {
@@ -205,7 +205,7 @@
         "Approve"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage reverse-engineering --link <agent>`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.\"}\n",
+      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. After each link returns, run `aidlc engine log link --stage reverse-engineering --link <agent>`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.\"}\n",
       "stderr": ""
     },
     {
@@ -221,7 +221,7 @@
         "Approve"
       ],
       "exit": 0,
-      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage reverse-engineering --link <agent>`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.\"}\n",
+      "stdout": "{\"kind\":\"error\",\"message\":\"Cannot present \\\"reverse-engineering\\\" for approval because these pipeline handoffs have not been recorded for the current run: aidlc-developer-agent, aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. After each link returns, run `aidlc engine log link --stage reverse-engineering --link <agent>`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.\"}\n",
       "stderr": ""
     }
   ]

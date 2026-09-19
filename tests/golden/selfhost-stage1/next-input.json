@@ -18,7 +18,7 @@
         "intent"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine intent list`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -28,7 +28,7 @@
         "list"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine intent list`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -39,7 +39,7 @@
         "--status"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine intent list`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -50,7 +50,7 @@
         "--json"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent --json`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine intent list --json`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -60,7 +60,7 @@
         "--json"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent --json`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine intent list --json`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -70,7 +70,7 @@
         "help"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts help`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine orchestrate help`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage.\"}\n",
       "stderr": ""
     },
     {
@@ -80,7 +80,7 @@
         "-h"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts help`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine orchestrate help`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage.\"}\n",
       "stderr": ""
     },
     {
@@ -101,7 +101,7 @@
         "create"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent switch create`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine intent switch create`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -111,7 +111,7 @@
         "sample name"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent 'sample name'`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine intent sample name`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -125,7 +125,7 @@
         "repair user's intent"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts intent-create --scope bugfix --arguments 'repair user'\\\"'\\\"'s intent'`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine intent create --scope bugfix --arguments 'repair user'\\\"'\\\"'s intent'`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -134,7 +134,7 @@
         "space"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine space list`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -145,7 +145,7 @@
         "--json"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space --json`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine space list --json`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -155,7 +155,7 @@
         "teamB"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space teamB`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine space teamB`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -166,7 +166,7 @@
         "create"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space switch create`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine space switch create`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -177,7 +177,7 @@
         "team A"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space-create 'team A'`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine space create 'team A'`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {
@@ -197,7 +197,7 @@
         "team A"
       ],
       "exit_code": 0,
-      "stdout": "{\"kind\":\"print\",\"message\":\"Run `bun .claude/tools/aidlc-utility.ts space-create 'team A'`, print its output verbatim, then stop.\"}\n",
+      "stdout": "{\"kind\":\"print\",\"message\":\"Run `aidlc engine space create 'team A'`, print its output verbatim, then stop.\"}\n",
       "stderr": ""
     },
     {

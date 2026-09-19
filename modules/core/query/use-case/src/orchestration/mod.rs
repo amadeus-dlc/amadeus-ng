@@ -132,7 +132,7 @@ pub use state_binding::StateBinding;
 pub use token_version::TokenVersion;
 
 // エンジンコマンドの概念と綴り
-pub use engine_command::EngineCommand;
+pub use engine_command::{EngineCommand, dispatcher_invocation};
 pub use read_only_verb::ReadOnlyVerb;
 
 // 値オブジェクト — 出力モデルが使う検証済みの値

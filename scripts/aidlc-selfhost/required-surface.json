@@ -2,14 +2,16 @@
   "format": 2,
   "scope": "bugfix",
   "upstream_version": "2.8.2",
-  "note": "bugfix スコープ 1 周 (初期化 3 + reverse-engineering + requirements-analysis + code-generation + build-and-test + deployment-pipeline + deployment-execution) が踏む配布側の入口を、aidlc 2.8.2 の配布物の実バイトから列挙した表。入口として数えるのは二段形の起動形 `aidlc engine <noun> <verb>` だけであり、2.8.2 の本文に残る散文ラベル `aidlc-<face>.ts` は 1 件も数えない。",
+  "note": "bugfix スコープ 1 周 (初期化 3 + reverse-engineering + requirements-analysis + code-generation + build-and-test + deployment-pipeline + deployment-execution) が踏む 入口を、aidlc 2.8.2 の配布物の実バイトから列挙した表。出所は 2 つある — 配布資産の散文が綴る起動形 (sources) と、実行中にエンジンとフックが出す指示が綴る コマンド (runtime_directive_sources) である (オーナー裁定 D15)。入口として数えるのは 二段形の起動形 `aidlc engine <noun> <verb>` だけであり、2.8.2 の本文に残る散文ラベル `aidlc-<face>.ts` は 1 件も数えない。2.8.2 自身が二段形以外を綴る実行時の指示 (`aidlc doctor` / `aidlc version` / stale ポインタの回復報告 / composer のディスパッチ / DocumentKB / Stop フックの案内) は入口ではないので、この表には現れない。",
   "field_meanings": {
     "verb": "動詞を取らない top ルート (recompose / statusline) は null。",
-    "cites": "sources[] のファイルと行。その行が実際にその起動形を綴る。",
+    "cites": "distribution 由来の行が持つ、sources[] のファイルと行。その行が実際にその起動形を綴る。",
     "bugfix_required": "計画したゼロ Unit の bugfix 1 周で踏むかどうか。condition にその根拠を書く。",
     "mapping": "noun/verb → 既存の面・動詞の写像。.claude/tools/aidlc.ts の ROUTES 表の tool/targets と handleWorkspace/handleConfig/handleGen の翻訳結果から引いた。この build に対応する面が無い入口は null。",
     "acceptance": "写像先の一段形をこの build の aidlc::cli::parse が受理するか (accepted / refused)。二段形を直接 parse へ通した結果ではない (order.md §5.1 の 3)。",
-    "classification": "order.md §5.1 の分類。mapped = 写像だけで受理可能、needs-implementation = 新規実装が必要。"
+    "classification": "order.md §5.1 の分類。mapped = 写像だけで受理可能、needs-implementation = 新規実装が必要。",
+    "sources_kind": "出典の種別。distribution = 配布資産の散文が綴る起動形、runtime-directive = 実行中に エンジンとフックが出す指示が綴るコマンド。両方が同じ入口を綴る行は 1 行のまま両方を持つ。",
+    "upstream_site": "runtime-directive 由来の行が持つ、2.8.2 同梱ソースでの位置。 `<runtime_directive_sources[] のパス>:<行> <文言>` の形で、指した行にその文言が実在する。"
   },
   "sources_note": "sources は tests/golden/selfhost-stage1/required-surface-sources/ に凍結した aidlc 2.8.2 の配布物を指す。採取元と sha256 は同ディレクトリの provenance.json に記録している。",
   "sources": [
@@ -35,16 +37,30 @@
     "tests/golden/selfhost-stage1/required-surface-sources/.claude/settings.json",
     "tests/golden/selfhost-stage1/required-surface-sources/.claude/tools/aidlc.ts"
   ],
+  "runtime_directive_sources_note": "実行時の指示の出所は 4 本である — 綴り規則の定義 (.claude/tools/aidlc-runtime-paths.ts)、エンジン側の呼び出し箇所 (.claude/tools/aidlc-orchestrate.ts)、Stop フックの案内文 (.claude/hooks/aidlc-continue-workflow.ts)、SessionStart の乖離通知 (.claude/hooks/aidlc-session-start.ts)。sources と違い、複製を tests/golden/selfhost-stage1/required-surface-sources/ へ置かず、リポジトリに commit 済みの aidlc 2.8.2 配布物の実バイトをその場で指す。理由は 3 つある — (1) upstream_site の行番号と文言はもともとこの実バイトから測っており、測定元を直接指すほうが記録が正確である、(2) 配布物が更新されると sha256 照合が落ち、実行時の指示を測り直す合図になる (複製を凍結すると native が乖離したまま緑を保つ)、(3) 4 本で約 482KB あり、複製はバイト一致の保証と重複の管理を増やす。採取元・版・sha256 は sources と同じく tests/golden/selfhost-stage1/required-surface-sources/provenance.json の runtime_directive_files[] に記録し、契約テストが実バイトと照合する。",
+  "runtime_directive_sources": [
+    ".claude/tools/aidlc-runtime-paths.ts",
+    ".claude/tools/aidlc-orchestrate.ts",
+    ".claude/hooks/aidlc-continue-workflow.ts",
+    ".claude/hooks/aidlc-session-start.ts"
+  ],
   "hooks_note": "フックは動詞ではなく名前で数える。登録 (18) と名前 (16) の区別と発火判定は scripts/aidlc-selfhost/hook-binding.json が正本である。",
   "entries": [
     {
       "noun": "config",
       "verb": "set",
+      "sources_kind": [
+        "distribution",
+        "runtime-directive"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:179"
       ],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4621 aidlcDispatcherInvocation(route)}${extra}"
+      ],
       "bugfix_required": false,
-      "condition": "Change Control の強弱を人間が明示的に要求したときだけ走る (skills/aidlc/SKILL.md:179)。bugfix 1 周の定常手順には含まれない。写像先は argv[2] のキーで決まり、出典が綴るのは change-control である (tools/aidlc.ts handleConfig)。",
+      "condition": "Change Control の強弱を人間が明示的に要求したときだけ走る (skills/aidlc/SKILL.md:179)。bugfix 1 周の定常手順には含まれない。写像先は argv[2] のキーで決まり、出典が綴るのは change-control である (tools/aidlc.ts handleConfig)。 実行時にも `next --depth/--test-strategy/--review` が同じ入口を綴る (upstream `:4606-4622`)。ただし実行時の指示が据えるキーは depth / test-strategy / review であり、写像先の一段形は `config-change` になる。どちらのキーもこの build は実装していない。",
       "mapping": {
         "face": "aidlc-utility",
         "verb": "change-control"
@@ -55,6 +71,9 @@
     {
       "noun": "gen",
       "verb": "scope-table",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:304",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:852",
@@ -62,6 +81,7 @@
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:189",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:191"
       ],
+      "upstream_site": [],
       "bugfix_required": false,
       "condition": "スコープ著作の手順で生成表を作り直す文脈 (skills/aidlc/SKILL.md:189)。bugfix 1 周は新しいスコープを書かない。",
       "mapping": {
@@ -74,10 +94,14 @@
     {
       "noun": "gen",
       "verb": "stage-table",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/initialization/state-init.md:60",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:215"
       ],
+      "upstream_site": [],
       "bugfix_required": false,
       "condition": "生成ブロックの由来を示す marker コメント (skills/aidlc/SKILL.md:215 『do NOT hand-edit』)。bugfix 1 周は生成をやり直さない。",
       "mapping": {
@@ -90,24 +114,58 @@
     {
       "noun": "graph",
       "verb": "compile",
+      "sources_kind": [
+        "distribution",
+        "runtime-directive"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:189"
       ],
+      "upstream_site": [
+        ".claude/hooks/aidlc-session-start.ts:359 aidlcToolInvocation(\"graph\")} compile"
+      ],
       "bugfix_required": false,
-      "condition": "スコープ著作でコンパイル済みグリッドを作り直す文脈 (skills/aidlc/SKILL.md:189)。bugfix 1 周は新しいスコープを書かない。この build に graph 面は無い。",
+      "condition": "スコープ著作でコンパイル済みグリッドを作り直す文脈 (skills/aidlc/SKILL.md:189)。bugfix 1 周は新しいスコープを書かない。この build に graph 面は無い。 実行時にも SessionStart のグラフ乖離通知が同じ入口を綴る (`.claude/hooks/aidlc-session-start.ts:359`)。乖離が無ければ発火しない条件付きの案内である。",
       "mapping": null,
       "acceptance": "refused",
       "classification": "needs-implementation"
     },
     {
       "noun": "intent",
+      "verb": "create",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:1791 aidlcDispatcherInvocation(\"intent create\")",
+        ".claude/tools/aidlc-orchestrate.ts:4231 aidlcDispatcherInvocation(route)}${suffix}"
+      ],
+      "bugfix_required": true,
+      "condition": "記録の無い作業領域で `next` が最初に出す誕生の print がこの入口を名指す (upstream `:1791`)。bugfix 1 周はここから始まるので必須である。`next intent create` の 終端案内も同じ入口を綴る (`:4231`)。写像先の一段形 `aidlc-utility intent-create` は 実装済みなので、オーナー裁定 D16 に従い二段形の写像だけを足した。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "intent-create"
+      },
+      "acceptance": "accepted",
+      "classification": "mapped"
+    },
+    {
+      "noun": "intent",
       "verb": "list",
+      "sources_kind": [
+        "distribution",
+        "runtime-directive"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc-bugfix/SKILL.md:51",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:154"
       ],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4231 aidlcDispatcherInvocation(route)}${suffix}"
+      ],
       "bugfix_required": true,
-      "condition": "継続判定が毎プロンプト走り、活動中の intent と突き合わせる (skills/aidlc/SKILL.md:154)。bugfix の runner skill も同じ形を綴る (skills/aidlc-bugfix/SKILL.md:51)。 この build は読取専用の一覧を `aidlc-utility intent [list]` へ配線したため、写像先の一段形はこの build が受理する。切替 (`switch`) は配線していない。",
+      "condition": "継続判定が毎プロンプト走り、活動中の intent と突き合わせる (skills/aidlc/SKILL.md:154)。bugfix の runner skill も同じ形を綴る (skills/aidlc-bugfix/SKILL.md:51)。 この build は読取専用の一覧を `aidlc-utility intent [list]` へ配線したため、写像先の一段形はこの build が受理する。切替 (`switch`) は配線していない。 実行時にも `next intent [list]` の終端案内が同じ入口を綴る (upstream `:4220-4231`)。",
       "mapping": {
         "face": "aidlc-utility",
         "verb": "intent"
@@ -116,12 +174,55 @@
       "classification": "needs-implementation"
     },
     {
+      "noun": "intent",
+      "verb": "switch",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4231 aidlcDispatcherInvocation(route)}${suffix}"
+      ],
+      "bugfix_required": false,
+      "condition": "`next intent switch <name>` の終端案内が綴る (upstream `:4220-4231`)。 人間が作業記録を切り替えたときだけ走る条件付き経路で、bugfix 1 周の定常手順には 含まれない。写像先の一段形は位置動詞を運ぶ `aidlc-utility intent` だが、この build は 一覧だけを配線しており切替は消費側が名指して拒否する。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "intent"
+      },
+      "acceptance": "accepted",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "jump",
+      "verb": "execute",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:7157 aidlcToolInvocation(\"jump\")} execute --target",
+        ".claude/tools/aidlc-orchestrate.ts:8230 aidlcToolInvocation(\"jump\")} execute --target"
+      ],
+      "bugfix_required": false,
+      "condition": "`next --stage <slug>` のジャンプ確定 (upstream `:7157`) と、再開の選択肢 2 (やり直し — `:8230`) が綴る。どちらも人間が明示的に跳ぶか、やり直しを選んだときだけ 走る条件付き経路で、bugfix 1 周の定常手順には含まれない。写像先の一段形 `aidlc-jump execute` は実装済みである。",
+      "mapping": {
+        "face": "aidlc-jump",
+        "verb": "execute"
+      },
+      "acceptance": "accepted",
+      "classification": "mapped"
+    },
+    {
       "noun": "learnings",
       "verb": "persist",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1103",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:116"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "同上。人間が採用した学びを書き込む側。",
       "mapping": {
@@ -134,10 +235,14 @@
     {
       "noun": "learnings",
       "verb": "surface",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1093",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:116"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "§13 の学びの儀式は各ステージのゲート前に走る (skills/aidlc/SKILL.md:116)。",
       "mapping": {
@@ -150,12 +255,16 @@
     {
       "noun": "log",
       "verb": "answer",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:131",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:438",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:601",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:298"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "同じ質問の応答後に必ず記録する (protocols/stage-protocol.md:131)。",
       "mapping": {
@@ -168,6 +277,9 @@
     {
       "noun": "log",
       "verb": "decision",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:131",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:247",
@@ -176,6 +288,7 @@
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:272",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:266"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "承認ゲート以外の構造化質問を出す前に必ず記録する (protocols/stage-protocol.md:131)。",
       "mapping": {
@@ -188,6 +301,10 @@
     {
       "noun": "log",
       "verb": "link",
+      "sources_kind": [
+        "distribution",
+        "runtime-directive"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:126",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-ensemble.md:134",
@@ -200,8 +317,11 @@
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:245",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:388"
       ],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:7926 aidlcToolInvocation(\"log\")} link --stage"
+      ],
       "bugfix_required": true,
-      "condition": "reverse-engineering がスキャン結果を紐付けるために踏む (stages/inception/reverse-engineering.md:245, :388)。",
+      "condition": "reverse-engineering がスキャン結果を紐付けるために踏む (stages/inception/reverse-engineering.md:245, :388)。 実行時にも pipeline link の不足を告げる拒否文言が同じ入口を綴る (upstream `:7926`)。",
       "mapping": {
         "face": "aidlc-log",
         "verb": "link"
@@ -212,9 +332,13 @@
     {
       "noun": "log",
       "verb": "review",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:29"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "review_cap: advisory (scopes/aidlc-bugfix.md:11) によりレビュワー経路が走るため踏む (protocols/stage-protocol-reviewer.md:29)。",
       "mapping": {
@@ -227,9 +351,13 @@
     {
       "noun": "orchestrate",
       "verb": "continue",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:85"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "ステアリング再開の内部中継。停止したターンから 1 周を継続するために踏む。",
       "mapping": {
@@ -242,11 +370,18 @@
     {
       "noun": "orchestrate",
       "verb": "help",
+      "sources_kind": [
+        "distribution",
+        "runtime-directive"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:7"
       ],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4190 aidlcDispatcherInvocation(\"orchestrate help\")"
+      ],
       "bugfix_required": false,
-      "condition": "動詞一覧の参照先として案内されているだけで (skills/aidlc/SKILL.md:7 『for the authoritative list』)、bugfix のどのステージ手順も実行しない。人間が一覧を求めたときだけ走る条件付き経路。",
+      "condition": "動詞一覧の参照先として案内されているだけで (skills/aidlc/SKILL.md:7 『for the authoritative list』)、bugfix のどのステージ手順も実行しない。人間が一覧を求めたときだけ走る条件付き経路。 実行時にも `next --help` の終端案内が同じ入口を綴る (upstream `:4190`)。",
       "mapping": {
         "face": "aidlc-utility",
         "verb": "help"
@@ -257,6 +392,10 @@
     {
       "noun": "orchestrate",
       "verb": "next",
+      "sources_kind": [
+        "distribution",
+        "runtime-directive"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:147",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:256",
@@ -267,8 +406,12 @@
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:173",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:42"
       ],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:7923 aidlcToolInvocation(\"orchestrate\")} next",
+        ".claude/tools/aidlc-orchestrate.ts:8795 aidlcToolInvocation(\"orchestrate\")} next"
+      ],
       "bugfix_required": true,
-      "condition": "bugfix 1 周の各ステージはこの動詞で directive を受け取る (skills/aidlc-bugfix/SKILL.md:22 が 1 周の起点として綴る)。",
+      "condition": "bugfix 1 周の各ステージはこの動詞で directive を受け取る (skills/aidlc-bugfix/SKILL.md:22 が 1 周の起点として綴る)。 実行時にも pipeline link の拒否文言と却下の記録が `next` の再実行を促して同じ入口を綴る (upstream `:7923`, `:8795`)。",
       "mapping": {
         "face": "aidlc-orchestrate",
         "verb": "next"
@@ -279,9 +422,13 @@
     {
       "noun": "orchestrate",
       "verb": "park",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:104"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "1 周の途中で作業を中断して退避する経路 (skills/aidlc/SKILL.md:104)。",
       "mapping": {
@@ -294,6 +441,9 @@
     {
       "noun": "orchestrate",
       "verb": "report",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:246",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:252",
@@ -314,6 +464,7 @@
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:45",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:73"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "各ステージの終了と承認ゲートの報告。1 周で最も多く踏む動詞 (出典 18 箇所)。",
       "mapping": {
@@ -324,12 +475,111 @@
       "classification": "mapped"
     },
     {
+      "noun": "plugin",
+      "verb": "build",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4250 aidlcDispatcherInvocation(`plugin ${routeVerb}`)"
+      ],
+      "bugfix_required": false,
+      "condition": "`next plugin build` の終端案内が綴る (upstream `:4239-4251`)。plugin の 著作作業でだけ走り、bugfix 1 周は plugin を書かない。写像先の一段形 `aidlc-utility plugin-build` をこの build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "plugin-build"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "plugin",
+      "verb": "list",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4250 aidlcDispatcherInvocation(`plugin ${routeVerb}`)"
+      ],
+      "bugfix_required": false,
+      "condition": "`next plugin list` の終端案内が綴る (upstream `:4239-4251`)。人間が一覧を 求めたときだけ走る条件付き経路である。写像先の一段形 `aidlc-utility plugin-list` を この build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "plugin-list"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "plugin",
+      "verb": "select",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4250 aidlcDispatcherInvocation(`plugin ${routeVerb}`)"
+      ],
+      "bugfix_required": false,
+      "condition": "`next plugin select` の終端案内が綴る (upstream `:4239-4251`)。導入する plugin を選び直すときだけ走り、bugfix 1 周は構成を変えない。写像先の一段形 `aidlc-utility select-plugins` をこの build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "select-plugins"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "plugin",
+      "verb": "sync",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4250 aidlcDispatcherInvocation(`plugin ${routeVerb}`)"
+      ],
+      "bugfix_required": false,
+      "condition": "`next plugin sync` の終端案内が綴る (upstream `:4239-4251`)。plugin の 再配置でだけ走り、bugfix 1 周は構成を変えない。写像先の一段形 `aidlc-utility plugin-sync` をこの build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "plugin-sync"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "plugin",
+      "verb": "validate",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4250 aidlcDispatcherInvocation(`plugin ${routeVerb}`)"
+      ],
+      "bugfix_required": false,
+      "condition": "`next plugin validate` の終端案内が綴る (upstream `:4239-4251`)。plugin の 著作作業でだけ走り、bugfix 1 周は plugin を書かない。写像先の一段形 `aidlc-utility plugin-validate` をこの build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "plugin-validate"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
       "noun": "recompose",
       "verb": null,
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:229",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/skills/aidlc/SKILL.md:177"
       ],
+      "upstream_site": [],
       "bugfix_required": false,
       "condition": "計画の作り直し要求があったときだけ走る (skills/aidlc/SKILL.md:177)。bugfix 1 周の定常手順には含まれない。",
       "mapping": {
@@ -342,9 +592,13 @@
     {
       "noun": "review-brief",
       "verb": "context",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:60"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "レビュワー経路がブリーフの文脈を取る (protocols/stage-protocol-reviewer.md:60)。 この build は本家 ROUTES と同じく noun を面へ委譲する形を採り、`aidlc-review-brief` を 9 つ目の multi-call 面として足して `context` を配線した（レビュー証跡は成果物末尾の `## Review` 節から読む）ため、写像先の一段形はこの build が受理する。",
       "mapping": {
@@ -357,9 +611,13 @@
     {
       "noun": "review-brief",
       "verb": "review",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-reviewer.md:204"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "レビュワー経路がレビュー本体を取る (protocols/stage-protocol-reviewer.md:204)。 この build は本家 ROUTES と同じく noun を面へ委譲する形を採り、`aidlc-review-brief` を 9 つ目の multi-call 面として足して `review` を配線した（レビュー証跡は成果物末尾の `## Review` 節から読む）ため、写像先の一段形はこの build が受理する。",
       "mapping": {
@@ -372,9 +630,13 @@
     {
       "noun": "review-brief",
       "verb": "summary",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:399"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "レビュワー経路がブリーフの要約を取る (protocols/stage-protocol.md:399)。review_cap: advisory により bugfix 1 周でレビュワー経路が走る。 この build は本家 ROUTES と同じく noun を面へ委譲する形を採り、`aidlc-review-brief` を 9 つ目の multi-call 面として足して `summary` を配線した（レビュー証跡は成果物末尾の `## Review` 節から読む）ため、写像先の一段形はこの build が受理する。",
       "mapping": {
@@ -385,14 +647,94 @@
       "classification": "needs-implementation"
     },
     {
+      "noun": "scope",
+      "verb": "change",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4589 aidlcDispatcherInvocation(\"scope change\")"
+      ],
+      "bugfix_required": false,
+      "condition": "活動中のワークフローに別の有効な `--scope` が来たときだけ走る (upstream `:4583-4590`)。bugfix 1 周は scope を変えない。写像先の一段形 `aidlc-utility scope-change` をこの build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "scope-change"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "space",
+      "verb": "create",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4231 aidlcDispatcherInvocation(route)}${suffix}"
+      ],
+      "bugfix_required": false,
+      "condition": "`next space create <name>` の終端案内が綴る (upstream `:4220-4231`)。 新しいチーム空間を作るときだけ走り、bugfix 1 周は既定の空間で回る。写像先の一段形 `aidlc-utility space-create` をこの build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "space-create"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "space",
+      "verb": "list",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4231 aidlcDispatcherInvocation(route)}${suffix}"
+      ],
+      "bugfix_required": false,
+      "condition": "`next space [list]` の終端案内が綴る (upstream `:4220-4231`)。人間が空間の 一覧を求めたときだけ走る条件付き経路である。写像先の一段形 `aidlc-utility space` を この build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "space"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "space",
+      "verb": "switch",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4231 aidlcDispatcherInvocation(route)}${suffix}"
+      ],
+      "bugfix_required": false,
+      "condition": "`next space switch <name>` の終端案内が綴る (upstream `:4220-4231`)。 空間を切り替えるときだけ走り、bugfix 1 周は既定の空間で回る。写像先の一段形 `aidlc-utility space` をこの build は持たない。",
+      "mapping": {
+        "face": "aidlc-utility",
+        "verb": "space"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
       "noun": "state",
       "verb": "lookup",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:683",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:684",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:685",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:686"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "コンパイル済みグラフの読取。ステージ進行の判断で踏む (protocols/stage-protocol.md:683)。",
       "mapping": {
@@ -405,9 +747,13 @@
     {
       "noun": "state",
       "verb": "practices-event",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/conductor.md:130"
       ],
+      "upstream_site": [],
       "bugfix_required": false,
       "condition": "practices-discovery の override 記録 (aidlc-common/conductor.md:130)。practices-discovery は bugfix のステージ構成 (scopes/aidlc-bugfix.md:39-41) に含まれない。",
       "mapping": {
@@ -420,10 +766,14 @@
     {
       "noun": "state",
       "verb": "reuse-artifact",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol.md:1163",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:151"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "reverse-engineering が既存成果物の再利用を決めたときに記録する (stages/inception/reverse-engineering.md:151)。bugfix 1 周は reverse-engineering を実行する。 オーナー裁定 D12 により記録専用の受領証イベントへ配線したため、写像先の一段形はこの build が受理する。",
       "mapping": {
@@ -436,10 +786,14 @@
     {
       "noun": "state",
       "verb": "unit",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:303",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:309"
       ],
+      "upstream_site": [],
       "bugfix_required": false,
       "condition": "Unit ライフサイクルの受領証 (protocols/stage-protocol-construction.md:303, :309)。計画したゼロ Unit の bugfix 1 周では Unit が生成されないため踏まない。",
       "mapping": {
@@ -450,11 +804,50 @@
       "classification": "needs-implementation"
     },
     {
+      "noun": "state",
+      "verb": "unpark",
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4400 aidlcToolInvocation(\"state\")} unpark"
+      ],
+      "bugfix_required": false,
+      "condition": "退避済みのワークフローに `next --resume` が来たときだけ走る (upstream `:4392-4402`)。退避が前提なので bugfix 1 周の定常手順には含まれない。 写像先の一段形 `aidlc-state unpark` をこの build は認識するが配線していない。",
+      "mapping": {
+        "face": "aidlc-state",
+        "verb": "unpark"
+      },
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
+      "noun": "status",
+      "verb": null,
+      "sources_kind": [
+        "runtime-directive"
+      ],
+      "cites": [],
+      "upstream_site": [
+        ".claude/tools/aidlc-orchestrate.ts:4188 aidlcDispatcherInvocation(\"status\")"
+      ],
+      "bugfix_required": false,
+      "condition": "`next --status` の終端案内が綴る (upstream `:4186-4192`)。人間が状態表示を 求めたときだけ走る条件付き経路である。本家ではエンジン自身が受ける routeOnly ルート なので、この build に対応する一段形の面は無い。",
+      "mapping": null,
+      "acceptance": "refused",
+      "classification": "needs-implementation"
+    },
+    {
       "noun": "statusline",
       "verb": null,
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/settings.json:19"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "statusLine.command として登録されており (settings.json:19)、セッション中は継続的に発火する。 この build は `engine statusline` を engine の顔 (`hook` と同じ扱い) へ配線したため、二段形の起動を受理する。",
       "mapping": null,
@@ -464,10 +857,14 @@
     {
       "noun": "testing-posture",
       "verb": "brief",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:425",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:362"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "code-generation がテスト方針のブリーフを取る (stages/construction/code-generation.md:362)。この build は承認の現在性を read_code_generation_approval へ投影して読む形で `brief` を配線したため、写像先の一段形はこの build が受理する。",
       "mapping": {
@@ -480,10 +877,14 @@
     {
       "noun": "testing-posture",
       "verb": "fingerprint",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:210",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:217"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "code-generation がテスト契約の指紋を採る (stages/construction/code-generation.md:210)。",
       "mapping": {
@@ -496,9 +897,13 @@
     {
       "noun": "testing-posture",
       "verb": "render",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/construction/code-generation.md:152"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "code-generation がテスト契約を描画する (stages/construction/code-generation.md:152)。",
       "mapping": {
@@ -511,9 +916,13 @@
     {
       "noun": "workspace",
       "verb": "codekb",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:321"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "reverse-engineering が CodeKB の位置を解決する (stages/inception/reverse-engineering.md:321)。",
       "mapping": {
@@ -526,9 +935,13 @@
     {
       "noun": "workspace",
       "verb": "codekb-publish",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:353"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "reverse-engineering が結果を公開する (stages/inception/reverse-engineering.md:353)。",
       "mapping": {
@@ -541,11 +954,15 @@
     {
       "noun": "workspace",
       "verb": "codekb-scope-diff",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:308",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:338",
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:98"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "reverse-engineering がスコープ差分を採る (stages/inception/reverse-engineering.md:98)。",
       "mapping": {
@@ -558,9 +975,13 @@
     {
       "noun": "workspace",
       "verb": "codekb-snapshot",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/reverse-engineering.md:165"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "reverse-engineering がスナップショットを採る (stages/inception/reverse-engineering.md:165)。",
       "mapping": {
@@ -573,9 +994,13 @@
     {
       "noun": "workspace",
       "verb": "document-input",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:86"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "requirements-analysis が入力文書を読む (stages/inception/requirements-analysis.md:86)。文書が無いときは踏まない条件付きだが、order.md §5.1 の 6 に従い必要集合を狭める方向に倒さない。 この build は拒否クラス一式とともに `aidlc-utility document-input` へ配線したため、写像先の一段形はこの build が受理する。",
       "mapping": {
@@ -588,9 +1013,13 @@
     {
       "noun": "workspace",
       "verb": "project-description",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/stages/inception/requirements-analysis.md:63"
       ],
+      "upstream_site": [],
       "bugfix_required": true,
       "condition": "requirements-analysis が初期記述を読む (stages/inception/requirements-analysis.md:63)。",
       "mapping": {
@@ -603,9 +1032,13 @@
     {
       "noun": "worktree",
       "verb": "info",
+      "sources_kind": [
+        "distribution"
+      ],
       "cites": [
         "tests/golden/selfhost-stage1/required-surface-sources/.claude/aidlc-common/protocols/stage-protocol-construction.md:93"
       ],
+      "upstream_site": [],
       "bugfix_required": false,
       "condition": "Unit の作業ツリーを問い合わせる (protocols/stage-protocol-construction.md:93)。ゼロ Unit の bugfix 1 周では踏まない。この build に worktree 面は無い。",
       "mapping": null,

@@ -134,11 +134,17 @@ pub fn transition_rejected(detail: &str) -> String {
 /// ——不在（まだ鋳造していない）は `No workflow execution to report against.` で、
 /// 壊れているのがこちらである。原因（分類とパス）は
 /// [`crate::execution_cursor::ExecutionCursorError`] の `Display` が運ぶ材料をそのまま置く。
+///
+/// 文そのものに出典は無いが、**案内する綴りには出典がある** — 2.8.2 を実行形で動かした
+/// ときの intent 鋳造は二段形なので、綴りはその所有者
+/// （`core_query_use_case::orchestration::dispatcher_invocation`）から得る。ここで手で
+/// 綴ると、綴り規則が変わったときにこの 1 行だけが取り残される。
 #[must_use]
 pub fn unreadable_execution_cursor(cause: &str) -> String {
+    let mint = core_query_use_case::orchestration::dispatcher_invocation("intent create");
     format!(
         "The execution cursor cannot be read ({cause}). Fix that file, or remove it and mint \
-         a fresh intent with `aidlc-utility intent-create`."
+         a fresh intent with `{mint}`."
     )
 }
 
@@ -689,13 +695,15 @@ pub const RESUME_WITHOUT_STATE: &str =
 pub const RESUME_WITHOUT_CURRENT_STAGE: &str =
     "State file has no Current Stage field - cannot resume from the last checkpoint.";
 
-/// 段 4 の選択肢 2 — やり直し (upstream `:7528` @a277af21 逐語。命令の綴りは配布入口形
-/// `bun .claude/tools/aidlc-jump.ts execute …` — Step 8 裁定 Q1 = A)。
+/// 段 4 の選択肢 2 — やり直し (upstream `aidlc-orchestrate.ts:8230` 逐語)。
+///
+/// `spelled` は `aidlcToolInvocation("jump")} execute …` に当たる綴りで、分岐 7 の jump と同じ
+/// `EngineCommand::ExecuteJump` から組んで渡す (`jump execute` を 2 か所で綴らない)。
 #[must_use]
-pub fn resume_redo(stage: &str, scope: &str) -> String {
+pub fn resume_redo(stage: &str, spelled: &str) -> String {
     format!(
-        "Redo accepted at \"{stage}\". Run `bun .claude/tools/aidlc-jump.ts execute --target {stage} \
---direction redo --scope {scope}` to reset the current stage, then re-run `next` to start it over."
+        "Redo accepted at \"{stage}\". Run `{spelled}` to reset the current stage, then re-run \
+`next` to start it over."
     )
 }
 
@@ -854,6 +862,23 @@ pub const RESUME_IS_ROUTED: &str = "Resume is routed, not committed. Run a fresh
 #[must_use]
 pub fn recorded_result(result: &str, stage: &str) -> String {
     format!("Recorded {result} for \"{stage}\".")
+}
+
+/// 成功 — pipeline ステージの却下 (2.8.2 `aidlc-orchestrate.ts:8793-8798` 逐語)。
+///
+/// 2.8.2 は `flags.result === "rejected" && node.mode === "pipeline"` のときだけ、却下が新しい
+/// pipeline の試行を始めることと、全リンクのやり直しを案内する。`spelled_next` は
+/// `aidlcToolInvocation("orchestrate")} next` に当たる綴りで、合成ルートが綴りの規則から組んで渡す。
+#[must_use]
+pub fn recorded_pipeline_rejection(stage: &str, spelled_next: &str) -> String {
+    format!(
+        "Recorded rejected for \"{stage}\". The rejection starts a new pipeline attempt; prior \
+receipts no longer apply. Re-run `{spelled_next}`, then dispatch every missing link in \
+directive.pipeline order with the exact human feedback. Each link must perform fresh work and \
+return before its new receipt is recorded. Preserve the configured topology and reviewer policy; \
+a targeted artifact edit does not permit the conductor to replace the pipeline or reuse its \
+previous handoffs. Report revised only after the fresh chain completes."
+    )
 }
 
 /// 成功 — ルーティングされた読み飛ばし (upstream `:5662-5664` 逐語)。
@@ -2720,7 +2745,7 @@ instead."
             message.contains("malformed execution cursor at /w/record/.aidlc-execution"),
             "{message}"
         );
-        assert!(message.contains("aidlc-utility intent-create"), "{message}");
+        assert!(message.contains("aidlc engine intent create"), "{message}");
     }
 
     /// 閉集合外の `--review` は upstream の逐語で拒む。
@@ -2778,8 +2803,8 @@ An unattended autonomous run has no human to resume it and must keep moving - do
     #[test]
     fn the_unpark_wording_names_the_command_before_the_retry() {
         assert_eq!(
-            unpark_then_resume("bun .claude/tools/aidlc-state.ts unpark"),
-            "This workflow is parked. Run `bun .claude/tools/aidlc-state.ts unpark` to clear the park marker, \
+            unpark_then_resume("aidlc engine state unpark"),
+            "This workflow is parked. Run `aidlc engine state unpark` to clear the park marker, \
 then re-run `next --resume` to continue."
         );
     }

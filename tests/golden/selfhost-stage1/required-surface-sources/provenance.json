@@ -9,15 +9,19 @@
     ],
     "captured_at": "2026-09-15",
     "captured_from": "作業ツリーの .claude/ 配下の実バイト (aidlc 2.8.2 の配布物)",
-    "files": 21
+    "runtime_directive_captured_at": "2026-09-17",
+    "runtime_directive_captured_from": "リポジトリに commit 済みの .claude/ 配下の実バイトそのもの (複製を作らず、その場で sha256 により固定する)",
+    "files": 21,
+    "runtime_directive_files": 4
   },
   "fixture_kind": "required-surface-sources",
-  "capture_method": "bugfix スコープ 1 周が踏む入口を列挙するための出典を、aidlc 2.8.2 の配布物の実バイトからそのまま写した。列挙はこの固定バイトに対して検証する (modules/app/aidlc/tests/required_surface_contract.rs)。",
+  "capture_method": "bugfix スコープ 1 周が踏む入口を列挙するための出典を、aidlc 2.8.2 の配布物の実バイトから採った。files[] は配布物をこのディレクトリへ写した複製で、パスはこのディレクトリからの相対である。runtime_directive_files[] は複製を作らず、リポジトリ直下に commit 済みの同じ配布物を指し、パスはリポジトリルートからの相対である。列挙はどちらも記録した sha256 との照合を通して検証する (modules/app/aidlc/tests/required_surface_contract.rs)。",
   "selection": {
     "stage_and_protocol_assets": "bugfix スコープ 1 周 (初期化 3 + reverse-engineering + requirements-analysis + code-generation + build-and-test + deployment-pipeline + deployment-execution) が読むスキル・conductor・プロトコル・スコープ定義・ステージ定義。",
     "settings_json": "オーナー裁定 D10 によりファイル全体を出典に加える。フック登録 18 件と statusLine が起動形の正本である。",
     "tools_aidlc_ts": "オーナー裁定 D10 によりファイル全体を出典に加える。ROUTES 表が noun/verb の正本である。",
-    "bugfix_skill": "bugfix スコープは runner: true (.claude/scopes/aidlc-bugfix.md) であり、.claude/skills/aidlc-bugfix/SKILL.md が 1 周の起動形を直接綴る。実測で起動が辿れる資産のため出典に加えた。"
+    "bugfix_skill": "bugfix スコープは runner: true (.claude/scopes/aidlc-bugfix.md) であり、.claude/skills/aidlc-bugfix/SKILL.md が 1 周の起動形を直接綴る。実測で起動が辿れる資産のため出典に加えた。",
+    "runtime_directive_sources": "オーナー裁定 D15 により、実行中にエンジンとフックが出す指示が綴るコマンドも入口として数える。その正本は 4 本である — 綴り規則の定義 (.claude/tools/aidlc-runtime-paths.ts の aidlcInvocation / aidlcDispatcherInvocation / aidlcToolInvocation)、エンジン側の呼び出し箇所 (.claude/tools/aidlc-orchestrate.ts)、Stop フックの案内文 (.claude/hooks/aidlc-continue-workflow.ts)、SessionStart のグラフ乖離通知 (.claude/hooks/aidlc-session-start.ts)。該当関数だけを切り出さずファイル全体を採るのは、切り出しの手選択が drift 源になり、files[] と同じ sha256 照合の仕組みに乗らないためである。複製をこのディレクトリへ置かずリポジトリ直下の実バイトを指すのは、(1) required-surface.json の upstream_site の行番号と文言がもともとこの実バイトから測ったものであり、測定元を直接指すほうが記録が正確であること、(2) 配布物が更新されたとき sha256 照合が落ち「実行時の指示を測り直せ」という合図になること (複製を凍結すると native が乖離したまま緑を保つ)、(3) 4 本で約 482KB あり、複製はバイト一致の保証と重複の管理を増やすこと、による。"
   },
   "files": [
     {
@@ -103,6 +107,24 @@
     {
       "path": ".claude/tools/aidlc.ts",
       "sha256": "382e9f4ffb0941c8a49e8c7cfea67f888b64b40ec15edda5341e946ecbd5da2c"
+    }
+  ],
+  "runtime_directive_files": [
+    {
+      "path": ".claude/tools/aidlc-runtime-paths.ts",
+      "sha256": "1b6f1dd1081cd12e84f2e6058254d7a0a468c45c8aa169cf881db523a02a1197"
+    },
+    {
+      "path": ".claude/tools/aidlc-orchestrate.ts",
+      "sha256": "dee18a4ebe31346b1b99de6cf1bcda20e56fc15cb760c8cccf4e8b2475e88989"
+    },
+    {
+      "path": ".claude/hooks/aidlc-continue-workflow.ts",
+      "sha256": "baef8ea0872eaa079a9bce45edffdb5c86ce0826c41e257afc9a55214f536347"
+    },
+    {
+      "path": ".claude/hooks/aidlc-session-start.ts",
+      "sha256": "58411ce554264eee62738e37ac2e2b479082af4a2b94ffcec9750b4dfeb3e349"
     }
   ]
 }

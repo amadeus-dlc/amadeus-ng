@@ -1667,9 +1667,11 @@ async fn the_four_resume_choices_route_and_anything_else_is_refused() {
     );
     let (_, message) =
         report_directive(&workspace, &["--result", "resumed", "--user-input", "2"]).await;
+    // 綴りは 2.8.2 の `aidlcToolInvocation("jump")`
+    // (`.claude/tools/aidlc-orchestrate.ts:8230`) に合わせた二段形である。
     assert_eq!(
         message,
-        "Redo accepted at \"domain-design\". Run `bun .claude/tools/aidlc-jump.ts execute \
+        "Redo accepted at \"domain-design\". Run `aidlc engine jump execute \
 --target domain-design --direction redo --scope classic` to reset the current stage, then \
 re-run `next` to start it over."
     );
@@ -2261,57 +2263,22 @@ async fn an_unknown_review_class_is_refused_verbatim() {
     assert!(workspace.record_dir().is_none(), "何も作らない");
 }
 
-/// print が名指しした命令行を、シェルと同じ規則で argv へ割る（テスト用の最小トークナイザ）。
-///
-/// 単一引用符（`shellArg` が出す形。内側は `'"'"'` で綴られる）と二重引用符（`--label`
-/// のプレースホルダ）の両方を剥がす。エスケープ記号は upstream の綴りに現れないので扱わない。
-fn shell_split(command: &str) -> Vec<String> {
-    #[derive(PartialEq, Eq)]
-    enum Quote {
-        None,
-        Single,
-        Double,
-    }
-    let mut argv = Vec::new();
-    let mut token = String::new();
-    let mut open = false;
-    let mut quote = Quote::None;
-    for character in command.chars() {
-        match (&quote, character) {
-            (Quote::None, ' ') => {
-                if open {
-                    argv.push(std::mem::take(&mut token));
-                    open = false;
-                }
-            }
-            (Quote::None, '\'') => {
-                quote = Quote::Single;
-                open = true;
-            }
-            (Quote::None, '"') => {
-                quote = Quote::Double;
-                open = true;
-            }
-            (Quote::Single, '\'') | (Quote::Double, '"') => quote = Quote::None,
-            _ => {
-                token.push(character);
-                open = true;
-            }
-        }
-    }
-    if open {
-        argv.push(token);
-    }
-    argv
-}
+#[path = "../../../../tests/support/shell_split.rs"]
+mod shell_split;
+use shell_split::shell_split;
 
-/// 名指し側（クエリ側 `next` の誕生 print）と受け口（`intent-create`）が噛み合う。
+/// 名指し側（クエリ側 `next` の誕生 print）と受け口（`intent create`）が噛み合う。
 ///
 /// 命令行はテストが組み立てず、**print が出した文字列から切り出して**そのまま走らせる。
 /// 置き換えるのは `--label` のプレースホルダだけで、これは upstream が明示的に
 /// 「conductor が 2〜3 語のケバブに畳め」と指示している継ぎ目である（`:889-890`）。
 /// 逸脱3（MintIntent の引数面が upstream 完全形か）が壊れたら、受け口側が値を取り違えて
 /// ここが落ちる。
+///
+/// 綴りは 2.8.2 をコンパイル済み実行形で動かしたときの出力
+/// （`.claude/tools/aidlc-orchestrate.ts:1791` の `aidlcDispatcherInvocation("intent create")`）
+/// に合わせた二段形である。指揮役はこれを**書き換えずに**実行するので、切り出した argv0 が
+/// そのまま起動名になる。
 #[tokio::test]
 async fn the_birth_print_names_a_command_the_receiving_surface_accepts() {
     let workspace = Workspace::create();
@@ -2326,31 +2293,30 @@ async fn the_birth_print_names_a_command_the_receiving_surface_accepts() {
     let directive = line_of(&named);
     assert_eq!(string_of(&directive, "kind"), "print");
     let message = string_of(&directive, "message");
+    assert!(
+        !message.contains("bun .claude/tools/"),
+        "誕生の print に 2.7.1 の呼び方が残っている: {message}"
+    );
     let command = message
         .split('`')
         .nth(1)
         .expect("print はコマンドをバッククォートで括る");
     assert_eq!(
         command,
-        "bun .claude/tools/aidlc-utility.ts intent-create --scope classic --arguments='build the auth service' --label \"<2-3 word kebab essence>\""
+        "aidlc engine intent create --scope classic --arguments='build the auth service' --label \"<2-3 word kebab essence>\""
     );
 
-    // conductor がラベルを畳む（唯一の置換）。名指しは本家逐語の `bun <harness>/tools/<tool>.ts`
-    // 入口であり (`aidlc-orchestrate.ts:1660` @a277af21)、その入口を native の面へ結ぶのは U4 の
-    // 配布接続 (契約 C6 / C8)。ここでは入口のツール名をそのまま面に読み替えて受け口を叩く。
+    // conductor がラベルを畳む（唯一の置換）。綴りはそのまま起動できる二段形なので、
+    // 入口スクリプトをツール名へ読み替える工程はもう無い。
     let argv = shell_split(&command.replace("<2-3 word kebab essence>", "auth service"));
-    let (runner, after_runner) = argv.split_first().expect("argv0 がある");
-    assert_eq!(runner, "bun");
-    let (entry, rest) = after_runner.split_first().expect("入口スクリプトがある");
-    assert_eq!(entry, ".claude/tools/aidlc-utility.ts");
-    let face = std::path::Path::new(entry)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .expect("入口スクリプトの語幹");
-    assert_eq!(face, "aidlc-utility");
+    let (runner, rest) = argv.split_first().expect("argv0 がある");
+    assert_eq!(
+        runner, "aidlc",
+        "指示が配布版の実行系を名指している: {command}"
+    );
     let borrowed: Vec<&str> = rest.iter().map(String::as_str).collect();
 
-    let created = invoke(&workspace, face, &borrowed).await;
+    let created = invoke(&workspace, runner, &borrowed).await;
 
     assert_eq!(created.code(), 0, "{created:?}");
     let record = workspace.record_dir().expect("記録");
