@@ -283,6 +283,11 @@ const ENGINE_NAMESPACE: &str = "engine";
 /// 本家が併せて剥がす `system` は写さない。`EngineRoute::resolve`
 /// (`modules/app/aidlc/src/cli/engine_route.rs:320-323`) は先頭が `engine` のときだけ働くので、
 /// `aidlc system …` で届く native の経路が無く、守る不変条件が無いためである。
+///
+/// `orchestrate` の 4 動詞は二段形も一段形と同じ進行コマンドとして分類する。native は
+/// `WIRED` (`engine_route.rs:53-56`) で `orchestrate next|continue|report|park` を運ぶので、
+/// 一段形だけを見ていると委譲エージェントが二段形でガードを抜ける。読み取り専用の
+/// `orchestrate help` は本家の一段形と同じく素通りさせる。
 fn dispatcher(prefix: &str, args: &ShellWords) -> Option<String> {
     let namespaced = args.at(0) == Some(ENGINE_NAMESPACE);
     let prefix = if namespaced {
@@ -314,6 +319,7 @@ fn dispatcher(prefix: &str, args: &ShellWords) -> Option<String> {
         return Some(format!("{prefix} {group}"));
     }
     if (group == "scope" && verb == "change")
+        || (group == "orchestrate" && matches!(verb, "next" | "continue" | "report" | "park"))
         || (group == "state" && state_mutation(verb))
         || (group == "jump" && verb == "execute")
         || (group == "config" && verb == "set")
@@ -599,6 +605,26 @@ mod tests {
             Some("aidlc engine state fork")
         );
         assert_eq!(found("aidlc engine").as_deref(), None);
+    }
+
+    /// `orchestrate` の 4 動詞は二段形でも進行コマンドである。
+    ///
+    /// native は `engine_route.rs` の `WIRED` で `orchestrate next|continue|report|park` を
+    /// 運ぶので、一段形だけを見ていると委譲エージェントが二段形でガードを抜ける。
+    /// 読み取り専用の `orchestrate help` が素通りすることも併せて固定する。
+    #[test]
+    fn the_two_part_orchestrate_verbs_are_progress_commands_like_their_one_part_forms() {
+        for verb in ["next", "continue", "report", "park"] {
+            assert_eq!(
+                found(&format!("aidlc engine orchestrate {verb}")).as_deref(),
+                Some(format!("aidlc engine orchestrate {verb}").as_str())
+            );
+            assert_eq!(
+                found(&format!("aidlc orchestrate {verb}")).as_deref(),
+                Some(format!("aidlc orchestrate {verb}").as_str())
+            );
+        }
+        assert_eq!(found("aidlc engine orchestrate help").as_deref(), None);
     }
 
     #[test]
