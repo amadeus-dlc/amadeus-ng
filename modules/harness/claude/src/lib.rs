@@ -47,6 +47,8 @@ mod runtime_compile_envelope;
 mod session_context_notices;
 pub use runtime_compile_envelope::RuntimeCompileEnvelope;
 pub use session_context_notices::SessionContextNotices;
+mod session_command_spellings;
+pub use session_command_spellings::SessionCommandSpellings;
 mod session_start_context;
 pub use session_start_context::SessionStartContext;
 

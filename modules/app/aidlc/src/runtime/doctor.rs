@@ -254,7 +254,7 @@ fn missing_entry_points() -> Vec<String> {
         .iter()
         .filter(|(face, args, _)| {
             let argv: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
-            !is_wired(&parse(*face, &argv))
+            !parse(*face, &argv).is_wired()
         })
         .map(|(_, _, display)| (*display).to_string())
         .collect();
@@ -279,8 +279,8 @@ const REQUIRED_SURFACE: &str =
 /// bugfix 必須と実測した二段形の入口のうち、この build の配線表に無いもの（D13 の `WT-2`）。
 ///
 /// 入口を**実行しない** — 二段形を [`EngineRoute::resolve`] に通し、既存の面へ写せた
-/// （`Mapped`）ものだけを `parse` + [`is_wired`] で見る。写せなかったもの（`NotWired` /
-/// `Unknown`）はそこで不足である。
+/// （`Mapped`）ものだけを `parse` + [`Request::is_wired`] で見る。写せなかったもの
+/// （`NotWired` / `Unknown`）はそこで不足である。
 fn missing_two_stage_entry_points() -> Vec<String> {
     missing_from(REQUIRED_SURFACE)
 }
@@ -311,28 +311,13 @@ fn missing_from(surface: &str) -> Vec<String> {
         argv.extend(verb.map(str::to_string));
         let resolved = matches!(
             EngineRoute::resolve(&argv),
-            Some(EngineRoute::Mapped { face, argv: target }) if is_wired(&parse(face, &target))
+            Some(EngineRoute::Mapped { face, argv: target }) if parse(face, &target).is_wired()
         );
         if !resolved {
             missing.push(wording::engine_entry_point(noun, verb));
         }
     }
     missing
-}
-
-/// 未知動詞・未配線動詞へ落ちない要求か。
-const fn is_wired(request: &Request) -> bool {
-    !matches!(
-        request,
-        Request::UnknownOrchestrateVerb { .. }
-            | Request::UnknownUtilityVerb { .. }
-            | Request::UnknownLogVerb { .. }
-            | Request::StateNotWired { .. }
-            | Request::UnknownStateVerb { .. }
-            | Request::BoltNotWired { .. }
-            | Request::UnknownBoltVerb { .. }
-            | Request::UnknownLearningsVerb { .. }
-    )
 }
 
 /// U2 の分類器 (`StateVersionClassification`) を診断へ注入する — 分類規則は 1 箇所のまま、
@@ -429,13 +414,17 @@ mod tests {
                 )
             })
             .collect();
-        assert_eq!(required.len(), 26, "bugfix 必須集合の件数が変わった");
+        // 27 = 配布本文由来の 26 + 実行時の指示から加わった `intent create`
+        // (オーナー裁定 D15 の再列挙、D16 の配線)。
+        assert_eq!(required.len(), 27, "bugfix 必須集合の件数が変わった");
         for expected in [
             ("review-brief", Some("context")),
             ("review-brief", Some("review")),
             ("review-brief", Some("summary")),
             ("testing-posture", Some("brief")),
             ("statusline", None),
+            // 誕生の print が名指す入口も確認対象に含まれる。
+            ("intent", Some("create")),
         ] {
             assert!(
                 required

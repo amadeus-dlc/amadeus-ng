@@ -165,6 +165,28 @@ pub enum Request {
     },
 }
 
+impl Request {
+    /// 未知動詞・未配線動詞へ落ちない要求か。
+    ///
+    /// 受理／拒否の分類語彙は要求の型が所有する。呼出側（`runtime::doctor` の自己診断、
+    /// 契約テスト）が拒否ヴァリアントの集合を各々列挙すると、ヴァリアントを足したときに
+    /// 一部だけが追随して判定が食い違う（Tell, Don't Ask）。
+    #[must_use]
+    pub const fn is_wired(&self) -> bool {
+        !matches!(
+            self,
+            Request::UnknownOrchestrateVerb { .. }
+                | Request::UnknownUtilityVerb { .. }
+                | Request::UnknownLogVerb { .. }
+                | Request::StateNotWired { .. }
+                | Request::UnknownStateVerb { .. }
+                | Request::BoltNotWired { .. }
+                | Request::UnknownBoltVerb { .. }
+                | Request::UnknownLearningsVerb { .. }
+        )
+    }
+}
+
 /// upstream の `aidlc-bolt` が受理するが**この build には無い**動詞
 /// （ピン `3c3146cf` `aidlc-bolt.ts:881-908` の switch から `set-autonomy` を除いた 7）。
 const RECOGNISED_BOLT_VERBS: [&str; 7] = [

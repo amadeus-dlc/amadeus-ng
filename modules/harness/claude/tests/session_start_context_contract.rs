@@ -4,7 +4,9 @@
     clippy::panic,
     reason = "固定観測の欠落や未知の種別は、テストを即時失敗させる"
 )]
-use harness_claude::{SessionContextNotices, SessionStartContext, SessionWorkflowFields};
+use harness_claude::{
+    SessionCommandSpellings, SessionContextNotices, SessionStartContext, SessionWorkflowFields,
+};
 use serde_json::Value;
 
 fn field<'a>(value: &'a Value, name: &str) -> &'a str {
@@ -55,7 +57,16 @@ fn session_start_text_matches_every_fixed_rendering_observation() {
                         .map(|name| name.as_str().expect("stage").to_string())
                         .collect(),
                 );
-                SessionStartContext::workflow(&fields, session, &notices)
+                SessionStartContext::workflow(
+                    &fields,
+                    session,
+                    &notices,
+                    &SessionCommandSpellings::new(
+                        "aidlc engine orchestrate".into(),
+                        "aidlc engine jump execute".into(),
+                        "aidlc engine graph compile".into(),
+                    ),
+                )
             }
             "runtime" => SessionStartContext::runtime(session),
             "probe" => SessionStartContext::rebind_probe(session, field(input, "offer")),

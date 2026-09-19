@@ -2236,10 +2236,13 @@ fn next_doctor_routes_to_the_exact_terminal_utility_before_workflow_reads() {
         directive.get("kind").and_then(serde_json::Value::as_str),
         Some("print")
     );
+    // 案内文は本家のままだが、綴りは 2.8.2 のコンパイル済み実行形の出力に合わせる。
+    // doctor / version だけは engine を挟まない
+    // (`.claude/tools/aidlc-orchestrate.ts:4191` の `${aidlcInvocation()} ${sub}`)。
     assert_eq!(
         directive.get("message").and_then(serde_json::Value::as_str),
         Some(
-            "Run `bun .claude/tools/aidlc-utility.ts doctor`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage."
+            "Run `aidlc doctor`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run `next` and do NOT advance, resume, or run any workflow stage."
         )
     );
     assert!(!root.path().join("aidlc").exists());
@@ -2333,12 +2336,14 @@ fn a_bare_help_request_is_terminal() {
             directive.get("kind").and_then(serde_json::Value::as_str),
             Some("print")
         );
+        // help は 2.8.2 では engine の下の動詞である
+        // (`.claude/tools/aidlc-orchestrate.ts:4190` の `aidlcDispatcherInvocation("orchestrate help")`)。
         assert!(
             directive
                 .get("message")
                 .and_then(serde_json::Value::as_str)
                 .unwrap()
-                .starts_with("Run `bun .claude/tools/aidlc-utility.ts help`")
+                .starts_with("Run `aidlc engine orchestrate help`")
         );
     }
     assert!(!root.path().join("aidlc").exists());

@@ -9,6 +9,7 @@ use core_command_interface_adapter::orchestration::{
 };
 use core_command_use_case::orchestration::{PipelineLinkCommandError, RecordPipelineLinkUseCase};
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
+use core_query_use_case::orchestration::dispatcher_invocation;
 use std::{
     fs,
     io::Read as _,
@@ -236,6 +237,18 @@ pub(super) fn current(layout: &Layout) -> Option<PipelineHandoff> {
         .ok()
         .flatten()
 }
+/// pipeline link の不足を告げる拒否文言 (upstream `aidlc-orchestrate.ts:7916-7928` 逐語)。
+///
+/// 2.8.2 は呼び方だけでなく案内文も変えている — 不足したまま報告できないので `next` の
+/// 再実行を促し、却下が新しい試行を始めることを明記し、末尾を「古い受領証の再スタンプと
+/// 検査の無効化の禁止」で締める。綴りは `aidlcToolInvocation` が畳まれた二段形であり
+/// (`aidlc-runtime-paths.ts:155-168`)、クエリ側の綴りの規則 [`dispatcher_invocation`] で組む。
+///
+/// upstream が `--repo <repo>` を足すのは登録 repo を持つ pipeline のときだけである
+/// (`evidence.repos.length > 0`)。native の [`CommandError::PipelineLinksMissing`] は repo を
+/// 運ばない — repo 単位の pipeline を持たないので、この分岐は起こらない。
+///
+/// [`CommandError::PipelineLinksMissing`]: core_command_domain::orchestration::CommandError::PipelineLinksMissing
 pub(super) fn missing_wording(stage: &str, missing: &str, single: bool) -> String {
     let refusal = if single {
         format!(
@@ -246,9 +259,21 @@ pub(super) fn missing_wording(stage: &str, missing: &str, single: bool) -> Strin
             "Cannot present \"{stage}\" for approval because these pipeline handoffs have not been recorded for the current run"
         )
     };
+    let resume = if single {
+        format!(" --single --stage {stage}")
+    } else {
+        String::new()
+    };
+    let isolated = if single { " --single" } else { "" };
     format!(
-        "{refusal}: {missing}. After each link returns, run `bun .claude/tools/aidlc-log.ts link --stage {stage} --link <agent>{}`. Set AIDLC_DISABLE_ENSEMBLE_EVIDENCE=1 only to recover a legitimately-run in-flight pipeline.",
-        if single { " --single" } else { "" }
+        "{refusal}: {missing}. \
+         Re-run `{next}{resume}` \
+         and dispatch the missing pipeline links in their declared order, carrying the human's revision feedback. \
+         Rejection starts a new attempt: earlier scans and receipts cannot certify this revision, even for a targeted artifact edit. \
+         After each link returns, run `{link} --stage {stage} \
+         --link <agent>{isolated}`. Do not re-stamp an old handoff or disable evidence checks to reopen the gate.",
+        next = dispatcher_invocation("orchestrate next"),
+        link = dispatcher_invocation("log link"),
     )
 }
 
