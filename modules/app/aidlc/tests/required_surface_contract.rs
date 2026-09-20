@@ -11,6 +11,33 @@
 //! `tests/golden/selfhost-stage1/required-surface-sources/` に凍結した 2.8.2 の配布物であり、
 //! `.claude/settings.json` と `.claude/tools/aidlc.ts` をファイル全体で含む。
 //!
+//! # 列挙の範囲 — 配布本文と実行時の指示
+//!
+//! 入口は 2 つの出所から来る。
+//!
+//! 1. **配布本文** — 配布資産（スキル・プロトコル・ステージ定義・`settings.json` ほか）が
+//!    散文として綴る起動形。`sources[]` の実バイトから `aidlc engine …` を拾って数える。
+//! 2. **実行時の指示** — bugfix 1 周の実行中にエンジンとフックが出す directive・拒否文言・
+//!    案内文が綴るコマンド。2.8.2 ではこれらが `aidlcDispatcherInvocation` /
+//!    `aidlcToolInvocation` を通るので、綴りは同じ二段形になる。出所は
+//!    `runtime_directive_sources[]` が指し、各行が `upstream_site` でその位置を指す。
+//!
+//! 両方に現れる入口（`orchestrate next` など）は 1 行のまま、`sources_kind` に両方を持つ。
+//!
+//! # 出典の解決根 — 行の種別で決まる
+//!
+//! 出典は 2 通りの採り方をしていて、**どちらの群に属するかで解決根が決まる**。
+//!
+//! - 配布本文の出典（`sources[]` / `provenance.json` の `files[]`）は、配布物をこのリポジトリの
+//!   `tests/golden/selfhost-stage1/required-surface-sources/` へ写した複製である。
+//! - 実行時の指示の出典（`runtime_directive_sources[]` / `provenance.json` の
+//!   `runtime_directive_files[]`）は複製を作らず、リポジトリ直下に commit 済みの同じ 2.8.2
+//!   配布物（`.claude/**`）をその場で指す。`upstream_site` の行番号と文言はこの実バイトから
+//!   測っており、測定元を直接指すほうが記録が正確である。配布物が更新されれば sha256 照合が
+//!   落ち、実行時の指示を測り直す合図になる。
+//!
+//! 解けない行・指紋の合わない行を、もう一方の根へ読み替えたり読み飛ばしたりはしない。
+//!
 //! # `required-surface.json` に要る形
 //!
 //! ```text
@@ -19,11 +46,14 @@
 //!   "scope": "bugfix",
 //!   "upstream_version": "2.8.2",
 //!   "sources": ["tests/golden/selfhost-stage1/required-surface-sources/.claude/..."],
+//!   "runtime_directive_sources": [".claude/tools/aidlc-orchestrate.ts"],
 //!   "entries": [
 //!     {
 //!       "noun": "orchestrate",
 //!       "verb": "report",            // 動詞を取らない top ルートは null
-//!       "cites": ["<sources[] のパス>:<行>"],
+//!       "sources_kind": ["distribution", "runtime-directive"],
+//!       "cites": ["<sources[] のパス>:<行>"],           // distribution のときだけ要る
+//!       "upstream_site": ["<runtime_directive_sources[] のパス>:<行> <文言>"],  // runtime-directive のときだけ要る
 //!       "bugfix_required": true,
 //!       "condition": "必須/非必須と判定した根拠",
 //!       "mapping": {"face": "aidlc-orchestrate", "verb": "report"},  // 写像先が無ければ null
@@ -47,10 +77,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use aidlc::cli::{Face, Request, parse};
+use aidlc::cli::{Face, parse};
 
 #[path = "../../../../tests/support/coverage_profile_env.rs"]
 mod coverage_profile_env;
@@ -341,6 +371,65 @@ fn sources(surface: &serde_json::Value) -> Vec<String> {
         .collect()
 }
 
+/// 実行時の指示の出所（2.8.2 の生成箇所を凍結したファイル）。
+fn runtime_directive_sources(surface: &serde_json::Value) -> Vec<String> {
+    surface
+        .get("runtime_directive_sources")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| {
+            panic!(
+                "runtime_directive_sources が無い — 実行時の指示の出所が列挙の範囲に入っていない"
+            )
+        })
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .expect("runtime_directive_sources は文字列の配列")
+                .to_string()
+        })
+        .collect()
+}
+
+/// 出典の種別（`distribution` / `runtime-directive`）。
+fn source_kinds(entry: &serde_json::Value) -> BTreeSet<String> {
+    let label = entry_label(entry);
+    let listed = entry
+        .get("sources_kind")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("{label}: sources_kind が無い"));
+    assert!(!listed.is_empty(), "{label}: sources_kind が空である");
+    listed
+        .iter()
+        .map(|value| {
+            let kind = value
+                .as_str()
+                .unwrap_or_else(|| panic!("{label}: sources_kind は文字列の配列"));
+            assert!(
+                ["distribution", "runtime-directive"].contains(&kind),
+                "{label}: 出典の種別が未知の値である ({kind})"
+            );
+            kind.to_string()
+        })
+        .collect()
+}
+
+fn string_list(entry: &serde_json::Value, key: &str) -> Vec<String> {
+    let label = entry_label(entry);
+    entry
+        .get(key)
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("{label}: {key} が無い"))
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .unwrap_or_else(|| panic!("{label}: {key} は文字列の配列"))
+                .to_string()
+        })
+        .collect()
+}
+
 fn frozen_root() -> PathBuf {
     repo_root().join("tests/golden/selfhost-stage1/required-surface-sources")
 }
@@ -365,46 +454,106 @@ fn cited_line(cite: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// 出典の凍結 (2.8.2 の実バイト)
+// 出典と実バイトの照合 (2.8.2)
 // ---------------------------------------------------------------------------
 
-/// 凍結した出典は 2.8.2 配布物の実バイトであり、指紋つきで採取元が記録されている。
+/// 採取記録の 1 群を、その群だけの解決根で読み直して指紋を照合する。
+///
+/// 解決根はこの引数で 1 つに決まる。読めない行・指紋の合わない行をもう一方の根へ読み替える
+/// 回復経路は持たない（持てば、実体の無い記録が黙って通る）。
+fn recorded_bytes_match(provenance: &serde_json::Value, key: &str, root: &Path, required: &[&str]) {
+    let files = provenance[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("{key}: 採取記録が配列として無い"));
+    assert_eq!(
+        provenance["source"][key].as_u64(),
+        Some(files.len() as u64),
+        "{key}: 採取記録のファイル数と実体の数が食い違っている"
+    );
+    let listed: BTreeSet<String> = files.iter().map(|file| text(file, "path")).collect();
+    for entry in required {
+        assert!(
+            listed.contains(*entry),
+            "{entry}: {key} にファイル全体で記録されていない"
+        );
+    }
+    for file in files {
+        let relative = text(file, "path");
+        let path = root.join(&relative);
+        let bytes = fs::read(&path)
+            .unwrap_or_else(|error| panic!("{key} の出典が読めない ({}): {error}", path.display()));
+        assert_eq!(
+            core_infrastructure::hash::sha256_hex(&bytes),
+            text(file, "sha256"),
+            "{relative}: 記録した指紋と実バイトが一致しない ({})",
+            path.display()
+        );
+    }
+}
+
+/// 出典は 2.8.2 配布物の実バイトであり、指紋つきで採取元が記録されている。
+///
+/// 群ごとに解決根が違う（モジュール doc の「出典の解決根」）。配布本文の複製は
+/// `frozen_root()`、実行時の指示の正本はリポジトリ直下の `.claude/**` をそのまま指す。
 #[test]
 fn the_frozen_sources_are_the_2_8_2_distribution_bytes() {
     let provenance = provenance();
     assert_eq!(
         provenance["source"]["version"].as_str(),
         Some("2.8.2"),
-        "凍結した出典が 2.8.2 の配布物を指していない"
+        "出典が 2.8.2 の配布物を指していない"
     );
-    let files = provenance["files"].as_array().expect("files は配列");
-    assert_eq!(
-        provenance["source"]["files"].as_u64(),
-        Some(files.len() as u64),
-        "採取記録のファイル数と実体の数が食い違っている"
-    );
-    assert!(
-        provenance["source"]["captured_at"]
-            .as_str()
-            .is_some_and(|value| !value.is_empty()),
-        "採取日が記録されていない"
-    );
-    let listed: BTreeSet<String> = files.iter().map(|file| text(file, "path")).collect();
-    for required in [".claude/settings.json", ".claude/tools/aidlc.ts"] {
+    for key in [
+        "captured_at",
+        "captured_from",
+        "runtime_directive_captured_at",
+        "runtime_directive_captured_from",
+    ] {
         assert!(
-            listed.contains(required),
-            "{required} がファイル全体で凍結されていない"
+            provenance["source"][key]
+                .as_str()
+                .is_some_and(|value| !value.is_empty()),
+            "{key} が記録されていない — 採取元と採取日の無い出典は照合の根拠にならない"
         );
     }
-    for file in files {
-        let relative = text(file, "path");
-        let path = frozen_root().join(&relative);
-        let bytes = fs::read(&path)
-            .unwrap_or_else(|error| panic!("凍結した出典が読めない ({relative}): {error}"));
-        assert_eq!(
-            core_infrastructure::hash::sha256_hex(&bytes),
-            text(file, "sha256"),
-            "{relative}: 凍結したバイトと記録した指紋が一致しない"
+    recorded_bytes_match(
+        &provenance,
+        "files",
+        &frozen_root(),
+        &[".claude/settings.json", ".claude/tools/aidlc.ts"],
+    );
+    // 実行時の指示の正本 — 綴り規則の定義、エンジン側の呼び出し箇所、Stop フックと
+    // SessionStart フックの案内文。複製ではなくリポジトリ直下の実バイトを指す。
+    recorded_bytes_match(
+        &provenance,
+        "runtime_directive_files",
+        &repo_root(),
+        &[
+            ".claude/tools/aidlc-runtime-paths.ts",
+            ".claude/tools/aidlc-orchestrate.ts",
+            ".claude/hooks/aidlc-continue-workflow.ts",
+            ".claude/hooks/aidlc-session-start.ts",
+        ],
+    );
+}
+
+/// `upstream_site` が指せるファイルは、すべて指紋つきで採取記録に載っている。
+///
+/// 位置の照合（`a_runtime_directive_entry_cites_its_place_in_the_2_8_2_sources`）は、指した行に
+/// 文言が実在することしか見ない。出所が採取記録に無いままなら、配布物が更新されても
+/// 指紋照合が落ちず、乖離が黙って通る。
+#[test]
+fn every_runtime_directive_source_is_fingerprinted_in_the_provenance() {
+    let recorded: BTreeSet<String> = provenance()["runtime_directive_files"]
+        .as_array()
+        .expect("runtime_directive_files は配列")
+        .iter()
+        .map(|file| text(file, "path"))
+        .collect();
+    for path in runtime_directive_sources(&surface()) {
+        assert!(
+            recorded.contains(&path),
+            "{path}: 実行時の指示の出所として挙げながら sha256 が記録されていない"
         );
     }
 }
@@ -446,18 +595,18 @@ fn every_entry_carries_the_five_measured_fields() {
     for entry in entries {
         let label = entry_label(entry);
         // 1. 出典 file:line — その行が実際にその起動形を綴っている。
-        let cites = entry["cites"]
-            .as_array()
-            .unwrap_or_else(|| panic!("{label}: cites が無い"));
-        assert!(!cites.is_empty(), "{label}: 出典が無い");
+        //    配布本文から来た行だけが持つ（実行時の指示だけの行は `upstream_site` が担う）。
+        let cites = string_list(entry, "cites");
+        if source_kinds(entry).contains("distribution") {
+            assert!(!cites.is_empty(), "{label}: 配布本文の出典が無い");
+        }
         for cite in cites {
-            let cite = cite.as_str().expect("cites は文字列の配列");
             let path = cite.rsplit_once(':').expect("出典は path:line").0;
             assert!(
                 listed_sources.contains(path),
                 "{cite}: 列挙の対象外のファイル"
             );
-            let found = labels(&cited_line(cite));
+            let found = labels(&cited_line(&cite));
             assert!(
                 found.contains(&label),
                 "{cite}: その行に起動形 `aidlc engine {label}` が無い — 拾えたのは {found:?}"
@@ -498,11 +647,15 @@ fn every_entry_carries_the_five_measured_fields() {
 }
 
 /// 列挙は、凍結した出典が綴る起動形を取りこぼしても増やしてもいない。
+///
+/// 突き合わせるのは**配布本文由来の行**である。実行時の指示だけから来た行は、配布資産の
+/// 散文にその起動形が現れないので、この集合には入らない（`upstream_site` の検査が担う）。
 #[test]
 fn the_enumeration_matches_the_launch_forms_in_the_frozen_sources() {
     let surface = surface();
     let listed: BTreeSet<String> = entries(&surface)
         .iter()
+        .filter(|entry| source_kinds(entry).contains("distribution"))
         .map(|entry| entry_label(entry))
         .collect();
     let mut found: BTreeSet<String> = BTreeSet::new();
@@ -524,6 +677,112 @@ fn the_enumeration_matches_the_launch_forms_in_the_frozen_sources() {
         listed, found,
         "列挙と凍結バイトの起動形がずれている (左: 列挙、右: 実バイト)"
     );
+}
+
+/// 実行時の指示から来た行は、2.8.2 同梱ソースでの位置を持つ。
+///
+/// 位置は `<runtime_directive_sources[] のパス>:<行> <文言>` の形で、指した行にその文言が
+/// 実在することまで確かめる（配布本文の `cites` と同じ作法）。
+#[test]
+fn a_runtime_directive_entry_cites_its_place_in_the_2_8_2_sources() {
+    let surface = surface();
+    let listed: BTreeSet<String> = runtime_directive_sources(&surface).into_iter().collect();
+    assert!(
+        !listed.is_empty(),
+        "実行時の指示の出所が 1 件も凍結されていない"
+    );
+    let mut from_runtime = 0;
+    for entry in entries(&surface) {
+        let label = entry_label(entry);
+        let sites = string_list(entry, "upstream_site");
+        if !source_kinds(entry).contains("runtime-directive") {
+            assert!(
+                sites.is_empty(),
+                "{label}: 実行時の指示から来ていないのに upstream_site を持つ"
+            );
+            continue;
+        }
+        from_runtime += 1;
+        assert!(!sites.is_empty(), "{label}: 2.8.2 同梱ソースでの位置が無い");
+        for site in sites {
+            let (cite, marker) = site.split_once(' ').unwrap_or_else(|| {
+                panic!("{label}: 位置は `path:line <文言>` の形である ({site})")
+            });
+            let path = cite.rsplit_once(':').expect("位置は path:line").0;
+            assert!(
+                listed.contains(path),
+                "{label}: 実行時の指示の出所として凍結されていないファイル ({path})"
+            );
+            assert!(
+                cited_line(cite).contains(marker),
+                "{label}: {cite} にその文言が無い — {marker}"
+            );
+        }
+    }
+    assert!(
+        from_runtime > 0,
+        "実行時の指示から来た入口が 1 件も無い — 列挙の範囲が配布本文のままである"
+    );
+}
+
+/// 配布本文と実行時の指示の両方に現れる入口は、行を増やさず種別を 2 つ持つ。
+#[test]
+fn an_entry_both_sources_spell_stays_one_row_with_both_kinds() {
+    let surface = surface();
+    let mut shared = 0;
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for entry in entries(&surface) {
+        let label = entry_label(entry);
+        assert!(seen.insert(label.clone()), "{label}: 同じ入口が 2 行ある");
+        if source_kinds(entry).len() == 2 {
+            shared += 1;
+        }
+    }
+    assert!(
+        shared > 0,
+        "両方の出所に現れる入口が 1 件も無い — `orchestrate next` / `log link` は \
+         配布本文と実行時の指示の双方が綴る"
+    );
+}
+
+/// `intent create` は bugfix 必須の入口として受理済みになっている。
+///
+/// bugfix 1 周の開始でエンジンがこの指示を出す（`order.md` §1 の失敗点）。写像先の一段形は
+/// 実装済みなので、分類は「写像だけで受理可能」である。
+#[test]
+fn the_intent_create_entry_is_required_and_accepted() {
+    let surface = surface();
+    let entry = entries(&surface)
+        .into_iter()
+        .find(|entry| entry_label(entry) == "intent create")
+        .unwrap_or_else(|| {
+            panic!("`intent create` が列挙に無い — 実行時の指示の入口が数えられていない")
+        });
+    assert_eq!(
+        entry["bugfix_required"].as_bool(),
+        Some(true),
+        "`intent create`: bugfix 1 周の開始で出る指示が必須になっていない"
+    );
+    assert!(
+        source_kinds(entry).contains("runtime-directive"),
+        "`intent create`: 実行時の指示から来た出典を持たない"
+    );
+    assert_eq!(
+        text(entry, "acceptance"),
+        "accepted",
+        "`intent create`: 受理状況が accepted でない"
+    );
+    assert_eq!(
+        text(entry, "classification"),
+        "mapped",
+        "`intent create`: 写像だけで受理可能と分類されていない"
+    );
+    let mapping = entry
+        .get("mapping")
+        .filter(|value| !value.is_null())
+        .unwrap_or_else(|| panic!("`intent create`: 写像先が無い"));
+    assert_eq!(text(mapping, "face"), "aidlc-utility");
+    assert_eq!(text(mapping, "verb"), "intent-create");
 }
 
 /// bugfix 1 周で踏まない入口も、列挙から落とさず根拠つきで残す。
@@ -553,19 +812,12 @@ fn an_entry_the_bugfix_loop_does_not_walk_is_still_listed_with_its_reason() {
 // ---------------------------------------------------------------------------
 
 /// 写像先の一段形をこの build が拒否するか。
+///
+/// 面名と動詞名から一段形 argv を組むのがここの責務で、受理／拒否の判定そのものは
+/// 要求の型が所有する（`Request::is_wired`）。
 fn one_stage_refuses(face: &str, verb: &str) -> bool {
     let argv = vec![verb.to_string()];
-    matches!(
-        parse(Face::of(face), &argv),
-        Request::UnknownOrchestrateVerb { .. }
-            | Request::UnknownUtilityVerb { .. }
-            | Request::UnknownLogVerb { .. }
-            | Request::StateNotWired { .. }
-            | Request::UnknownStateVerb { .. }
-            | Request::BoltNotWired { .. }
-            | Request::UnknownBoltVerb { .. }
-            | Request::UnknownLearningsVerb { .. }
-    )
+    !parse(Face::of(face), &argv).is_wired()
 }
 
 /// argv の写像だけでは受理/拒否が決まらない面 (引数をそのまま運ぶ面)。

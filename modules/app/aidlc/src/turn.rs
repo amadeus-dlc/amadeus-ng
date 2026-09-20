@@ -1434,13 +1434,10 @@ mod tests {
 
         let directive = pre_guard(&input).expect("答えが決まる");
 
-        assert_eq!(
-            message_of(&directive),
-            wording::read_only("bun .claude/tools/aidlc-utility.ts doctor")
-        );
+        assert_eq!(message_of(&directive), wording::read_only("aidlc doctor"));
     }
 
-    /// workspace名詞のlistは本家の短縮形へ写し、終端ユーティリティとして名指す。
+    /// workspace名詞のlistは本家の route へ開き、終端ユーティリティとして名指す。
     #[test]
     fn the_pre_guard_passes_noun_tokens_through_verbatim() {
         let input = NextTurnInput::new().with_noun_token(NounToken::new(
@@ -1452,7 +1449,7 @@ mod tests {
 
         assert_eq!(
             message_of(&directive),
-            "Run `bun .claude/tools/aidlc-utility.ts intent`, print its output verbatim, then stop."
+            "Run `aidlc engine intent list`, print its output verbatim, then stop."
         );
     }
 
@@ -1704,7 +1701,7 @@ mod tests {
                 "absent"
             )),
             wording::execute_jump(
-                "bun .claude/tools/aidlc-jump.ts execute --target contract-design --direction forward --scope classic"
+                "aidlc engine jump execute --target contract-design --direction forward --scope classic"
             )
         );
     }
@@ -1913,7 +1910,7 @@ mod tests {
         assert_eq!(kind_of(&directive), "print");
         let message = message_of(&directive);
         assert!(
-            message.contains("intent-create --scope express"),
+            message.contains("intent create --scope express"),
             "{message}"
         );
         assert!(
@@ -2629,7 +2626,7 @@ mod tests {
 
         assert_eq!(
             message_of(&next(&layout, &NextTurnInput::new().with_resume())),
-            wording::unpark_then_resume("bun .claude/tools/aidlc-state.ts unpark")
+            wording::unpark_then_resume("aidlc engine state unpark")
         );
     }
 

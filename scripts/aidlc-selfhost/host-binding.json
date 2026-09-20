@@ -42,8 +42,8 @@
       "status": "met",
       "evidence": {
         "command": "cargo build --release -p aidlc && target/release/aidlc --doctor",
-        "ran_at": "2026-09-15T10:42:57Z",
-        "result": "28 passed, 0 failed, 終了コード 0。Native engine entry points は required-surface.json の bugfix 必須 26 件の二段形と NATIVE_HOOKS の 14 名前を確認対象に含む。実行されなかった検査 ID は D2.c / D4.a / D4.b / D4.c / D5.a / D5.b の 6 件で、いずれも合格に数えていない。"
+        "ran_at": "2026-09-19T07:32:06Z",
+        "result": "28 passed, 0 failed、終了コード 0 (検査行 28 行はすべて ✓、✗ の行 0 件、stdout 全体 32 行、stderr 0 バイト)。測定した実体の指紋は sha256 69ae73b4c48c09c860d2c35036f0e09307036e8fa1dc58b6af95c3ab2944a8ad。この指紋は --doctor を走らせた実体そのものから採った: cargo build --release -p aidlc (終了コード 0) の直後に shasum -a 256 target/release/aidlc で採り、続けて同じ実体を起動した。ビルドは再コンパイルを起こさず Finished `release` profile in 0.17s で終えたので、この実体は現在のビルド入力のものである。実行されなかった検査 ID は D2.c / D4.a / D4.b / D4.c / D5.a / D5.b の 6 件で、いずれも合格に数えていない (上の 28 件は実際に出力された行だけを数えた)。D2.c は hook_checks.rs:62-67 が wiring.managed_hooks_only() のときだけ失敗行を足す検査で、組織ポリシーによるフック制限が掛かっていないため行が出ない。D4 / D5 は doctor_checks.rs:46 が observation.record() を Some のときだけ評価するため、作業記録の無いワークスペースでは非適用として行が出ない。採取条件: イベントストアだけが残っている状態で実行すると record.rs:22 の None 条件が崩れて D4.b / D4.c / D5.b が failed になり終了コードが 1 になるため、この測定は記録もイベントストアも無い状態で採った。具体的には gitignore 済みの aidlc/spaces/default/intents/.aidlc-store.sqlite を測定のあいだだけ作業ツリー外へ退避し、測定後に元の位置とサイズ (1331200 バイト) へ戻した。--doctor は新しいストアを作らなかったことを測定後に確認している。"
       },
       "how": "同じ実体で target/release/aidlc --doctor を本リポジトリで実行し、終了コード 0 と失敗 0 を採る。"
     },

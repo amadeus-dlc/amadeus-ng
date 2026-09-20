@@ -271,7 +271,35 @@ fn state_mutation(verb: &str) -> bool {
                 | "unpark"
         )
 }
+/// 二段形が前置する名前空間トークン。
+const ENGINE_NAMESPACE: &str = "engine";
+/// ディスパッチャ面の進行コマンドを、名前空間を剥がしてから分類する。
+///
+/// 本家 `delegatedDispatcherCommand` (`.claude/hooks/aidlc-state-transition-guard.ts:774-778`)
+/// と同じく、先頭の名前空間トークンを剥がしてから一段形と同じ規則で読み、拒否文の接頭辞には
+/// 剥がした名前空間を戻す。剥がさないと `aidlc engine intent create` がどの腕にも当たらず、
+/// 委譲エージェントが作業記録を作れてしまう。
+///
+/// 本家が併せて剥がす `system` は写さない。`EngineRoute::resolve`
+/// (`modules/app/aidlc/src/cli/engine_route.rs:320-323`) は先頭が `engine` のときだけ働くので、
+/// `aidlc system …` で届く native の経路が無く、守る不変条件が無いためである。
+///
+/// `orchestrate` の 4 動詞は二段形も一段形と同じ進行コマンドとして分類する。native は
+/// `WIRED` (`engine_route.rs:53-56`) で `orchestrate next|continue|report|park` を運ぶので、
+/// 一段形だけを見ていると委譲エージェントが二段形でガードを抜ける。読み取り専用の
+/// `orchestrate help` は本家の一段形と同じく素通りさせる。
 fn dispatcher(prefix: &str, args: &ShellWords) -> Option<String> {
+    let namespaced = args.at(0) == Some(ENGINE_NAMESPACE);
+    let prefix = if namespaced {
+        format!("{prefix} {ENGINE_NAMESPACE}")
+    } else {
+        prefix.to_string()
+    };
+    let args = if namespaced {
+        args.suffix(1)
+    } else {
+        args.clone()
+    };
     let group = args.at(0).unwrap_or("");
     let verb = args.at(1).unwrap_or("");
     if matches!(
@@ -291,13 +319,14 @@ fn dispatcher(prefix: &str, args: &ShellWords) -> Option<String> {
         return Some(format!("{prefix} {group}"));
     }
     if (group == "scope" && verb == "change")
+        || (group == "orchestrate" && matches!(verb, "next" | "continue" | "report" | "park"))
         || (group == "state" && state_mutation(verb))
         || (group == "jump" && verb == "execute")
         || (group == "config" && verb == "set")
     {
         return Some(format!("{prefix} {group} {verb}"));
     }
-    workspace(prefix, args)
+    workspace(&prefix, &args)
 }
 fn utility(prefix: &str, args: &ShellWords) -> Option<String> {
     let mut positional = Vec::new();
@@ -556,6 +585,46 @@ mod tests {
             found("bun aidlc-state.ts practices-promote").as_deref(),
             Some("aidlc-state.ts practices-promote")
         );
+    }
+
+    /// 二段形は名前空間を剥がしてから分類され、拒否文には剥がした `engine` が戻る。
+    ///
+    /// 剥がしが過剰でも過少でもないことを、同じ名詞の読み取り専用動詞（`intent list`）、
+    /// 第 2 の条件が受ける組（`state fork`）、名前空間だけで動詞が無い境界（`aidlc engine`）と
+    /// 並べて固定する。
+    #[test]
+    fn the_engine_namespace_is_stripped_before_the_dispatcher_classifies_the_verb() {
+        assert_eq!(
+            found("aidlc engine intent create --scope bugfix --arguments='fix the crash'")
+                .as_deref(),
+            Some("aidlc engine intent create")
+        );
+        assert_eq!(found("aidlc engine intent list").as_deref(), None);
+        assert_eq!(
+            found("aidlc engine state fork").as_deref(),
+            Some("aidlc engine state fork")
+        );
+        assert_eq!(found("aidlc engine").as_deref(), None);
+    }
+
+    /// `orchestrate` の 4 動詞は二段形でも進行コマンドである。
+    ///
+    /// native は `engine_route.rs` の `WIRED` で `orchestrate next|continue|report|park` を
+    /// 運ぶので、一段形だけを見ていると委譲エージェントが二段形でガードを抜ける。
+    /// 読み取り専用の `orchestrate help` が素通りすることも併せて固定する。
+    #[test]
+    fn the_two_part_orchestrate_verbs_are_progress_commands_like_their_one_part_forms() {
+        for verb in ["next", "continue", "report", "park"] {
+            assert_eq!(
+                found(&format!("aidlc engine orchestrate {verb}")).as_deref(),
+                Some(format!("aidlc engine orchestrate {verb}").as_str())
+            );
+            assert_eq!(
+                found(&format!("aidlc orchestrate {verb}")).as_deref(),
+                Some(format!("aidlc orchestrate {verb}").as_str())
+            );
+        }
+        assert_eq!(found("aidlc engine orchestrate help").as_deref(), None);
     }
 
     #[test]

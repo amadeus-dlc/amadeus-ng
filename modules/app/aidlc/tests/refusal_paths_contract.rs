@@ -1326,6 +1326,12 @@ async fn session_start_reports_the_active_unit_and_uncompiled_stage_files() {
         "{context}"
     );
     assert!(context.contains("mystery-stage"), "{context}");
+    // 乖離通知が案内するコマンドは、合成ルートが綴りの規則から組んで渡したものである
+    // (2.8.2 `.claude/hooks/aidlc-session-start.ts:359`)。
+    assert!(
+        context.contains("Run `aidlc engine graph compile` to include them"),
+        "{context}"
+    );
     assert!(!context.contains("code-generation.md"), "{context}");
 }
 
@@ -1692,13 +1698,30 @@ fn workspace_stage(workspace: &Workspace, space: &str) -> String {
 // next — 名詞トークンの終端案内と brownfield のコスト節
 // ---------------------------------------------------------------------------
 
+/// plugin と DocumentKB の名詞は、2.8.2 と同じ呼び方で終端ユーティリティを名指す。
+///
+/// 綴りは分岐ごとに違う — plugin は `plugin <verb>` の route へ開いた二段形
+/// (`.claude/tools/aidlc-orchestrate.ts:4247-4250`)、DocumentKB だけは 2.8.2 も engine を挟まず
+/// 専用ツールを名指す (`:4269`)。
+///
+/// `plugin-create` は native 固有の入口である。upstream の `parsePluginCommand`
+/// (`.claude/tools/aidlc-lib.ts:1018`) は `args[0] === "plugin"` のときだけ plugin コマンドとして
+/// 成立させるので、`next plugin-create <name>` は 2.8.2 では plugin 分岐に入らず自由記述へ
+/// 落ちる。追従先の綴りが 2.8.2 に存在しないため、先頭トークンをそのまま route にした
+/// 現在の形を固定する (綴りを推測しない — `order.md` D14)。
 #[tokio::test]
 async fn plugin_and_knowledge_nouns_are_terminal_utilities_not_workflow_work() {
     let workspace = Workspace::new();
-    for tokens in [
-        vec!["plugin", "list"],
-        vec!["plugin-create", "my-plugin"],
-        vec!["knowledge", "list"],
+    for (tokens, spelled) in [
+        (vec!["plugin", "list"], "aidlc engine plugin list"),
+        (
+            vec!["plugin-create", "my-plugin"],
+            "aidlc engine plugin-create my-plugin",
+        ),
+        (
+            vec!["knowledge", "list"],
+            "bun .claude/tools/aidlc-knowledge.ts list",
+        ),
     ] {
         let mut args = vec!["next"];
         args.extend(tokens.iter().copied());
@@ -1706,11 +1729,7 @@ async fn plugin_and_knowledge_nouns_are_terminal_utilities_not_workflow_work() {
         assert_eq!(directive.get("kind").unwrap(), "print", "{directive}");
         assert_eq!(
             directive.get("message").unwrap(),
-            aidlc::wording::terminal_utility(&format!(
-                "bun .claude/tools/aidlc-utility.ts {}",
-                tokens.join(" ")
-            ))
-            .as_str()
+            aidlc::wording::terminal_utility(spelled).as_str()
         );
     }
     assert!(

@@ -637,6 +637,92 @@ fn reports_require_the_complete_current_pipeline_before_opening_or_approving_a_g
     }
 }
 
+/// pipeline link の不足を告げる拒否文言は、綴りも案内文も 2.8.2 と一致する。
+///
+/// 2.8.2（`.claude/tools/aidlc-orchestrate.ts:7918-7931`）はこの場面で
+/// (a) `aidlc engine orchestrate next` の再実行を促し、(b) `--repo <repo>` を登録 repo が
+/// あるときだけ足し、(c) 末尾を「再スタンプ・検査無効化の禁止」で締める。呼び方だけでなく
+/// 案内文の内容も 2.8.2 に合わせる（`order.md` D14 末尾）。
+#[test]
+fn the_pipeline_link_refusal_carries_the_2_8_2_wording() {
+    let workspace = Workspace::new();
+    workspace.start();
+    workspace.handoff("fresh");
+    let output = workspace.engine(&[
+        "report",
+        "--stage",
+        "reverse-engineering",
+        "--result",
+        "awaiting-approval",
+        "--user-input",
+        "Approve",
+    ]);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        text(&value, "message"),
+        concat!(
+            "Cannot present \"reverse-engineering\" for approval because these pipeline handoffs ",
+            "have not been recorded for the current run: aidlc-developer-agent, ",
+            "aidlc-architect-agent. Re-run `aidlc engine orchestrate next` and dispatch the ",
+            "missing pipeline links in their declared order, carrying the human's revision ",
+            "feedback. Rejection starts a new attempt: earlier scans and receipts cannot certify ",
+            "this revision, even for a targeted artifact edit. After each link returns, run ",
+            "`aidlc engine log link --stage reverse-engineering --link <agent>`. Do not ",
+            "re-stamp an old handoff or disable evidence checks to reopen the gate.",
+        ),
+        "{value:?}"
+    );
+    // 登録 repo の無い intent では `--repo <repo>` を足さない（2.8.2 の条件付き分岐）。
+    assert!(
+        !text(&value, "message").contains("--repo <repo>"),
+        "{value:?}"
+    );
+}
+
+/// 隔離実行（`--single`）の拒否文言も、綴りと案内文が 2.8.2 と一致する。
+///
+/// 2.8.2（`.claude/tools/aidlc-orchestrate.ts:7916-7928`）は `singleRun` のとき 3 か所を変える
+/// — 冒頭を `Cannot complete an isolated run of "<slug>"` に替え、再実行指示へ
+/// ` --single --stage <slug>` を足し、`log link` の末尾へ ` --single` を足す。通常実行の文言
+/// （`Cannot present "…" for approval`）が混ざらないことも併せて固定する。
+#[test]
+fn the_isolated_run_pipeline_link_refusal_carries_the_2_8_2_wording() {
+    let workspace = Workspace::new();
+    workspace.start();
+    workspace.handoff("fresh");
+    // 隔離実行の試行を開く（受領証は 1 件も記録しない）。
+    let started = workspace.engine(&["next", "--stage", "reverse-engineering", "--single"]);
+    assert!(started.status.success(), "{started:?}");
+    let output = workspace.engine(&[
+        "report",
+        "--stage",
+        "reverse-engineering",
+        "--single",
+        "--result",
+        "completed",
+    ]);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        text(&value, "message"),
+        concat!(
+            "Cannot complete an isolated run of \"reverse-engineering\" because these pipeline ",
+            "handoffs have not been recorded for this isolated run: aidlc-developer-agent, ",
+            "aidlc-architect-agent. Re-run `aidlc engine orchestrate next --single --stage ",
+            "reverse-engineering` and dispatch the missing pipeline links in their declared ",
+            "order, carrying the human's revision feedback. Rejection starts a new attempt: ",
+            "earlier scans and receipts cannot certify this revision, even for a targeted ",
+            "artifact edit. After each link returns, run `aidlc engine log link --stage ",
+            "reverse-engineering --link <agent> --single`. Do not re-stamp an old handoff or ",
+            "disable evidence checks to reopen the gate.",
+        ),
+        "{value:?}"
+    );
+    // 通常実行の文言と、到達しない `--repo` 分岐が混ざらない。
+    for absent in ["for approval", "--repo <repo>"] {
+        assert!(!text(&value, "message").contains(absent), "{value:?}");
+    }
+}
+
 #[test]
 fn single_pipeline_requires_its_own_open_attempt_and_receipts() {
     let workspace = Workspace::new();

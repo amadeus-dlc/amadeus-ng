@@ -5,7 +5,10 @@ use super::{
 };
 use crate::{intent_location::IntentLocation, session_navigation::SessionNavigation};
 use core_command_domain::workspace::{AuditFieldKey, AuditFields, EventType};
-use harness_claude::{SessionContextNotices, SessionStartContext, SessionWorkflowFields};
+use core_query_use_case::orchestration::dispatcher_invocation;
+use harness_claude::{
+    SessionCommandSpellings, SessionContextNotices, SessionStartContext, SessionWorkflowFields,
+};
 
 pub(super) async fn run(layout: &Layout, input: &str) -> Completion {
     let envelope = harness_claude::SessionStartEnvelope::parse(input);
@@ -187,7 +190,14 @@ pub(super) async fn run(layout: &Layout, input: &str) -> Completion {
         .is_some_and(|record| record.join(".aidlc-recovery.md").exists());
     let notices =
         SessionContextNotices::new(rebind_offer, unit, recovery, uncompiled_stages(&selected));
-    Completion::emitted(SessionStartContext::workflow(&fields, session, &notices).to_json_line())
+    let spellings = SessionCommandSpellings::new(
+        dispatcher_invocation("orchestrate"),
+        dispatcher_invocation("jump execute"),
+        dispatcher_invocation("graph compile"),
+    );
+    Completion::emitted(
+        SessionStartContext::workflow(&fields, session, &notices, &spellings).to_json_line(),
+    )
 }
 
 fn uncompiled_stages(layout: &Layout) -> Vec<String> {

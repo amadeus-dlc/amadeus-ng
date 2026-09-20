@@ -49,7 +49,7 @@ const ENGINE: &str = "engine";
 /// 一段形の動詞になり、二段形の verb は**最初の位置引数**として渡る組もある
 /// （`noun-passthrough` — 本家 `handleIntent` は `positional[1]` を読む）。動詞 1 語だけを
 /// 持つと後者で verb が落ちるので、運ぶ形をそのまま書く。
-const WIRED: [(&str, &str, Face, &[&str]); 27] = [
+const WIRED: [(&str, &str, Face, &[&str]); 28] = [
     ("orchestrate", "next", Face::Orchestrate, &["next"]),
     ("orchestrate", "continue", Face::Orchestrate, &["continue"]),
     ("orchestrate", "report", Face::Orchestrate, &["report"]),
@@ -111,6 +111,10 @@ const WIRED: [(&str, &str, Face, &[&str]); 27] = [
     ("review-brief", "summary", Face::ReviewBrief, &["summary"]),
     ("gen", "scope-table", Face::Utility, &["scope-table"]),
     ("gen", "stage-table", Face::Utility, &["stage-table"]),
+    // noun-map — 本家 `handleWorkspace` は `intent create` を一段形の動詞 `intent-create` へ
+    // 翻訳する。verb は位置引数として残らないので、`intent list` の passthrough とは運び方が
+    // 違う。bugfix 1 周の誕生 print がこの入口を名指す (オーナー裁定 D16)。
+    ("intent", "create", Face::Utility, &["intent-create"]),
     // noun-passthrough — 一段形の動詞は noun 側で決まり、verb は位置引数として渡る。
     ("intent", "list", Face::Utility, &["intent", "list"]),
 ];

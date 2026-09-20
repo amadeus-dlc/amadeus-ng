@@ -245,8 +245,15 @@ fn doctor_is_an_orchestrate_entry_that_takes_no_extra_arguments() {
         directive["kind"], "print",
         "`next --doctor` は本家どおり TS 委譲の print のまま"
     );
+    // 2.8.2 は読み取り専用のうち doctor / version だけ engine を挟まず `aidlc <sub>` を綴る
+    // (`.claude/tools/aidlc-orchestrate.ts:4191` の `${aidlcInvocation()} ${sub}`)。
     assert!(
-        stdout(&next_doctor).contains("bun .claude/tools/aidlc-utility.ts doctor"),
+        stdout(&next_doctor).contains("Run `aidlc doctor`"),
+        "{}",
+        stdout(&next_doctor)
+    );
+    assert!(
+        !stdout(&next_doctor).contains("bun .claude/tools/"),
         "{}",
         stdout(&next_doctor)
     );

@@ -316,7 +316,9 @@ async fn new_intent_names_the_mint_command_with_its_cost_clause() {
     assert_eq!(kind(&directive), "print");
     let message = field(&directive, "message");
     assert!(
-        message.contains("intent-create --scope classic --arguments='build the auth service'"),
+        message.contains(
+            "aidlc engine intent create --scope classic --arguments='build the auth service'"
+        ),
         "{message}"
     );
     assert!(message.contains("stages,"), "コスト節が付く: {message}");
@@ -383,7 +385,7 @@ async fn a_differing_valid_scope_names_one_scope_change_command() {
     assert_eq!(kind(&directive), "print");
     let message = field(&directive, "message");
     assert!(
-        message.contains("scope-change --scope express"),
+        message.contains("aidlc engine scope change --scope express"),
         "{message}"
     );
     assert!(
@@ -392,7 +394,11 @@ async fn a_differing_valid_scope_names_one_scope_change_command() {
     );
 }
 
-/// scope を変えない設定変更は config-change の命令になる。
+/// scope を変えない設定変更は `config set` の命令になる。
+///
+/// 2.8.2 は修飾のうち先頭の 1 つを route のキーに据えるので、単独の `--test-strategy` は
+/// フラグではなく `config set test-strategy <値>` の形で載る
+/// (`.claude/tools/aidlc-orchestrate.ts:4611-4622`)。
 #[tokio::test]
 async fn a_configuration_change_without_a_scope_names_config_change() {
     let workspace = Workspace::create();
@@ -402,8 +408,10 @@ async fn a_configuration_change_without_a_scope_names_config_change() {
 
     assert_eq!(kind(&directive), "print");
     let message = field(&directive, "message");
-    assert!(message.contains("config-change"), "{message}");
-    assert!(message.contains("--test-strategy minimal"), "{message}");
+    assert!(
+        message.contains("aidlc engine config set test-strategy minimal"),
+        "{message}"
+    );
 }
 
 /// `--resume` は現在ステージの規則束から再開する（固定本家 2.7.1）。
@@ -430,7 +438,7 @@ async fn a_stage_jump_names_the_execute_command() {
     assert_eq!(kind(&directive), "print");
     assert!(
         field(&directive, "message").contains(
-            "aidlc-jump.ts execute --target contract-design --direction forward --scope classic"
+            "aidlc engine jump execute --target contract-design --direction forward --scope classic"
         ),
         "{directive:?}"
     );
@@ -476,7 +484,7 @@ async fn a_phase_jump_names_the_first_stage_of_that_phase() {
 
     assert_eq!(kind(&directive), "print");
     assert!(
-        field(&directive, "message").contains("aidlc-jump.ts execute --target "),
+        field(&directive, "message").contains("aidlc engine jump execute --target "),
         "{directive:?}"
     );
 }
@@ -583,7 +591,7 @@ async fn an_explicit_scope_on_a_fresh_workspace_names_the_mint_command() {
     assert_eq!(kind(&directive), "print");
     let message = field(&directive, "message");
     assert!(
-        message.contains("intent-create --scope express"),
+        message.contains("aidlc engine intent create --scope express"),
         "{message}"
     );
     assert!(
@@ -601,7 +609,7 @@ async fn a_positional_scope_name_on_a_fresh_workspace_names_the_mint_command() {
 
     assert_eq!(kind(&directive), "print");
     assert!(
-        field(&directive, "message").contains("intent-create --scope express"),
+        field(&directive, "message").contains("aidlc engine intent create --scope express"),
         "{directive:?}"
     );
 }

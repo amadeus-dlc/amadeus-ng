@@ -78,8 +78,9 @@ use core_infrastructure::canon_json::{
 };
 use core_query_interface_adapter::{ReadModelDaos, StateFileDaoImpl, verify_continue_token};
 use core_query_use_case::orchestration::{
-    Directive, FindDefinitionStageUseCase, FindExecutionUseCase, FindStateFileUseCase,
-    NextTurnInput, StageSlugView,
+    Directive, EngineCommand, FindDefinitionStageUseCase, FindExecutionUseCase,
+    FindRunStageUseCase, FindStateFileUseCase, NextTurnInput, ScopeSlugView, StageModeView,
+    StageSlugView, dispatcher_invocation,
 };
 use core_read_model_updater::orchestration::{
     HookHealthReadModelUpdater, JournalReaderImpl, ProjectionName, ProjectionTargets,
@@ -622,11 +623,15 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     // 書いた事実をリードモデルへ落とす（U7 の責務「コマンド末尾の RMU 起動」）。
     // ここは握り潰さない — 描けなければ利用者には何も見えないままになる。
     after_projection(layout, || {
-        let result = ReadModelDaos::open(store.as_path()).and_then(|daos| {
-            ReportResultUseCase::new(daos.report_result()).execute(report_id.as_str())
-        });
-        match result {
-            Ok(Some(view)) => emit(Ok((committed_directive(raw, &view), Vec::new()))),
+        let daos = match ReadModelDaos::open(store.as_path()) {
+            Ok(daos) => daos,
+            Err(error) => return emit_error(wording::orchestrate_failure(&error.to_string())),
+        };
+        match ReportResultUseCase::new(daos.report_result()).execute(report_id.as_str()) {
+            Ok(Some(view)) => emit(Ok((
+                committed_directive(raw, &view, || reported_stage_mode(layout, &daos, &view)),
+                Vec::new(),
+            ))),
             Ok(None) => emit_error(wording::orchestrate_failure(
                 "report result unavailable after projection",
             )),
@@ -634,6 +639,27 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         }
     })
     .await
+}
+
+/// 報告したステージのトポロジ（`read_run_stage.mode`）を引く。
+///
+/// 読めない・行が無い・閉集合の外は、どれも代わりの値で続けず失敗として返す。
+fn reported_stage_mode(
+    layout: &Layout,
+    daos: &ReadModelDaos,
+    outcome: &ReportResultView,
+) -> Result<StageModeView, String> {
+    let definition_id =
+        definition_id(layout).map_err(|message| wording::orchestrate_failure(&message))?;
+    let row = FindRunStageUseCase::new(daos.run_stage())
+        .execute(definition_id.as_str(), outcome.scope(), outcome.stage())
+        .map_err(|error| wording::orchestrate_failure(&error.to_string()))?
+        .ok_or_else(|| {
+            wording::orchestrate_failure("reported stage row unavailable after projection")
+        })?;
+    StageModeView::parse(row.mode()).map_err(|error| {
+        wording::orchestrate_failure(&format!("invalid projected stage mode: {error}"))
+    })
 }
 
 /// 段 1 — 状態ファイルの `State Version` を分類し、`ok` 以外の逐語を返す。
@@ -876,7 +902,10 @@ fn resume_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         other => other,
     };
     let message = if choice.contains("redo") {
-        wording::resume_redo(&stage, &scope)
+        match redo_spelling(&stage, &scope) {
+            Ok(spelled) => wording::resume_redo(&stage, &spelled),
+            Err(message) => return emit_error(message),
+        }
     } else if choice.contains("jump") {
         wording::RESUME_JUMP.to_string()
     } else if choice.contains("fresh") || choice.contains("start over") {
@@ -897,6 +926,28 @@ fn resume_report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
         },
         Vec::new(),
     )))
+}
+
+/// やり直しが名指す `jump execute` の綴り（upstream `:8230` の `aidlcToolInvocation("jump")`）。
+///
+/// 分岐 7 の jump と同じ [`EngineCommand::ExecuteJump`] から組む。実行行の値が slug として
+/// 読めなければ、代わりの綴りで続けず error directive にする。
+fn redo_spelling(stage: &str, scope: &str) -> Result<String, String> {
+    let invalid = |column: &str, value: &str, cause: &dyn std::fmt::Display| {
+        wording::orchestrate_failure(&format!(
+            "invalid projected execution row: {column} \"{value}\" ({cause})"
+        ))
+    };
+    let target =
+        StageSlugView::parse(stage).map_err(|error| invalid("cursor_slug", stage, &error))?;
+    let scope_slug =
+        ScopeSlugView::parse(scope).map_err(|error| invalid("scope", scope, &error))?;
+    Ok(EngineCommand::ExecuteJump {
+        stage: target,
+        direction: "redo".to_string(),
+        scope: scope_slug,
+    }
+    .cli_spelling())
 }
 
 /// 空白だけの `--stage` は「無い」と同じ（upstream の `flags.stage?.trim()`）。
@@ -952,7 +1003,15 @@ fn current_execution_view(layout: &Layout) -> Result<Option<(String, String)>, S
 }
 
 /// 成功 3 形を directive へ写す（`raw` は報告された生の語）。
-fn committed_directive(raw: &str, outcome: &ReportResultView) -> Directive {
+///
+/// 却下だけは報告したステージのトポロジで文言が分かれる（2.8.2 `:8793` — pipeline の却下は
+/// 新しい試行の案内になる）。`stage_mode` はその分岐でだけ呼ぶ引き当てで、引けなければ
+/// 代わりの文言で続けず error directive にする。
+fn committed_directive(
+    raw: &str,
+    outcome: &ReportResultView,
+    stage_mode: impl FnOnce() -> Result<StageModeView, String>,
+) -> Directive {
     let invalid = || Directive::Error {
         message: wording::orchestrate_failure("invalid projected report result"),
     };
@@ -965,7 +1024,21 @@ fn committed_directive(raw: &str, outcome: &ReportResultView) -> Directive {
             };
             let names: Vec<&str> = steps.iter().map(String::as_str).collect();
             match names.as_slice() {
-                ["gate-start" | "reject" | "revise"] => Directive::Print {
+                ["reject"] => match stage_mode() {
+                    Ok(StageModeView::Pipeline) => Directive::Print {
+                        message: wording::recorded_pipeline_rejection(
+                            stage,
+                            &dispatcher_invocation("orchestrate next"),
+                        ),
+                        narration: None,
+                    },
+                    Ok(_) => Directive::Print {
+                        message: wording::recorded_result(raw, stage),
+                        narration: None,
+                    },
+                    Err(message) => Directive::Error { message },
+                },
+                ["gate-start" | "revise"] => Directive::Print {
                     message: wording::recorded_result(raw, stage),
                     narration: None,
                 },
@@ -4162,9 +4235,23 @@ corrupt review override: Adversarial"
         );
     }
 
+    /// 呼ばれたことを `looked_up` に残し、pipeline を答える引き当て手段。
+    ///
+    /// 却下以外の結末は mode を見ない — 見ていないことを、答えが pipeline でも文言が変わらず
+    /// `looked_up` が立たないことで確かめる。
+    fn pipeline_lookup(
+        looked_up: &std::cell::Cell<bool>,
+    ) -> impl FnOnce() -> Result<StageModeView, String> + '_ {
+        || {
+            looked_up.set(true);
+            Ok(StageModeView::Pipeline)
+        }
+    }
+
     /// 成功 3 形 — gate 系は `print`、読み飛ばしと前進は `done`。
     #[test]
     fn every_commit_outcome_renders_its_directive() {
+        let looked_up = std::cell::Cell::new(false);
         let stage = StageSlug::parse("domain-design").expect("slug");
         let committed = |steps: TransitionSteps| {
             ReportResultView::new(
@@ -4189,40 +4276,71 @@ corrupt review override: Adversarial"
             )
         };
         assert!(matches!(
-            committed_directive("awaiting-approval", &committed(TransitionSteps::single(TransitionStep::GateStart))),
+            committed_directive("awaiting-approval", &committed(TransitionSteps::single(TransitionStep::GateStart)), pipeline_lookup(&looked_up)),
             Directive::Print { message, .. } if message == "Recorded awaiting-approval for \"domain-design\"."
         ));
         assert!(matches!(
-            committed_directive("rejected", &committed(TransitionSteps::single(TransitionStep::Reject))),
-            Directive::Print { message, .. } if message == "Recorded rejected for \"domain-design\"."
-        ));
-        assert!(matches!(
-            committed_directive("revised", &committed(TransitionSteps::single(TransitionStep::Revise))),
+            committed_directive("revised", &committed(TransitionSteps::single(TransitionStep::Revise)), pipeline_lookup(&looked_up)),
             Directive::Print { message, .. } if message == "Recorded revised for \"domain-design\"."
         ));
         assert!(matches!(
-            committed_directive("skipped", &committed(TransitionSteps::single(TransitionStep::Skip))),
+            committed_directive("skipped", &committed(TransitionSteps::single(TransitionStep::Skip)), pipeline_lookup(&looked_up)),
             Directive::Done { reason: Some(reason) }
                 if reason == "Committed skip for \"domain-design\" (scope: classic). State routed forward; run next to continue."
         ));
         assert!(matches!(
-            committed_directive("approved", &committed(TransitionSteps::single(TransitionStep::Approve))),
+            committed_directive("approved", &committed(TransitionSteps::single(TransitionStep::Approve)), pipeline_lookup(&looked_up)),
             Directive::Done { reason: Some(reason) }
                 if reason == "Committed approve for \"domain-design\" (scope: classic). State advanced; run next to continue."
         ));
         assert!(matches!(
             committed_directive(
                 "approved",
-                &committed(TransitionSteps::recovered_approval())
+                &committed(TransitionSteps::recovered_approval()),
+                pipeline_lookup(&looked_up)
             ),
             Directive::Done { reason: Some(reason) }
                 if reason == "Committed gate-start + approve for \"domain-design\" (scope: classic). State advanced; run next to continue."
         ));
+        assert!(
+            !looked_up.get(),
+            "却下以外の結末で報告ステージの mode を引き当てた"
+        );
+
+        // 却下だけはトポロジで文言が分かれる — pipeline 以外は従来の 1 文のまま。
+        let rejected = committed(TransitionSteps::single(TransitionStep::Reject));
+        assert!(matches!(
+            committed_directive("rejected", &rejected, || Ok(StageModeView::Subagent)),
+            Directive::Print { message, .. } if message == "Recorded rejected for \"domain-design\"."
+        ));
+        // pipeline の却下は 2.8.2 (`.claude/tools/aidlc-orchestrate.ts:8794-8798`) の全文になる。
+        assert!(matches!(
+            committed_directive("rejected", &rejected, || Ok(StageModeView::Pipeline)),
+            Directive::Print { message, .. } if message == concat!(
+                "Recorded rejected for \"domain-design\". The rejection starts a new pipeline ",
+                "attempt; prior receipts no longer apply. Re-run `aidlc engine orchestrate next`, ",
+                "then dispatch every missing link in directive.pipeline order with the exact human ",
+                "feedback. Each link must perform fresh work and return before its new receipt is ",
+                "recorded. Preserve the configured topology and reviewer policy; a targeted artifact ",
+                "edit does not permit the conductor to replace the pipeline or reuse its previous ",
+                "handoffs. Report revised only after the fresh chain completes.",
+            )
+        ));
+        // mode を引けなければ、代わりの文言で続けず error directive にする。
+        let unreadable = "aidlc-orchestrate: reported stage row unavailable after projection";
+        let Directive::Error { message } =
+            committed_directive("rejected", &rejected, || Err(unreadable.to_string()))
+        else {
+            panic!("error を期待した")
+        };
+        assert_eq!(message, unreadable);
+        assert!(!message.contains("Recorded rejected for"), "{message}");
     }
 
     /// no-op 3 形 — 既開ゲートは `print`、残り 2 つは `done`。
     #[test]
     fn every_no_op_renders_its_directive() {
+        let looked_up = std::cell::Cell::new(false);
         let stage = StageSlug::parse("domain-design").expect("slug");
         let current = StageSlug::parse("contract-design").expect("slug");
         let no_op = |no_op: ReportNoOp| {
@@ -4244,13 +4362,14 @@ corrupt review override: Adversarial"
             )
         };
         assert!(matches!(
-            committed_directive("awaiting-approval", &no_op(ReportNoOp::AlreadyAwaiting { stage: stage.clone() })),
+            committed_directive("awaiting-approval", &no_op(ReportNoOp::AlreadyAwaiting { stage: stage.clone() }), pipeline_lookup(&looked_up)),
             Directive::Print { message, .. } if message == "Stage \"domain-design\" is already awaiting approval; gate evidence revalidated."
         ));
         assert!(matches!(
             committed_directive(
                 "approved",
-                &no_op(ReportNoOp::AlreadyCompletedMovedOn { stage: stage.clone(), current })
+                &no_op(ReportNoOp::AlreadyCompletedMovedOn { stage: stage.clone(), current }),
+                pipeline_lookup(&looked_up)
             ),
             Directive::Done { reason: Some(reason) }
                 if reason == "Stage \"domain-design\" is already completed and the workflow has moved on to \"contract-design\" (scope: classic); idempotent re-report, no transition needed."
@@ -4262,10 +4381,15 @@ corrupt review override: Adversarial"
             &no_op(ReportNoOp::WorkflowAlreadyCompleted {
                 stage: stage.clone(),
             }),
+            pipeline_lookup(&looked_up),
         )
         else {
             panic!("done を期待した")
         };
+        assert!(
+            !looked_up.get(),
+            "no-op の結末で報告ステージの mode を引き当てた"
+        );
         assert!(
             reason.starts_with(
                 "Workflow is already completed at \"domain-design\" (scope: classic); no transition was needed."
