@@ -49,7 +49,7 @@ const ENGINE: &str = "engine";
 /// 一段形の動詞になり、二段形の verb は**最初の位置引数**として渡る組もある
 /// （`noun-passthrough` — 本家 `handleIntent` は `positional[1]` を読む）。動詞 1 語だけを
 /// 持つと後者で verb が落ちるので、運ぶ形をそのまま書く。
-const WIRED: [(&str, &str, Face, &[&str]); 28] = [
+const WIRED: [(&str, &str, Face, &[&str]); 29] = [
     ("orchestrate", "next", Face::Orchestrate, &["next"]),
     ("orchestrate", "continue", Face::Orchestrate, &["continue"]),
     ("orchestrate", "report", Face::Orchestrate, &["report"]),
@@ -111,6 +111,11 @@ const WIRED: [(&str, &str, Face, &[&str]); 28] = [
     ("review-brief", "summary", Face::ReviewBrief, &["summary"]),
     ("gen", "scope-table", Face::Utility, &["scope-table"]),
     ("gen", "stage-table", Face::Utility, &["stage-table"]),
+    // noun-map — 本家 ROUTES は noun `jump` を `TOOLS.jump` へ委譲し、verb はそのまま
+    // 一段形の動詞になる。一段形 `aidlc-jump execute` はこの build に実装済みで
+    // （`runtime/jump.rs`）、写像表に組が無いためだけに未配線だった (オーナー裁定
+    // 2026-09-22 D20)。`--target` などの残りの引数は `mapped` がそのまま運ぶ。
+    ("jump", "execute", Face::Jump, &["execute"]),
     // noun-map — 本家 `handleWorkspace` は `intent create` を一段形の動詞 `intent-create` へ
     // 翻訳する。verb は位置引数として残らないので、`intent list` の passthrough とは運び方が
     // 違う。bugfix 1 周の誕生 print がこの入口を名指す (オーナー裁定 D16)。
@@ -414,6 +419,37 @@ mod tests {
         );
     }
 
+    /// `jump execute` は jump 面へ写り、`--target` 以降をそのまま運ぶ。
+    ///
+    /// 一段形 `aidlc-jump execute` は元から実装済みで、写像表に組が無いためだけに
+    /// 未配線だった (オーナー裁定 2026-09-22 D20)。本家 2.8.2 は
+    /// `aidlc engine jump execute --target <slug>` を綴る
+    /// (`aidlc-orchestrate.ts:7157` / `:8230`)。
+    #[test]
+    fn the_jump_execute_pair_maps_to_the_jump_face_with_its_flags() {
+        assert_eq!(
+            EngineRoute::resolve(&argv(&[
+                "engine",
+                "jump",
+                "execute",
+                "--target",
+                "code-generation",
+                "--direction",
+                "redo",
+            ])),
+            Some(EngineRoute::Mapped {
+                face: Face::Jump,
+                argv: argv(&[
+                    "execute",
+                    "--target",
+                    "code-generation",
+                    "--direction",
+                    "redo",
+                ]),
+            })
+        );
+    }
+
     /// 動詞を取らない top ルートでも、配線したものは engine の顔へ写る。
     ///
     /// 次のトークンは動詞として読まれず、引数としてそのまま運ばれる。
@@ -549,14 +585,14 @@ mod tests {
     /// 本家が `aidlc engine` の下で解決する noun は、未配線でも「本家にも無い」に落ちない。
     ///
     /// 一段形をこの build が配線しているかどうかは関係しない — `bolt set-autonomy` と
-    /// `jump execute` はどちらも一段形の面を持つが、二段形の写像が無いので未配線である。
+    /// `jump resolve` はどちらも一段形の面を持つが、二段形の写像が無いので未配線である。
     #[test]
     fn every_engine_noun_upstream_resolves_is_reported_as_not_wired_rather_than_unknown() {
         for (noun, verb) in [
             ("audit", "append"),
             ("bolt", "start"),
             ("bolt", "set-autonomy"),
-            ("jump", "execute"),
+            ("jump", "resolve"),
             ("knowledge", "onboard"),
             ("plugin", "select"),
             ("runtime", "summary"),

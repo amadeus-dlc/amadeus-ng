@@ -376,6 +376,8 @@ fn the_already_wired_entry_points_keep_resolving() {
         ("orchestrate", "park"),
         ("log", "link"),
         ("intent", "list"),
+        // オーナー裁定 2026-09-22 D20 で加わった組。一段形は元から実装済みだった。
+        ("jump", "execute"),
     ] {
         let argv = ["engine", noun, verb].map(str::to_string).to_vec();
         assert!(
