@@ -63,10 +63,13 @@ const SHIPPED_INLINE_KNOWLEDGE: [(&str, &[&str]); 3] = [
     ),
 ];
 
-/// Minimal の深さで各ステージが残す配布の知識（2.8.2 `MINIMAL_INLINE_KNOWLEDGE`）。
 /// ステージ名と、そのステージが役ごとに残す配布の知識。
-type MinimalSelection = (&'static str, &'static [(&'static str, &'static [&'static str])]);
+type MinimalSelection = (
+    &'static str,
+    &'static [(&'static str, &'static [&'static str])],
+);
 
+/// Minimal の深さで各ステージが残す配布の知識（2.8.2 `MINIMAL_INLINE_KNOWLEDGE`）。
 const MINIMAL_INLINE_KNOWLEDGE: [MinimalSelection; 2] = [
     (
         "intent-capture",
