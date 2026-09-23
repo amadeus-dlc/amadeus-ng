@@ -323,7 +323,7 @@ fn an_unknown_hook_name_is_refused_through_the_same_registration_form() {
     );
 }
 
-/// 配布のまま残す 2 本は、native のフック名としては受け付けない。
+/// 配布のまま残すフック（run-sensors の 1 本）は、native のフック名としては受け付けない。
 #[test]
 fn the_hooks_kept_distributed_are_not_accepted_as_native_names() {
     let definition = binding_definition();

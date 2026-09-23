@@ -123,7 +123,7 @@ human() {
 }
 
 # wrote <relpath> — Write ツールの後の PostToolUse（write-audit-log）。
-# run-sensors は配布のまま残す 2 本の片方（hook-binding.json）なので、ここでは発火させない。
+# run-sensors は配布のまま残す唯一のフック（hook-binding.json）なので、ここでは発火させない。
 wrote() {
   local abs="$PWD/$1"
   jq -nc --arg f "$abs" --arg cwd "$PWD" --rawfile c "$abs" --arg s "$SESSION" \
