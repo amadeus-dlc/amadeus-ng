@@ -25,6 +25,7 @@ pub struct ReportRequest {
     reason: Option<String>,
     human_presence_guard: bool,
     turns: crate::workspace::HumanTurns,
+    summary_stages: super::StageSlugSet,
 }
 
 impl ReportRequest {
@@ -107,7 +108,21 @@ impl ReportRequest {
             reason,
             human_presence_guard,
             turns: crate::workspace::HumanTurns::default(),
+            summary_stages: super::StageSlugSet::empty(),
         }
+    }
+
+    /// 内容確認（Consolidated Summary Confirmation）を要するステージの集合を伴う要求
+    /// （定義の `summary_confirmation` — 2.8.2 `checkSummaryConfirmationEvidence`）。
+    ///
+    /// 環境変数 `AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD=1` のときは入力境界が空集合を渡す。
+    #[must_use]
+    pub fn with_summary_stages(mut self, stages: super::StageSlugSet) -> Self {
+        self.summary_stages = stages;
+        self
+    }
+    pub(super) fn requires_summary_confirmation(&self, stage: &StageSlug) -> bool {
+        self.summary_stages.contains(stage)
     }
 
     /// 監査台帳から読んだ人間の turn を伴う要求（承認・差し戻しの human presence の材料 —
@@ -135,6 +150,7 @@ impl ReportRequest {
         .with_validation(self.validation.clone())
         .with_source_baseline(self.source_baseline.clone(), self.workspace_stages.clone())
         .with_human_turns(self.turns.clone())
+        .with_summary_stages(self.summary_stages.clone())
     }
 
     /// 報告された結末の分類。

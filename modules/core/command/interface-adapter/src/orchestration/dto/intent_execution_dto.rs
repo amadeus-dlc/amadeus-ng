@@ -79,6 +79,12 @@ pub struct IntentExecutionDto {
     /// コンストラクタが検査するので、欄不在のときだけ計画長へ広げる。
     #[serde(default)]
     memory_empty_reported: Vec<bool>,
+    /// ステージごとの現在の試行で、人間が内容確認を返したか（ステージ順）。
+    ///
+    /// 欄を持たない行は**全ステージ false** で読む — 「欄が無い = まだ確認していない」という
+    /// 正規の意味である。
+    #[serde(default)]
+    summary_confirmed: Vec<bool>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
     /// 直近のゲート解決の発生時刻 (`null` = まだ 1 度も解決していない。b50 / I11)。
@@ -281,6 +287,7 @@ struct SlotColumns {
     review_attempts: Vec<ReviewAttemptDto>,
     practices_affirmed: Vec<bool>,
     memory_empty_reported: Vec<bool>,
+    summary_confirmed: Vec<bool>,
     approved: Vec<bool>,
     revision_count: Vec<u32>,
 }
@@ -301,6 +308,7 @@ impl SlotColumns {
         self.practices_affirmed.push(slot.practices_affirmed());
         self.memory_empty_reported
             .push(slot.memory_empty_reported());
+        self.summary_confirmed.push(slot.summary_confirmed());
         self.approved.push(slot.approved());
         self.revision_count.push(slot.revision_count());
     }
@@ -360,6 +368,7 @@ impl IntentExecutionDto {
             review_attempts: columns.review_attempts,
             practices_affirmed: columns.practices_affirmed,
             memory_empty_reported: columns.memory_empty_reported,
+            summary_confirmed: columns.summary_confirmed,
             approved: columns.approved,
             revision_count: columns.revision_count,
             last_gate_resolution_at: execution.last_gate_resolution_at(),
@@ -398,6 +407,11 @@ impl IntentExecutionDto {
         } else {
             self.memory_empty_reported.clone()
         };
+        let summary_confirmed = if self.summary_confirmed.is_empty() {
+            vec![false; count]
+        } else {
+            self.summary_confirmed.clone()
+        };
         // 7 列を添字で合わせて位置ごとの記録へ畳む。列の長さが食い違う行は
         // `InvariantViolation` — 集約側では構成不能になった形なので、境界で断つ (層 (1))。
         let mut slots = Vec::with_capacity(count);
@@ -426,6 +440,9 @@ impl IntentExecutionDto {
             let memory_empty = memory_empty_reported
                 .get(index)
                 .ok_or(DtoDecodeError::InvariantViolation)?;
+            let confirmed = summary_confirmed
+                .get(index)
+                .ok_or(DtoDecodeError::InvariantViolation)?;
             let approved = self
                 .approved
                 .get(index)
@@ -437,7 +454,7 @@ impl IntentExecutionDto {
             column(self.overlay.len() == count && self.checkbox.len() == count)?;
             column(self.approved.len() == count && self.revision_count.len() == count)?;
             column(review_attempts.len() == count && practices_affirmed.len() == count)?;
-            column(memory_empty_reported.len() == count)?;
+            column(memory_empty_reported.len() == count && summary_confirmed.len() == count)?;
             slots.push(StageSlot::new(
                 StageKey::new(
                     StageSlug::parse(&key.slug)
@@ -451,6 +468,7 @@ impl IntentExecutionDto {
                 attempt.to_domain()?,
                 *affirmed,
                 *memory_empty,
+                *confirmed,
             ));
         }
         let slots = StageSlots::new(slots).map_err(|_| DtoDecodeError::InvariantViolation)?;

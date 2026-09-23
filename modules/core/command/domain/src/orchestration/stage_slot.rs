@@ -28,6 +28,7 @@ pub struct StageSlot {
     review_attempt: ReviewAttempt,
     practices_affirmed: bool,
     memory_empty_reported: bool,
+    summary_confirmed: bool,
 }
 
 impl StageSlot {
@@ -168,6 +169,7 @@ impl StageSlot {
             ReviewAttempt::default(),
             false,
             false,
+            false,
         )
     }
 
@@ -188,6 +190,7 @@ impl StageSlot {
         review_attempt: ReviewAttempt,
         practices_affirmed: bool,
         memory_empty_reported: bool,
+        summary_confirmed: bool,
     ) -> StageSlot {
         StageSlot {
             key,
@@ -198,7 +201,19 @@ impl StageSlot {
             review_attempt,
             practices_affirmed,
             memory_empty_reported,
+            summary_confirmed,
         }
+    }
+
+    /// 現在の試行で、人間が内容確認（Consolidated Summary Confirmation）を返したか。
+    #[must_use]
+    pub const fn summary_confirmed(&self) -> bool {
+        self.summary_confirmed
+    }
+
+    /// 内容確認の受領を記録する（`SUMMARY_CONFIRMATION_RECORDED`）。
+    pub const fn confirm_summary(&mut self) {
+        self.summary_confirmed = true;
     }
 
     /// この承認について `MEMORY_EMPTY` を既に記録したか (**永続化境界の読取専用**)。
@@ -266,10 +281,11 @@ impl StageSlot {
 
     /// 現在の試行を空へ戻す (フロア — 開始・差し戻し・ジャンプ)。
     ///
-    /// レビューの会計と昇格の受領証は**同じ試行**に属するので一緒に消える。
+    /// レビューの会計と昇格・内容確認の受領証は**同じ試行**に属するので一緒に消える。
     pub fn reset_attempt(&mut self) {
         self.review_attempt.reset();
         self.practices_affirmed = false;
+        self.summary_confirmed = false;
     }
 
     /// レビュー依頼を 1 件数える。
@@ -362,6 +378,7 @@ mod tests {
             ),
             true,
             true,
+            false,
         );
         assert!(slot.memory_empty_reported());
         assert_eq!(slot.plan_action(), PlanAction::Skip);
@@ -441,6 +458,7 @@ mod tests {
             false,
             u32::MAX,
             ReviewAttempt::default(),
+            false,
             false,
             false,
         );

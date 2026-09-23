@@ -111,6 +111,12 @@ pub enum ReportRefusal {
         /// 報告された結末（承認か差し戻しか）。
         verdict: Verdict,
     },
+    /// 2.8.2 — 内容確認を要するステージで、現在の試行に人間の確認が無い
+    /// (`SUMMARY_ANSWER_INVALID`)。
+    SummaryConfirmationMissing {
+        /// 対象ステージ。
+        stage: StageSlug,
+    },
     /// forward 表 — `[S]` / `[R]` は前進の完了ではない。
     ForwardCommitsCompletionsOnly {
         /// 対象ステージ。
@@ -197,6 +203,9 @@ impl fmt::Display for ReportRefusal {
                 "no human reply since the gate: {} for {verdict:?}",
                 stage.as_str()
             ),
+            ReportRefusal::SummaryConfirmationMissing { stage } => {
+                write!(f, "summary confirmation missing: {}", stage.as_str())
+            }
             ReportRefusal::ForwardCommitsCompletionsOnly { stage, actual } => write!(
                 f,
                 "forward commits completions only: {} is {}",

@@ -2425,6 +2425,7 @@ fn different_scopes_preserve_report_results_through_another_intents_publication_
         workspace.path().join(".claude/scopes/aidlc-feature.md"),
     )
     .unwrap();
+    // 投影の失敗を確かめる試験なので、要約確認のガード（先に断る）を外す。
     let run = |binary: &std::path::Path, args: &[&str]| {
         Command::new(binary)
             .args(args)
@@ -2433,6 +2434,7 @@ fn different_scopes_preserve_report_results_through_another_intents_publication_
             .envs(coverage_profile_env())
             .env("HOME", workspace.path())
             .env("PATH", "/usr/bin:/bin")
+            .env("AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD", "1")
             .output()
             .unwrap()
     };
@@ -3159,6 +3161,8 @@ fn workspace_at_code_generation() -> Workspace {
     )
     .unwrap();
     assert!(workspace.create().status.success());
+    // この fixture は code-generation へ進むための通り道で、要約確認は試さない
+    // （確認のガードは intent_lifecycle が固定する）。2.8.2 と同じ逃げ道で外す。
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_aidlc"))
             .args(args)
@@ -3167,6 +3171,7 @@ fn workspace_at_code_generation() -> Workspace {
             .envs(coverage_profile_env())
             .env("HOME", workspace.path())
             .env("PATH", "/usr/bin:/bin")
+            .env("AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD", "1")
             .output()
             .unwrap()
     };

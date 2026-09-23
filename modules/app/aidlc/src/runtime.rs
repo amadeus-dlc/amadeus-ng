@@ -650,7 +650,9 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
             == Some("1"),
     )
     // 承認・差し戻しの human presence の外部材料（判断は集約 — set-autonomy と同じ形）。
-    .with_human_turns(human_turns(layout));
+    .with_human_turns(human_turns(layout))
+    // 内容確認を要するステージ（定義の宣言。判断は集約）。
+    .with_summary_stages(summary_confirmation_stages(layout));
     let (
         Ok(intent_execution_repository),
         Ok(intent_repository),
@@ -1210,6 +1212,9 @@ fn report_refusal(raw: &str, refusal: &ReportRefusal) -> String {
         }
         ReportRefusal::RejectChoiceUnmatched { stage, reply } => {
             wording::reject_choice_unmatched(stage.as_str(), reply)
+        }
+        ReportRefusal::SummaryConfirmationMissing { stage } => {
+            wording::summary_confirmation_missing(stage.as_str())
         }
         ReportRefusal::HumanReplyMissing { stage, verdict } => {
             if *verdict == Verdict::Rejected {

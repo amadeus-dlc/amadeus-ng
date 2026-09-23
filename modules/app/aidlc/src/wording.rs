@@ -874,6 +874,15 @@ fn received_reply(reply: &str) -> String {
     )
 }
 
+/// 内容確認を要するステージで、現在の試行に人間の確認が無い（2.8.2
+/// `SUMMARY_ANSWER_INVALID` の回復手順を文にしたもの）。
+#[must_use]
+pub fn summary_confirmation_missing(stage: &str) -> String {
+    format!(
+        "Cannot present \"{stage}\" for approval: no human-confirmed consolidated summary is recorded for this attempt. Present the current consolidated summary, record the human's confirmation with `aidlc engine log decision/answer --checkpoint summary-confirmation`, then regenerate or re-save the produced artifacts."
+    )
+}
+
 /// 承認にゲート以降の人間の返答が無い (2.8.2 `aidlc-state.ts` `approvalPreconditions` 逐語)。
 #[must_use]
 pub fn approval_without_human_reply(stage: &str) -> String {
