@@ -60,12 +60,37 @@ is_refusal() {
   jq -e 'type == "object" and (has("error") or .kind == "error" or (.kind == "ask" and .ask_type == "guard-recovery"))' "$LAST" >/dev/null 2>&1
 }
 
+# pretool <tool_name> <tool_input JSON> — Claude Code が工具の前に発火させる PreToolUse の
+# 保護フック（配布 .claude/settings.json の登録どおり）。指揮役の正当な操作なので、どれかが
+# 拒否（終了コード 2）したら失敗として数える。
+#
+# plan-approval-guard はここに含めない（専用の `guard` 段が承認の前後を確かめる）。配布
+# 2.8.2 のガードはライフサイクルの報告も生成と同じく承認の対象にし、code-generation の
+# 承認待ちを開いた後は自分の active directive を失って `report --result approved` まで
+# 止める（2026-09-23 に再生で観測）。その挙動は正解として使えない。
+PRETOOL_GUARDS="state-transition-guard reviewer-scope review-freeze"
+pretool() {
+  local tool="$1" input="$2" hook rc
+  for hook in $PRETOOL_GUARDS; do
+    jq -nc --arg cwd "$PWD" --arg s "$SESSION" --arg t "$tool" --argjson i "$input" \
+      '{session_id:$s,transcript_path:"/dev/null",cwd:$cwd,hook_event_name:"PreToolUse",tool_name:$t,tool_input:$i}' \
+      | aidlc engine hook "$hook" > "$LAST.hook" 2>&1; rc=$?
+    if [ "$rc" -eq 2 ]; then
+      STEPS=$((STEPS + 1)); FAILED=$((FAILED + 1))
+      log "FAIL [pretool $hook refused] $tool $(printf '%s' "$input" | head -c 200)"
+      head -c 400 "$LAST.hook" >> "$LOG"; echo >> "$LOG"
+      echo "FAIL [pretool $hook refused] $tool" >&2
+    fi
+  done
+}
+
 # step <ok|refuse|any> <説明> -- <aidlc 引数...>   (any は記録だけして数えない)
 # aidlc を実行し、Claude Code が Bash の後に発火させる PostToolUse フックを続けて発火させる。
 step() {
   local expect="$1" desc="$2"; shift 3
   local rc verdict
   STEPS=$((STEPS + 1))
+  pretool Bash "$(jq -nc --arg c "aidlc $*" '{command:$c}')"
   aidlc "$@" > "$LAST" 2> "$LAST.err"; rc=$?
   cat "$LAST.err" >> "$LAST"
   if is_refusal "$rc"; then verdict=refuse; else verdict=ok; fi
@@ -98,21 +123,24 @@ hook_post_bash() {
     | aidlc engine hook rebuild-stage-graph >/dev/null 2>&1
 }
 
-# guard <ok|refuse> <説明> <PreToolUse の tool_name> <tool_input JSON>
-# PreToolUse の plan-approval-guard を発火させる。終了コード 2 が拒否（Claude Code の契約）。
-guard() {
-  local expect="$1" desc="$2" tool="$3" input="$4" rc verdict
+# hook_check <ok|refuse> <説明> <フック名> <PreToolUse の tool_name> <tool_input JSON>
+# PreToolUse の保護フックを 1 本発火させる。終了コード 2 が拒否（Claude Code の契約）。
+hook_check() {
+  local expect="$1" desc="$2" hook="$3" tool="$4" input="$5" rc verdict
   STEPS=$((STEPS + 1))
   jq -nc --arg cwd "$PWD" --arg s "$SESSION" --arg t "$tool" --argjson i "$input" \
     '{session_id:$s,transcript_path:"/dev/null",cwd:$cwd,hook_event_name:"PreToolUse",tool_name:$t,tool_input:$i}' \
-    | aidlc engine hook plan-approval-guard > "$LAST" 2>&1; rc=$?
+    | aidlc engine hook "$hook" > "$LAST" 2>&1; rc=$?
   if [ "$rc" -eq 2 ]; then verdict=refuse; else verdict=ok; fi
-  if [ "$verdict" = "$expect" ]; then log "PASS [$expect] $desc :: guard $tool"; else
-    FAILED=$((FAILED + 1)); log "FAIL [expected $expect, got $verdict (exit $rc)] $desc :: guard $tool"
+  if [ "$verdict" = "$expect" ]; then log "PASS [$expect] $desc :: $hook $tool"; else
+    FAILED=$((FAILED + 1)); log "FAIL [expected $expect, got $verdict (exit $rc)] $desc :: $hook $tool"
     echo "FAIL [expected $expect, got $verdict] $desc" >&2
   fi
   head -c 600 "$LAST" >> "$LOG"; echo >> "$LOG"
 }
+
+# guard <ok|refuse> <説明> <tool_name> <tool_input JSON> — plan-approval-guard の検査。
+guard() { hook_check "$1" "$2" plan-approval-guard "$3" "$4"; }
 
 # human <text> — 人間の発話。UserPromptSubmit の record-human-turn を発火させる。
 human() {
@@ -131,8 +159,12 @@ wrote() {
     | aidlc engine hook write-audit-log >/dev/null 2>>"$LOG"
 }
 
-# write <relpath> — 標準入力を書いて write フックを発火させる。
-write() { mkdir -p "$(dirname "$1")"; cat > "$1"; wrote "$1"; }
+# write <relpath> — 標準入力を書いて write フックを発火させる（書く前に PreToolUse）。
+write() {
+  local body; body="$(cat)"
+  pretool Write "$(jq -nc --arg f "$PWD/$1" --arg c "$body" '{file_path:$f,content:$c}')"
+  mkdir -p "$(dirname "$1")"; printf '%s\n' "$body" > "$1"; wrote "$1"
+}
 
 # advance <tag> — next を叩き、load-steering を continue で送り切って run-stage 等を得る。
 advance() {
@@ -226,13 +258,38 @@ learnings() {
   step ok "$st: 学びの返答を記録" -- engine log answer --stage "$st" --details "Nothing to add"
 }
 
+# stop_check <ok|block> <説明> — ターンの終わりに Stop フック（continue-workflow）を発火させる。
+# 出力が `"decision":"block"` なら、フックは指揮役にターンを終えさせず作業を続けさせる。
+stop_check() {
+  local expect="$1" desc="$2" verdict
+  STEPS=$((STEPS + 1))
+  jq -nc --arg cwd "$PWD" --arg s "$SESSION" \
+    '{session_id:$s,transcript_path:"/dev/null",cwd:$cwd,hook_event_name:"Stop",stop_hook_active:false}' \
+    | aidlc engine hook continue-workflow > "$LAST" 2>&1
+  if grep -q '"decision" *: *"block"' "$LAST"; then verdict=block; else verdict=ok; fi
+  if [ "$verdict" = "$expect" ]; then log "PASS [stop $expect] $desc"; else
+    FAILED=$((FAILED + 1)); log "FAIL [stop expected $expect, got $verdict] $desc"
+    echo "FAIL [stop expected $expect, got $verdict] $desc" >&2
+  fi
+  head -c 600 "$LAST" >> "$LOG"; echo >> "$LOG"
+}
+
 # 承認ゲート。人間の返答が無いうちの承認は拒否されなければならない。
 gate() {
   local st="$1"
   step ok "$st: 承認待ちを記録" -- engine orchestrate report --stage "$st" --result awaiting-approval
+  # 承認の質問を出してターンを終える場面 — 人間の返答を待つので止まってよい。
+  stop_check ok "$st: 承認待ちではターンを終えてよい"
   step refuse "$st: 人間の返答なしの承認は拒否" -- engine orchestrate report --stage "$st" --result approved --user-input "Approve"
   human "Approve"
   step ok "$st: 承認" -- engine orchestrate report --stage "$st" --result approved --user-input "Approve"
+  # 承認の後は次のステージへ進む。ここでターンを終えようとすれば、フックが続けさせる。
+  # 最終ステージの承認はワークフローの完了なので、止まってよい。
+  if [ "$st" = deployment-execution ]; then
+    stop_check ok "$st: ワークフロー完了の後はターンを終えてよい"
+  else
+    stop_check block "$st: 承認の直後にターンを終えるのは止める"
+  fi
 }
 
 # produces を仮の本文で埋める（questions ファイルは要約確認が書く）。
@@ -274,6 +331,9 @@ step refuse "$st: 要約確認の前の承認待ちは拒否" -- engine orchestr
 summary_confirm $st "$D/requirements-analysis-questions.md"
 printf '# 要件\n\n- FR-1: active intent が無いとき statusline は空文字でなく案内を出す\n\n## Sources\n\n- [desc]\n' | write "$D/requirements.md"
 review_pass $st "$(cur .reviewer)"
+# 終端の受領証の後で成果物を書き換えると受領証が無効になる（review-freeze が止める）。
+hook_check refuse "$st: 受領後の成果物の書換えは拒否" review-freeze Write \
+  "$(jq -nc --arg f "$PWD/$D/requirements.md" '{file_path:$f,content:"changed"}')"
 learnings $st
 gate $st
 
