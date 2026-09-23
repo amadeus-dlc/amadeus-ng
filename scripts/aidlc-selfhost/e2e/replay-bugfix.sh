@@ -75,11 +75,14 @@ pretool() {
     jq -nc --arg cwd "$PWD" --arg s "$SESSION" --arg t "$tool" --argjson i "$input" \
       '{session_id:$s,transcript_path:"/dev/null",cwd:$cwd,hook_event_name:"PreToolUse",tool_name:$t,tool_input:$i}' \
       | aidlc engine hook "$hook" > "$LAST.hook" 2>&1; rc=$?
-    if [ "$rc" -eq 2 ]; then
+    # 2 は拒否、それ以外の非ゼロはフック自体の失敗。どちらも正当な操作では起きてはならない。
+    if [ "$rc" -ne 0 ]; then
+      local why="refused"
+      [ "$rc" -eq 2 ] || why="exited $rc"
       STEPS=$((STEPS + 1)); FAILED=$((FAILED + 1))
-      log "FAIL [pretool $hook refused] $tool $(printf '%s' "$input" | head -c 200)"
+      log "FAIL [pretool $hook $why] $tool $(printf '%s' "$input" | head -c 200)"
       head -c 400 "$LAST.hook" >> "$LOG"; echo >> "$LOG"
-      echo "FAIL [pretool $hook refused] $tool" >&2
+      echo "FAIL [pretool $hook $why] $tool" >&2
     fi
   done
 }
@@ -160,6 +163,8 @@ wrote() {
 }
 
 # write <relpath> — 標準入力を書いて write フックを発火させる（書く前に PreToolUse）。
+# パイプの末尾で呼ぶとサブシェルで動き、pretool が数えた失敗が親へ戻らない。本文は
+# ヒアドキュメントかプロセス置換（`write <relpath> < <(printf ...)`）で渡すこと。
 write() {
   local body; body="$(cat)"
   pretool Write "$(jq -nc --arg f "$PWD/$1" --arg c "$body" '{file_path:$f,content:$c}')"
@@ -296,7 +301,7 @@ gate() {
 fill_produces() {
   local f
   for f in $(cur '.produces[] | select(endswith("-questions.md") | not)'); do
-    printf '# %s\n\n仮の本文。\n\n## Sources\n\n- [desc]\n' "$(basename "$f")" | write "$f"
+    write "$f" < <(printf '# %s\n\n仮の本文。\n\n## Sources\n\n- [desc]\n' "$(basename "$f")")
   done
 }
 
@@ -314,7 +319,7 @@ advance reverse-engineering
 st=reverse-engineering; D="$R/inception/$st"
 diary_check $st
 fill_produces
-printf '# developer scan\n\n仮。\n' | write "$D/developer-scan.md"
+write "$D/developer-scan.md" < <(printf '# developer scan\n\n仮。\n')
 step refuse "$st: 順番外の link は拒否" -- engine log link --stage $st --link aidlc-architect-agent
 step ok "$st: developer link" -- engine log link --stage $st --link aidlc-developer-agent --artifact "$D/developer-scan.md"
 step ok "$st: architect link" -- engine log link --stage $st --link aidlc-architect-agent
@@ -329,7 +334,7 @@ check "$st: consumes が実在するパスに解決されている" \
   "jq -e '[.consumes[] | select(test(\"\\\\.(md|json)$\") | not)] | length == 0' \"$OUT/current.json\" >/dev/null"
 step refuse "$st: 要約確認の前の承認待ちは拒否" -- engine orchestrate report --stage $st --result awaiting-approval
 summary_confirm $st "$D/requirements-analysis-questions.md"
-printf '# 要件\n\n- FR-1: active intent が無いとき statusline は空文字でなく案内を出す\n\n## Sources\n\n- [desc]\n' | write "$D/requirements.md"
+write "$D/requirements.md" < <(printf '# 要件\n\n- FR-1: active intent が無いとき statusline は空文字でなく案内を出す\n\n## Sources\n\n- [desc]\n')
 review_pass $st "$(cur .reviewer)"
 # 終端の受領証の後で成果物を書き換えると受領証が無効になる（review-freeze が止める）。
 hook_check refuse "$st: 受領後の成果物の書換えは拒否" review-freeze Write \
@@ -345,7 +350,7 @@ check "$st: gate が決定済み（bugfix は skeleton なし）" "[ \"\$(cur .g
 { printf '# Code Generation Plan\n\n'; aidlc engine testing-posture render
   printf '\n## Steps\n\n- [ ] Step 1: statusline を直す\n- [ ] Step 2: 回帰テストを書いて走らせる\n'; } > "$D/code-generation-plan.md"
 wrote "$D/code-generation-plan.md"
-printf '# Unit Test Instructions\n\n`cargo test -p aidlc --test statusline_contract`\n' | write "$D/unit-test-instructions.md"
+write "$D/unit-test-instructions.md" < <(printf '# Unit Test Instructions\n\n`cargo test -p aidlc --test statusline_contract`\n')
 SRC=modules/app/aidlc/src/wording.rs
 guard refuse "$st: 計画承認の前のソース書込は拒否" Write "$(jq -nc --arg f "$PWD/$SRC" '{file_path:$f,content:"x"}')"
 guard ok "$st: 記録ディレクトリ内の書込は承認前でも通す" Write "$(jq -nc --arg f "$PWD/$D/code-generation-plan.md" '{file_path:$f,content:"x"}')"
@@ -357,7 +362,7 @@ FP="$(cat "$LAST")"
 check "$st: 指紋が 2 行タグ（Approval Fingerprint / Planned Source）" \
   "grep -q '^\[Approval Fingerprint\]: sha256:' \"$LAST\" && grep -q '^\[Planned Source\]: ' \"$LAST\""
 Q="$D/code-generation-questions.md"
-printf '# Code Generation Questions\n\n## Plan Approval\n\nこの計画で進めてよいですか？\n\n%s\n\n- "Approve Plan" — proceed to code generation\n- "Request Changes" — revise the plan\n\n[Answer]:\n' "$FP" | write "$Q"
+write "$Q" < <(printf '# Code Generation Questions\n\n## Plan Approval\n\nこの計画で進めてよいですか？\n\n%s\n\n- "Approve Plan" — proceed to code generation\n- "Request Changes" — revise the plan\n\n[Answer]:\n' "$FP")
 step ok "$st: 計画承認の提示を記録" -- engine log decision --stage $st --checkpoint plan-approval --session "$SESSION" \
   --questions-file "$Q" --decision "Approve this exact Code Generation plan?" --options "Approve Plan,Request Changes" --stage-level
 human "Approve Plan"
@@ -372,9 +377,9 @@ guard ok "$st: 承認後のソース書込は通す" Write "$(jq -nc --arg f "$P
 printf '\n// statusline fix (replay)\n' >> "$SRC"; wrote "$SRC"
 guard ok "$st: ソースが変わった後の書込も通す（生成開始で承認が失効しない）" Edit "$(jq -nc --arg f "$PWD/$SRC" '{file_path:$f,old_string:"a",new_string:"b"}')"
 perl -pi -e 's/- \[ \] Step/- [x] Step/' "$D/code-generation-plan.md"; wrote "$D/code-generation-plan.md"
-printf '# Code Summary\n\n- %s を変更\n' "$SRC" | write "$D/code-summary.md"
-printf '{"stage":"code-generation","unit":null,"version":1,"writes":[{"path":"%s"}]}\n' "$SRC" | write "$D/source-manifest.json"
-printf '{"stage":"code-generation","upstream_ids":["FR-1"],"coverage":[{"id":"FR-1","status":"OK","target":"%s"}]}\n' "$SRC" | write "$D/traceability.json"
+write "$D/code-summary.md" < <(printf '# Code Summary\n\n- %s を変更\n' "$SRC")
+write "$D/source-manifest.json" < <(printf '{"stage":"code-generation","unit":null,"version":1,"writes":[{"path":"%s"}]}\n' "$SRC")
+write "$D/traceability.json" < <(printf '{"stage":"code-generation","upstream_ids":["FR-1"],"coverage":[{"id":"FR-1","status":"OK","target":"%s"}]}\n' "$SRC")
 review_pass $st "$(cur .reviewer)"
 learnings $st
 gate $st
