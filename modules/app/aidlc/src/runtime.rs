@@ -1156,6 +1156,9 @@ fn report_refusal(raw: &str, refusal: &ReportRefusal) -> String {
         ReportRefusal::ApprovalChoiceUnmatched { stage, reply } => {
             wording::approval_choice_unmatched(stage.as_str(), reply)
         }
+        ReportRefusal::RejectChoiceUnmatched { stage, reply } => {
+            wording::reject_choice_unmatched(stage.as_str(), reply)
+        }
         ReportRefusal::HumanReplyMissing { stage, verdict } => {
             if *verdict == Verdict::Rejected {
                 wording::rejection_without_human_reply(stage.as_str())

@@ -832,11 +832,27 @@ pub fn human_presence_required(result: &str, stage: &str) -> String {
 }
 
 /// 承認の返答が提示した選択肢と一致しない (2.8.2 `aidlc-state.ts` `approvalPreconditions` 逐語)。
-///
-/// 返答の表示は 2.8.2 `formatReceivedReply` と同じ — 空白を畳み、空なら `(empty)`、
-/// 長ければ 80 文字で切り、JSON 文字列として引用する。
 #[must_use]
 pub fn approval_choice_unmatched(stage: &str, reply: &str) -> String {
+    format!(
+        "Cannot approve \"{stage}\" because the reply {} did not match one of the offered choices. Present the original question with every choice again and wait for the human to pick one.",
+        received_reply(reply)
+    )
+}
+
+/// 差し戻しの返答が `Request Changes` の選択と一致しない (2.8.2 `aidlc-state.ts`
+/// `handleReject` 逐語。cancellation boilerplate の追記文はまだ持たない)。
+#[must_use]
+pub fn reject_choice_unmatched(stage: &str, reply: &str) -> String {
+    format!(
+        "Refusing to reject \"{stage}\": received reply {} did not match an offered choice at the held gate. Re-present the original held gate with every offered choice and wait for the human to choose one.",
+        received_reply(reply)
+    )
+}
+
+/// 受け取った返答の表示 (2.8.2 `formatReceivedReply`) — 空白を畳み、空なら `(empty)`、
+/// 長ければ 80 文字で切り、JSON 文字列として引用する。
+fn received_reply(reply: &str) -> String {
     const LIMIT: usize = 80;
     let normalized = reply.split_whitespace().collect::<Vec<_>>().join(" ");
     let normalized = if normalized.is_empty() {
@@ -852,12 +868,9 @@ pub fn approval_choice_unmatched(stage: &str, reply: &str) -> String {
             normalized.chars().take(LIMIT - 3).collect::<String>()
         )
     };
-    let quoted = core_infrastructure::canon_json::serialize(
+    core_infrastructure::canon_json::serialize(
         &core_infrastructure::canon_json::JsonValue::String(shown),
         core_infrastructure::canon_json::SerializationProfile::ContractCompact,
-    );
-    format!(
-        "Cannot approve \"{stage}\" because the reply {quoted} did not match one of the offered choices. Present the original question with every choice again and wait for the human to pick one."
     )
 }
 

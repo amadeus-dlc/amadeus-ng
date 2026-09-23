@@ -396,9 +396,13 @@ async fn rejecting_a_gate_matches_the_recorded_reply_after_slug_substitution() {
     assert_eq!(
         report_line(
             &workspace,
+            // 2.8.2 は差し戻しに人間の `Request Changes` の選択を要る（`handleReject`）。
+            // 出力の期待バイトは 2.7.1 の採取のまま変えない。
             &[
                 "--result",
                 "rejected",
+                "--user-input",
+                "Request Changes",
                 "--reason",
                 "Sharpen the testing posture."
             ]
@@ -417,6 +421,8 @@ async fn revising_a_gate_matches_the_recorded_reply_after_slug_substitution() {
         &[
             "--result",
             "rejected",
+            "--user-input",
+            "Request Changes",
             "--reason",
             "Sharpen the testing posture.",
         ],

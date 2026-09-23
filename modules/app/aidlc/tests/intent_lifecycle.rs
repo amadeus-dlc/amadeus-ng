@@ -2464,18 +2464,28 @@ async fn a_gated_stage_walks_through_rejection_and_revision_before_it_is_approve
         let next = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
         assert_eq!(next.code(), 0, "{outcome} の直前の next: {next:?}");
 
-        let completion = invoke(
-            &workspace,
-            "aidlc-orchestrate",
+        // 差し戻しは人間の `Request Changes` の選択と `--reason` のフィードバックで打つ
+        // （2.8.2 `handleReject`）。
+        let args: &[&str] = if outcome == "rejected" {
+            &[
+                "report",
+                "--result",
+                outcome,
+                "--user-input",
+                "Request Changes",
+                "--reason",
+                "Sharpen the testing posture.",
+            ]
+        } else {
             &[
                 "report",
                 "--result",
                 outcome,
                 "--user-input",
                 "Sharpen the testing posture.",
-            ],
-        )
-        .await;
+            ]
+        };
+        let completion = invoke(&workspace, "aidlc-orchestrate", args).await;
 
         assert_eq!(
             completion.code(),
@@ -2592,7 +2602,15 @@ async fn each_gate_verdict_refuses_with_its_own_precondition_wording() {
     invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "rejected", "--reason", "直して"],
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "直して",
+        ],
     )
     .await;
     let completion = invoke(
@@ -2609,7 +2627,15 @@ async fn each_gate_verdict_refuses_with_its_own_precondition_wording() {
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "rejected", "--reason", "もう一度"],
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "もう一度",
+        ],
     )
     .await;
     assert_eq!(
@@ -2632,7 +2658,15 @@ async fn a_rejection_without_feedback_is_refused() {
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "rejected", "--reason", "   "],
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "   ",
+        ],
     )
     .await;
 
@@ -2640,6 +2674,63 @@ async fn a_rejection_without_feedback_is_refused() {
         string_of(&line_of(&completion), "message"),
         "report --result rejected for \"domain-design\" requires nonblank --user-input or --reason feedback."
     );
+}
+
+/// 2.8.2 `handleReject` — 差し戻しの返答は提示した `Request Changes` の選択でなければならない。
+/// フィードバックを `--user-input` に書いても選択にはならない（保護されたゲートでは
+/// `--user-input` は選択であり、フィードバックは `--reason` が運ぶ）。
+#[tokio::test]
+async fn a_rejection_whose_reply_is_not_the_request_changes_choice_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    for (args, reply) in [
+        (
+            &["report", "--result", "rejected", "--reason", "直して"][..],
+            "(empty)",
+        ),
+        (
+            &[
+                "report",
+                "--result",
+                "rejected",
+                "--user-input",
+                "直して",
+                "--reason",
+                "直して",
+            ][..],
+            "直して",
+        ),
+    ] {
+        let completion = invoke(&workspace, "aidlc-orchestrate", args).await;
+        assert_eq!(
+            string_of(&line_of(&completion), "message"),
+            format!(
+                "Refusing to reject \"domain-design\": received reply \"{reply}\" did not match an offered choice at the held gate. Re-present the original held gate with every offered choice and wait for the human to choose one."
+            )
+        );
+    }
+    // 選択の揺れ（前置き・大文字小文字）は同じ選択として通る。
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "B. request changes",
+            "--reason",
+            "直して",
+        ],
+    )
+    .await;
+    assert_eq!(string_of(&line_of(&completion), "kind"), "print");
 }
 
 /// 段 13 — ゲート付き未完了の前進は人間の選択を要する。
@@ -4178,7 +4269,15 @@ async fn a_revising_stage_cannot_be_reported_as_a_forward_completion() {
     invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "rejected", "--reason", "直して"],
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "直して",
+        ],
     )
     .await;
 
@@ -5188,7 +5287,14 @@ async fn a_gate_rejection_resets_the_attempt_and_the_receipt_must_be_recorded_ag
     record_verdict(&workspace, "1", "READY").await;
     report_directive(
         &workspace,
-        &["--result", "rejected", "--reason", "Sharpen the design."],
+        &[
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "Sharpen the design.",
+        ],
     )
     .await;
     report_directive(&workspace, &["--result", "revised"]).await;
@@ -5509,7 +5615,14 @@ async fn a_gate_rejection_floors_the_receipt_and_the_promotion_must_be_replayed(
     // 差し戻しも再入も `print` の directive である（遷移は 1 つコミットされる）。
     let (kind, _) = report_directive(
         &workspace,
-        &["--result", "rejected", "--reason", "Sharpen the practices."],
+        &[
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "Sharpen the practices.",
+        ],
     )
     .await;
     assert_eq!(kind, "print");

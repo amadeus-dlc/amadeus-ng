@@ -4,6 +4,7 @@
 
 use super::verdict::Verdict;
 use crate::workflow_definition::StageSlug;
+use core_infrastructure::ecmascript::{collapse_whitespace, is_whitespace, trim};
 
 /// `report` 1 回ぶんの観測 (段 5〜13 の材料)。
 ///
@@ -166,15 +167,35 @@ impl ReportRequest {
         self.human_presence_guard
     }
 
-    /// 差し戻しのフィードバック — `--user-input` が無ければ `--reason` (段 10、ピン `:5721`)。
+    /// 差し戻しのフィードバック (2.8.2 `aidlc-orchestrate.ts` report `rejected` の組み立て)。
     ///
-    /// 空白のみは「無い」と同じである。
-    #[must_use]
-    pub fn feedback(&self) -> Option<&str> {
-        self.user_input()
-            .or_else(|| self.reason())
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
+    /// `--reason` が在ればそれ (空白だけなら「無い」 — `--user-input` へは落ちない)。無ければ、
+    /// ゲートが人間の決定を保護している (`protected_gate`) 間は `--user-input` は人間の選択
+    /// (`Request Changes`) であってフィードバックではないので「無い」。保護されていなければ
+    /// `--user-input` を使う。どちらも両端の空白を除き、空なら「無い」である。
+    pub(super) fn feedback(&self, protected_gate: bool) -> Option<&str> {
+        let chosen = match (self.reason(), protected_gate) {
+            (Some(reason), _) => Some(reason),
+            (None, true) => None,
+            (None, false) => self.user_input(),
+        };
+        chosen.map(trim).filter(|text| !text.is_empty())
+    }
+
+    /// `--user-input` がゲートの `Request Changes` の選択か (2.8.2 `aidlc-lib.ts`
+    /// `isRequestChangesChoice`)。
+    ///
+    /// 人が打つ形を同じ選択とみなす — 大文字小文字、選択肢の前置き (`B.` / `2)`)、
+    /// 前後の引用符、末尾の `.` `!`、空白の連なり。言い換え (`please change it`) は選択では
+    /// ない。
+    pub(super) fn is_request_changes_choice(&self) -> bool {
+        let text = trim(self.user_input().unwrap_or_default());
+        let text = without_option_prefix(text);
+        let text = text
+            .trim_start_matches(['"', '\'', '`'])
+            .trim_end_matches(['"', '\'', '`'])
+            .trim_end_matches(['.', '!']);
+        trim(&collapse_whitespace(text)).to_lowercase() == "request changes"
     }
 
     /// 空白でない `--user-input` があるか (段 13 の判定材料)。
@@ -188,6 +209,26 @@ impl ReportRequest {
     #[must_use]
     pub fn has_reason(&self) -> bool {
         self.reason().is_some_and(|text| !text.trim().is_empty())
+    }
+}
+
+/// 選択肢の前置き (英字 1 文字か数字の列に `.` か `)`、続く空白) を外す
+/// (2.8.2 `/^(?:[A-Za-z]|\d+)[.)]\s*/`)。
+fn without_option_prefix(text: &str) -> &str {
+    let bytes = text.as_bytes();
+    let head = match bytes.first() {
+        Some(byte) if byte.is_ascii_alphabetic() => 1,
+        Some(byte) if byte.is_ascii_digit() => bytes
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count(),
+        _ => return text,
+    };
+    match bytes.get(head) {
+        Some(b'.' | b')') => text
+            .get(head.saturating_add(1)..)
+            .map_or(text, |rest| rest.trim_start_matches(is_whitespace)),
+        _ => text,
     }
 }
 
@@ -238,46 +279,90 @@ mod tests {
         assert!(request.human_presence_guard());
     }
 
-    #[test]
-    fn the_feedback_prefers_user_input_and_falls_back_to_reason() {
-        let with_input = ReportRequest::new(
+    fn rejected(user_input: Option<&str>, reason: Option<&str>) -> ReportRequest {
+        ReportRequest::new(
             Verdict::Rejected,
             None,
-            Some("直して".to_string()),
-            Some("理由".to_string()),
+            user_input.map(str::to_string),
+            reason.map(str::to_string),
             true,
-        );
-        assert_eq!(with_input.feedback(), Some("直して"));
-        let with_reason = ReportRequest::new(
-            Verdict::Rejected,
-            None,
-            None,
-            Some("理由".to_string()),
-            true,
-        );
-        assert_eq!(with_reason.feedback(), Some("理由"));
+        )
     }
 
+    /// `--reason` が在ればそれがフィードバックである (保護の有無を問わない)。
     #[test]
-    fn a_blank_user_input_does_not_fall_back_to_the_reason() {
-        // upstream は `(flags.userInput ?? flags.reason)?.trim()` — nullish coalescing なので
-        // **空白の `--user-input` は「在る」**であり、`--reason` へは落ちない (ピン `:5721`)。
-        let blank_input = ReportRequest::new(
-            Verdict::Rejected,
-            None,
-            Some("   ".to_string()),
-            Some("実のある理由".to_string()),
-            true,
-        );
-        assert_eq!(blank_input.feedback(), None);
-        assert!(!blank_input.has_user_input());
-        assert!(blank_input.has_reason());
+    fn the_feedback_is_the_reason_when_one_is_given() {
+        let request = rejected(Some("Request Changes"), Some(" 直して "));
+        assert_eq!(request.feedback(true), Some("直して"));
+        assert_eq!(request.feedback(false), Some("直して"));
+    }
+
+    /// 保護されたゲートでは `--user-input` は選択であってフィードバックではない。
+    #[test]
+    fn a_protected_gate_does_not_take_the_user_input_as_feedback() {
+        let request = rejected(Some("直して"), None);
+        assert_eq!(request.feedback(true), None);
+        assert_eq!(request.feedback(false), Some("直して"));
+    }
+
+    /// 空白だけの `--reason` は「無い」であり、`--user-input` へは落ちない (2.8.2 は
+    /// `flags.reason !== undefined` で分岐する)。
+    #[test]
+    fn a_blank_reason_does_not_fall_back_to_the_user_input() {
+        let request = rejected(Some("実のある返答"), Some("   "));
+        assert_eq!(request.feedback(false), None);
+        assert!(request.has_user_input());
+        assert!(!request.has_reason());
+    }
+
+    /// 人が打つ揺れは同じ `Request Changes` の選択として読む。
+    #[test]
+    fn the_request_changes_choice_tolerates_how_a_person_types_it() {
+        for reply in [
+            "Request Changes",
+            "request changes",
+            "  REQUEST   CHANGES  ",
+            "B. Request Changes",
+            "2) Request Changes",
+            "12) request changes",
+            "\"Request Changes\"",
+            "`Request Changes`",
+            "Request Changes.",
+            "Request Changes!!",
+            "b.Request Changes",
+        ] {
+            assert!(
+                rejected(Some(reply), None).is_request_changes_choice(),
+                "{reply:?}"
+            );
+        }
+    }
+
+    /// 言い換え・別の選択・空は `Request Changes` の選択ではない。
+    #[test]
+    fn a_paraphrase_or_another_choice_is_not_request_changes() {
+        for reply in [
+            "",
+            "   ",
+            "please change it",
+            "Approve",
+            "Request",
+            "Request Changes please",
+            "AB. Request Changes",
+            "\"Request Changes\".",
+        ] {
+            assert!(
+                !rejected(Some(reply), None).is_request_changes_choice(),
+                "{reply:?}"
+            );
+        }
+        assert!(!rejected(None, Some("理由")).is_request_changes_choice());
     }
 
     #[test]
     fn blank_material_counts_as_absent() {
         let blank = ReportRequest::new(Verdict::Skipped, None, None, Some("\t".to_string()), true);
-        assert_eq!(blank.feedback(), None);
+        assert_eq!(blank.feedback(false), None);
         assert!(!blank.has_user_input());
         assert!(!blank.has_reason());
     }

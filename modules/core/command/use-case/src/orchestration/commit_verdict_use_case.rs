@@ -662,7 +662,7 @@ mod tests {
                 ReportRequest::new(
                     Verdict::Rejected,
                     None,
-                    None,
+                    Some("Request Changes".to_string()),
                     Some("Sharpen the testing posture.".to_string()),
                     true,
                 ),
@@ -1122,7 +1122,7 @@ mod tests {
                 ReportRequest::new(
                     Verdict::Rejected,
                     Some(slug(1)),
-                    None,
+                    Some("Request Changes".to_string()),
                     Some("直せ".to_string()),
                     true,
                 ),

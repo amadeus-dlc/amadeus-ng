@@ -96,6 +96,14 @@ pub enum ReportRefusal {
         /// 受け取った返答（逐語）。
         reply: String,
     },
+    /// 2.8.2 — 差し戻しの返答が提示した `Request Changes` の選択と一致しない
+    /// （`aidlc-state.ts` `handleReject` の `isRequestChangesChoice`）。
+    RejectChoiceUnmatched {
+        /// 対象ステージ。
+        stage: StageSlug,
+        /// 受け取った返答（逐語）。
+        reply: String,
+    },
     /// 2.8.2 — 直近のゲート解決より後に人間の turn が無い（`humanActedSinceGate`）。
     HumanReplyMissing {
         /// 対象ステージ。
@@ -177,6 +185,11 @@ impl fmt::Display for ReportRefusal {
             ReportRefusal::ApprovalChoiceUnmatched { stage, reply } => write!(
                 f,
                 "approval choice unmatched: {} replied {reply:?}",
+                stage.as_str()
+            ),
+            ReportRefusal::RejectChoiceUnmatched { stage, reply } => write!(
+                f,
+                "reject choice unmatched: {} replied {reply:?}",
                 stage.as_str()
             ),
             ReportRefusal::HumanReplyMissing { stage, verdict } => write!(
@@ -278,6 +291,13 @@ mod tests {
                 "reject requires feedback: domain-design",
             ),
             (
+                ReportRefusal::RejectChoiceUnmatched {
+                    stage: slug("domain-design"),
+                    reply: "直して".to_string(),
+                },
+                "reject choice unmatched: domain-design replied \"直して\"",
+            ),
+            (
                 ReportRefusal::HumanPresence {
                     stage: slug("domain-design"),
                     verdict: Verdict::Forward,
@@ -304,7 +324,7 @@ mod tests {
                 "in-progress requires an explicit stage: domain-design",
             ),
         ];
-        assert_eq!(cases.len(), 13, "拒否は 13 形である");
+        assert_eq!(cases.len(), 14, "拒否は 14 形である");
         for (refusal, rendered) in cases {
             assert_eq!(refusal.to_string(), rendered);
         }
