@@ -4923,6 +4923,107 @@ async fn a_scope_cap_of_none_waives_the_receipt_entirely() {
     assert_eq!(kind, "done", "実効 none は受領証を要らない: {body}");
 }
 
+/// 規則の連鎖を `continue` でたどり、run-stage 指示を取り出す。
+async fn run_stage_directive(workspace: &Workspace) -> JsonValue {
+    let mut completion = invoke(workspace, "aidlc-orchestrate", &["next"]).await;
+    for _ in 0..8 {
+        assert_eq!(completion.code(), 0, "{completion:?}");
+        let directive = line_of(&completion);
+        match string_of(&directive, "kind").as_str() {
+            "run-stage" => return directive,
+            "load-steering" => {
+                let token = string_of(&directive, "continue_token");
+                completion = invoke(
+                    workspace,
+                    "aidlc-orchestrate",
+                    &["continue", token.as_str()],
+                )
+                .await;
+            }
+            other => panic!("run-stage へ届かない ({other}): {directive:?}"),
+        }
+    }
+    panic!("規則の連鎖が終わらない");
+}
+
+/// 実効の階級が `none` なら、run-stage 指示はレビュー欄をまるごと省く（2.8.2
+/// `aidlc-orchestrate.ts` — reviewer / review_artifact / review_class / 往復上限と、
+/// `protocol_modules` の `reviewer`）。定義グラフの宣言へ戻して欄を出してはならない。
+fn assert_reviewless(directive: &JsonValue) {
+    let JsonValue::Object(members) = directive else {
+        panic!("オブジェクトであるべき: {directive:?}");
+    };
+    assert_eq!(string_of(directive, "stage"), "domain-design");
+    for key in [
+        "reviewer",
+        "review_artifact",
+        "review_class",
+        "reviewer_max_iterations",
+    ] {
+        assert!(
+            members.get(key).is_none(),
+            "実効 none なのに {key} が載った: {directive:?}"
+        );
+    }
+    if let Some(JsonValue::Array(modules)) = members.get("protocol_modules") {
+        assert!(
+            !modules
+                .iter()
+                .any(|module| matches!(module, JsonValue::String(name) if name == "reviewer")),
+            "実効 none なのに reviewer の手順が載った: {directive:?}"
+        );
+    }
+}
+
+/// scope の `review_cap: none` で下げたステージの指示にはレビュー欄が無い。
+#[tokio::test]
+async fn a_scope_cap_of_none_drops_the_review_fields_from_the_directive() {
+    let workspace = Workspace::with_reviewer(Some("adversarial"), Some("none"));
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+    assert_reviewless(&run_stage_directive(&workspace).await);
+}
+
+/// 状態ファイルの `- **Review Override**: none` で下げたステージの指示にもレビュー欄が無い。
+/// 上書きが無ければ宣言どおりの欄が載る（対照）。
+#[tokio::test]
+async fn a_review_override_of_none_drops_the_review_fields_from_the_directive() {
+    let reviewed = Workspace::with_reviewer(Some("adversarial"), None);
+    invoke(
+        &reviewed,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+    let directive = run_stage_directive(&reviewed).await;
+    assert_eq!(string_of(&directive, "review_class"), "adversarial");
+    assert_eq!(string_of(&directive, "reviewer"), REVIEWER);
+
+    let workspace = Workspace::with_reviewer(Some("adversarial"), None);
+    let created = invoke(
+        &workspace,
+        "aidlc-utility",
+        &[
+            "intent-create",
+            "--scope",
+            "classic",
+            "--label",
+            "review",
+            "--review",
+            "none",
+        ],
+    )
+    .await;
+    assert_eq!(created.code(), 0, "{created:?}");
+    let state = workspace.state_file().expect("状態ファイルが投影された");
+    assert!(state.contains("- **Review Override**: none"), "{state}");
+    assert_reviewless(&run_stage_directive(&workspace).await);
+}
+
 /// 呼び直しは `retry` を載せた JSON を返し、依頼の回数には数えない。
 #[tokio::test]
 async fn a_retry_pending_request_reports_the_retry_and_does_not_spend_the_budget() {

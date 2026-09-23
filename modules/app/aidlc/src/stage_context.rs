@@ -119,6 +119,22 @@ pub(crate) struct ReviewShape {
     pub(crate) max_iterations: u32,
 }
 
+/// 実効のレビューの解決結果。
+///
+/// 「実効の階級が `none` なのでレビュー欄を省く」と「定義グラフが読めないので行の宣言へ
+/// 戻る」を取り違えないために分ける — 取り違えると、`none` に下げたステージの指示へ
+/// 行が宣言したレビュー欄が戻ってしまう（2.8.2 `aidlc-orchestrate.ts` は `none` なら
+/// reviewer / review_artifact / review_class / 往復上限と `reviewer` の
+/// `protocol_modules` をまとめて省く）。
+pub(crate) enum ReviewResolution {
+    /// 定義グラフが読めない、またはステージが載っていない — 行の宣言を使う。
+    Unresolved,
+    /// レビューを載せない（宣言が無い、または実効の階級が `none`）。
+    Omitted,
+    /// 実効のレビュー形。
+    Present(ReviewShape),
+}
+
 /// 定義グラフ・スコープグリッド・状態ファイルの読み取り（指示 1 回ぶん）。
 pub(crate) struct StageContext<'a> {
     layout: &'a Layout,
@@ -353,15 +369,21 @@ impl<'a> StageContext<'a> {
             .collect()
     }
 
-    /// 実効のレビュー形。宣言が無い、または実効の階級が `none` なら `None`。
-    pub(crate) fn review(&self, slug: &str) -> Option<ReviewShape> {
-        let node = self.node(slug)?;
-        node.get("reviewer").and_then(Value::as_str)?;
+    /// 実効のレビュー形（2.8.2 `resolveReviewClass`）。
+    pub(crate) fn review(&self, slug: &str) -> ReviewResolution {
+        let Some(node) = self.node(slug) else {
+            return ReviewResolution::Unresolved;
+        };
+        if node.get("reviewer").and_then(Value::as_str).is_none() {
+            return ReviewResolution::Omitted;
+        }
         let declared = node
             .get("review_class")
             .and_then(Value::as_str)
             .unwrap_or("adversarial");
-        let mut class = rank(declared)?;
+        let Some(mut class) = rank(declared) else {
+            return ReviewResolution::Unresolved;
+        };
         if let Some(cap) = self
             .scope()
             .and_then(|scope| self.review_cap(scope))
@@ -377,7 +399,7 @@ impl<'a> StageContext<'a> {
             .copied()
             .unwrap_or("none");
         if class == "none" {
-            return None;
+            return ReviewResolution::Omitted;
         }
         let max_iterations = if class == "advisory" {
             1
@@ -387,7 +409,7 @@ impl<'a> StageContext<'a> {
                 .and_then(|n| u32::try_from(n).ok())
                 .unwrap_or(2)
         };
-        Some(ReviewShape {
+        ReviewResolution::Present(ReviewShape {
             artifact: node
                 .get("review_artifact")
                 .and_then(Value::as_str)
@@ -591,17 +613,21 @@ mod tests {
             "---\nname: bugfix\nreview_cap: advisory\n---\n",
         )
         .expect("scope");
-        let shape = StageContext::read(&layout)
-            .review("requirements-analysis")
-            .expect("advisory へ下がる");
+        let ReviewResolution::Present(shape) =
+            StageContext::read(&layout).review("requirements-analysis")
+        else {
+            panic!("advisory へ下がる");
+        };
         assert_eq!(shape.class, "advisory");
         assert_eq!(shape.max_iterations, 1, "advisory は 1 回に固定する");
         assert_eq!(shape.artifact.as_deref(), Some("requirements"));
 
         fs::write(scopes.join("aidlc-bugfix.md"), "---\nname: bugfix\n---\n").expect("scope");
-        let shape = StageContext::read(&layout)
-            .review("requirements-analysis")
-            .expect("宣言どおり");
+        let ReviewResolution::Present(shape) =
+            StageContext::read(&layout).review("requirements-analysis")
+        else {
+            panic!("宣言どおり");
+        };
         assert_eq!(
             (shape.class.as_str(), shape.max_iterations),
             ("adversarial", 3)
@@ -609,10 +635,18 @@ mod tests {
 
         let (_root, layout) = workspace("- **Scope**: bugfix\n- **Review Override**: none\n");
         assert!(
-            StageContext::read(&layout)
-                .review("requirements-analysis")
-                .is_none(),
+            matches!(
+                StageContext::read(&layout).review("requirements-analysis"),
+                ReviewResolution::Omitted
+            ),
             "none に下がればレビュー欄を載せない"
+        );
+        assert!(
+            matches!(
+                StageContext::read(&layout).review("unknown"),
+                ReviewResolution::Unresolved
+            ),
+            "載っていないステージは行の宣言へ戻す"
         );
     }
 

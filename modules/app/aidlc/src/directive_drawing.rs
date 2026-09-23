@@ -25,6 +25,7 @@ use core_query_use_case::orchestration::{
 };
 
 use crate::layout::Layout;
+use crate::stage_context::ReviewResolution;
 
 /// 行の値が公開言語の閉集合に無い (投影と描画の食い違い)。
 ///
@@ -130,6 +131,7 @@ pub(crate) fn run_stage(
     let mode = StageModeView::parse(row.mode()).map_err(|_| unreadable_row("mode", row.mode()))?;
     // 入力・会話の文脈・レビュー形は、2.8.2 と同じく指示を描く瞬間のディスクと状態で決める。
     let context = crate::stage_context::StageContext::read(layout);
+    let review = context.review(row.stage_slug());
     let resolved = context.consumes(
         row.stage_slug(),
         project_kind.map(|kind| match kind {
@@ -199,7 +201,19 @@ pub(crate) fn run_stage(
         under(&record, "produces_rel", row.produces_rel())?
     })
     .with_sensors(strings("sensors_applicable", row.sensors_applicable())?)
-    .with_protocol_modules(strings("protocol_modules", row.protocol_modules())?);
+    .with_protocol_modules({
+        let modules = strings("protocol_modules", row.protocol_modules())?;
+        // レビュー欄を省くなら `reviewer` の手順も渡さない（2.8.2 は reviewer と
+        // review_class が載ったときだけ `reviewer` を積む）。
+        if matches!(review, ReviewResolution::Omitted) {
+            modules
+                .into_iter()
+                .filter(|module| module != "reviewer")
+                .collect()
+        } else {
+            modules
+        }
+    });
     // 隔離実行は 1 ステージで止まるので次のステージを名乗らない (ピン `next_stage = null`)。
     if let Some(name) = row.next_stage_name()
         && !single
@@ -208,17 +222,28 @@ pub(crate) fn run_stage(
     }
     if let (Some(reviewer), Some(class)) = (row.reviewer(), row.review_class()) {
         // 実効の階級（scope の上限と状態の上書きで下げたもの）と往復の上限を載せる。
-        // 定義グラフが読めなければ行の宣言をそのまま使う。
-        let shape = context.review(row.stage_slug());
-        let (class, max) = shape.as_ref().map_or_else(
-            || (class, row.reviewer_max_iterations().unwrap_or(1)),
-            |shape| (shape.class.as_str(), shape.max_iterations),
-        );
-        let class =
-            ReviewClassView::parse(class).map_err(|_| unreadable_row("review_class", class))?;
-        builder = builder.with_reviewer(reviewer, class, max);
-        if let Some(artifact) = shape.and_then(|shape| shape.artifact) {
-            builder = builder.with_review_artifact(artifact);
+        // 実効が `none` ならレビュー欄をまるごと省く（2.8.2 はレビューを宣言しないステージと
+        // 同じ形にする）。定義グラフが読めないときだけ行の宣言をそのまま使う。
+        let (class, max, artifact) = match review {
+            ReviewResolution::Omitted => (None, 1, None),
+            ReviewResolution::Unresolved => (
+                Some(class),
+                row.reviewer_max_iterations().unwrap_or(1),
+                None,
+            ),
+            ReviewResolution::Present(ref shape) => (
+                Some(shape.class.as_str()),
+                shape.max_iterations,
+                shape.artifact.clone(),
+            ),
+        };
+        if let Some(class) = class {
+            let class =
+                ReviewClassView::parse(class).map_err(|_| unreadable_row("review_class", class))?;
+            builder = builder.with_reviewer(reviewer, class, max);
+            if let Some(artifact) = artifact {
+                builder = builder.with_review_artifact(artifact);
+            }
         }
     }
     if single {
