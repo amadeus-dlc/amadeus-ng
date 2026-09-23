@@ -14,10 +14,10 @@
 | [#143](https://github.com/amadeus-dlc/amadeus-ng/pull/143) | レビュー受領の 2.8.2 形・runtime-graph・承認と差し戻しの人間の返答ガード | `36c1ca5b` |
 | [#144](https://github.com/amadeus-dlc/amadeus-ng/pull/144) | 計画承認の 2 行タグ・run-stage 指示の文脈・要約確認ガード | `1c7641a5` |
 | [#145](https://github.com/amadeus-dlc/amadeus-ng/pull/145) | plan-approval-guard の native 化 | `681dc4d2` |
-| [#146](https://github.com/amadeus-dlc/amadeus-ng/pull/146) | 再生に PreToolUse / Stop フックを追加 | — |
+| [#146](https://github.com/amadeus-dlc/amadeus-ng/pull/146) | 再生に PreToolUse / Stop フックを追加 | `7247a05f` |
 | [#147](https://github.com/amadeus-dlc/amadeus-ng/pull/147) | 切替の手順書と、この文書 | — |
 
-#146・#147 のコミットは、この文書を書いた時点ではまだ決まっていない。`git log --oneline origin/main` で確かめること。
+#147 のコミットは、この文書を書いた時点ではまだ決まっていない。`git log --oneline origin/main` で確かめること。
 
 ### 1-2. 独立レビューの結果（マージ前に直したもの）
 
@@ -28,6 +28,12 @@
 - #144: 指紋は射影した計画を束ねるのに、作業ブリーフは原文を渡していた。承認後に付録へ足した手順や印を書き換えた手順が、指紋を変えないまま作業者へ届いていた（blocker）。ブリーフも射影した計画を渡す
 - #144: 要約確認で "Request changes" でも確認済みになっていた。レビュー階級 `none` でも指示にレビュー欄が出ていた。定義グラフが読めないと要約確認ガードが黙って外れていた
 - #145: 経路に symlink があっても外と判定しなかった。`sed -i … src/*.rs` や `echo x > $F` が承認前に通っていた。契約の印が `sha256:` 以外の値も数えていた
+
+マージ直前の CodeRabbit の指摘で、さらに次を直した。
+
+- #144: `memory.md` を書き切れなかったとき、途中までのファイルが残って二度と作り直されなかった。失敗したら消す
+- #145: `PlanApprovalState` の欄が `pub(super)` で、ガードが欄を直接読んでいた。欄は private にし、`is_current` / `approves_contract` / `refusal_reason` のクエリで渡す
+- #146: 再生の `pretool` が終了コード 2 しか失敗に数えていなかった。また `printf … | write` はサブシェルで動き、その中で数えた失敗が合計に出ていなかった。どちらも直し、native・配布 2.8.2 とも 102/102 のままであることを確かめた
 
 **直さずに後続へ回したものは Issue [#148](https://github.com/amadeus-dlc/amadeus-ng/issues/148) にまとめてある**（拒否文言の包み文、Unit を切る scope、レビュー方針の出どころの一本化など）。
 
