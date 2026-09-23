@@ -100,7 +100,7 @@ Issue #7 は最終更新が 2026-09-04 前後で、`docs/specs/00-policy.md`（2
 
 ### 3-2. その PATH が native を指していない
 
-```
+```text
 /Users/j5ik2o/.local/bin/aidlc          # ランチャ（1866 バイトの sh）
   → ~/.local/share/aidlc/active-version  = 2.9.0
   → ~/.local/share/aidlc/versions/2.9.0/aidlc
@@ -142,7 +142,7 @@ native は 2.8.2 の面へ追従してきたので、**追従先が 1 つ古く�
 
 ### 4-2. その結果 `engine_hook_wiring_contract` が手元でだけ落ちる
 
-```
+```text
 the_binding_definition_counts_registrations_apart_from_hook_names
   assertion `left == right` failed: 登録件数が配布の現物と一致しない
   left: Some(18)   # hook-binding.json の registration_count
