@@ -2,7 +2,9 @@
 //!
 //! 固定本家 2.7.1 `a277af21` の `aidlc-lib.ts:1499-1537`
 //! (`classifyRuntimeCompileCommand`) と `hooks/aidlc-rebuild-stage-graph.ts:110-150`
-//! に対応する。判定は**語彙的**で、遷移を書く公開面だけを通す。再帰ガードは
+//! に対応する。2.8.2 は指揮役の綴りを二段形 `aidlc engine <noun> …` へ揃えたので、
+//! 判定の前に `canonicalEngineCommand` (2.8.2 `aidlc-lib.ts:1414-1425`) と同じ正規化で
+//! 一段の `aidlc <noun> …` へ畳む。判定は**語彙的**で、遷移を書く公開面だけを通す。再帰ガードは
 //! `aidlc-runtime` 自身を先に落とすことで成立する — 許可だけの一覧では
 //! `bun aidlc-runtime.ts compile && bun aidlc-state.ts approve` のような合成が通り、
 //! compile が自分を呼び続けるからである。
@@ -12,6 +14,19 @@ use harness_infrastructure::split_shell_segments;
 const HARNESS_DIRS: [&str; 5] = [".claude", ".kiro", ".codex", ".aidlc", ".cursor"];
 /// 旧来のツールファイル面のうち、遷移を書くもの。
 const TRANSITION_TOOLS: [&str; 5] = ["state", "jump", "bolt", "unit", "utility"];
+/// 二段形 `aidlc engine <noun>` のうち、一段の `aidlc <noun>` へ畳む名詞
+/// (2.8.2 `canonicalEngineCommand`)。
+const ENGINE_NOUNS: [&str; 9] = [
+    "orchestrate",
+    "state",
+    "jump",
+    "bolt",
+    "swarm",
+    "scope",
+    "config",
+    "status",
+    "recompose",
+];
 
 /// Bash の PostToolUse 封筒が運ぶコマンドと、compile を発火するかの判定。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +66,8 @@ impl RuntimeCompileEnvelope {
     /// 1 つでも現れたら発火しない。
     #[must_use]
     pub fn compiles(&self) -> bool {
-        !self.invokes_runtime() && self.invokes_transition_surface()
+        !self.invokes_runtime()
+            && Self::new(canonical_engine_command(&self.command)).invokes_transition_surface()
     }
 
     fn invokes_runtime(&self) -> bool {
@@ -60,7 +76,9 @@ impl RuntimeCompileEnvelope {
         }
         let segments = split_shell_segments(&self.command);
         segments.fold_left(false, |found, segment| {
-            found || starts_with_word_sequence(segment, "aidlc", &["runtime"])
+            found
+                || starts_with_word_sequence(segment, "aidlc", &["runtime"])
+                || starts_with_word_sequence(segment, "aidlc", &["engine", "runtime", "compile"])
         })
     }
 
@@ -108,8 +126,10 @@ impl RuntimeCompileEnvelope {
     /// `workspace` / `gen` / `sensor` / `intent` / `space` の名詞は**意図的に外す** —
     /// 本家が D2 の同等性を公開ワンショットにだけ持たせているからである。
     fn dispatcher_transition(&self) -> bool {
-        const PAIRS: [[&str; 2]; 10] = [
+        const PAIRS: [[&str; 2]; 11] = [
             ["aidlc", "state"],
+            // 2.8.2 で加わった面 (`aidlc-lib.ts:1676`)。
+            ["aidlc", "recompose"],
             ["aidlc", "jump"],
             ["aidlc", "bolt"],
             ["aidlc", "unit"],
@@ -144,6 +164,38 @@ impl RuntimeCompileEnvelope {
             .iter()
             .any(|triple| word_sequence_end(&self.command, triple).is_some())
     }
+}
+
+/// `aidlc engine orchestrate help` を `aidlc help` へ、`aidlc engine <noun>` を
+/// `aidlc <noun>` へ畳む (2.8.2 `canonicalEngineCommand` と同じ置換、左から重ならずに)。
+fn canonical_engine_command(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut cursor = 0;
+    while let Some(offset) = word_index(text.get(cursor..).unwrap_or_default(), "aidlc") {
+        let start = cursor + offset;
+        let after = start + "aidlc".len();
+        let folded = sequence_from(text, after, &["engine", "orchestrate", "help"])
+            .map(|end| (end, "aidlc help".to_string()))
+            .or_else(|| {
+                ENGINE_NOUNS.iter().find_map(|noun| {
+                    sequence_from(text, after, &["engine", noun])
+                        .map(|end| (end, format!("aidlc {noun}")))
+                })
+            });
+        out.push_str(text.get(cursor..start).unwrap_or_default());
+        match folded {
+            Some((end, replacement)) => {
+                out.push_str(&replacement);
+                cursor = end;
+            }
+            None => {
+                out.push_str("aidlc");
+                cursor = after;
+            }
+        }
+    }
+    out.push_str(text.get(cursor..).unwrap_or_default());
+    out
 }
 
 /// ASCII の語構成文字 (本家 `\b` と同じ集合)。
@@ -320,6 +372,43 @@ mod tests {
         ] {
             assert!(!envelope(command).compiles(), "{command}");
         }
+    }
+
+    /// 2.8.2 の指揮役は二段形で綴る。一段の `aidlc <noun>` へ畳んでから同じ判定を当てる。
+    #[test]
+    fn the_two_part_engine_grammar_folds_to_the_one_part_surface() {
+        for command in [
+            "aidlc engine orchestrate report --stage requirements-analysis --result approved",
+            "aidlc engine state set-status --status running",
+            "aidlc engine jump execute --stage code-generation",
+            "aidlc engine bolt start",
+            "aidlc engine scope change --scope feature",
+            "aidlc engine config set change-control strict",
+            "aidlc engine orchestrate help",
+            "aidlc engine recompose --skip market-research",
+        ] {
+            assert!(envelope(command).compiles(), "{command}");
+        }
+        for command in [
+            "aidlc engine orchestrate next",
+            "aidlc engine log review --stage x --reviewer r --iteration 1",
+            "aidlc engine learnings surface --slug x",
+            "aidlc engine intent create --scope bugfix",
+            "aidlc engineering state",
+        ] {
+            assert!(!envelope(command).compiles(), "{command}");
+        }
+    }
+
+    #[test]
+    fn the_two_part_runtime_compile_never_retriggers_itself() {
+        assert!(!envelope("aidlc engine runtime compile").compiles());
+        assert!(
+            !envelope(
+                "aidlc engine runtime compile && aidlc engine orchestrate report --result approved"
+            )
+            .compiles()
+        );
     }
 
     #[test]
