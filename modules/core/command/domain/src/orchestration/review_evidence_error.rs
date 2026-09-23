@@ -18,6 +18,11 @@ pub enum ReviewEvidenceError {
     StaleAppendix,
     /// Review節の検証不成立。
     InvalidAppendix(String),
+    /// 判定の iteration に当たるレビューが書かれていない（下書きも追記も無い）。
+    /// 運ぶのは依頼の試行 ID である（下書きの置き場を名指すため）。
+    ReviewMissing(String),
+    /// 下書きのレビューと成果物への追記が両方ある。
+    ReviewWrittenTwice,
 }
 impl std::fmt::Display for ReviewEvidenceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -32,6 +37,10 @@ impl std::fmt::Display for ReviewEvidenceError {
             Self::InvalidBinding => f.write_str("invalid review binding"),
             Self::StaleAppendix => f.write_str("prior appendix retained"),
             Self::InvalidAppendix(reason) => f.write_str(reason),
+            Self::ReviewMissing(attempt) => write!(f, "no review was written (attempt {attempt})"),
+            Self::ReviewWrittenTwice => {
+                f.write_str("a review file was written and a review section was appended")
+            }
         }
     }
 }

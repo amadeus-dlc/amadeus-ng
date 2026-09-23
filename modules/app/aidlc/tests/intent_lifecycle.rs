@@ -4121,7 +4121,37 @@ async fn request_review(workspace: &Workspace, iteration: &str) -> String {
     )
     .await;
     assert_eq!(completion.code(), 0, "依頼は通る: {completion:?}");
-    completion.line().expect("stdout に 1 行が要る").to_string()
+    without_request_identity(completion.line().expect("stdout に 1 行が要る"))
+}
+
+/// 依頼の成功行から 2.8.2 の `requestId` / `reviewFile` を確かめて外す（残りの欄を照合する）。
+fn without_request_identity(line: &str) -> String {
+    let serde_json::Value::Object(mut fields) = serde_json::from_str(line).expect("JSON 1 行")
+    else {
+        panic!("オブジェクトの行: {line}");
+    };
+    let request = fields.remove("requestId");
+    let file = fields.remove("reviewFile");
+    assert!(
+        request
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| id.starts_with("review:")),
+        "依頼は Request Id を返す: {line}"
+    );
+    assert!(
+        file.as_ref()
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|path| path.contains("/.aidlc-reviews/domain-design/stage/")
+                && path.ends_with(".review.md")),
+        "依頼は下書きの置き場を返す: {line}"
+    );
+    let body = fields
+        .iter()
+        .map(|(key, value)| format!("{}:{value}", serde_json::Value::String(key.clone())))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{body}}}")
 }
 
 /// 判定 1 件（成功を確かめて stdout の 1 行を返す）。
@@ -4162,7 +4192,31 @@ async fn record_verdict(workspace: &Workspace, iteration: &str, verdict: &str) -
     )
     .await;
     assert_eq!(completion.code(), 0, "判定は通る: {completion:?}");
-    completion.line().expect("stdout に 1 行が要る").to_string()
+    // 2.8.2 は判定をレビュー記録へ書き、その置き場を `reviewRecord` で返す。この試験の
+    // reviewer は成果物へ追記する（非推奨の入力経路）が、記録は同じく書かれる。
+    let line = completion.line().expect("stdout に 1 行が要る");
+    let serde_json::Value::Object(mut fields) = serde_json::from_str(line).expect("JSON 1 行")
+    else {
+        panic!("オブジェクトの行: {line}");
+    };
+    let record = fields
+        .remove("reviewRecord")
+        .and_then(|value| value.as_str().map(str::to_string))
+        .expect("判定はレビュー記録の置き場を返す");
+    assert!(
+        workspace
+            .record_dir()
+            .expect("record")
+            .join(&record)
+            .is_file(),
+        "レビュー記録が書かれている: {record}"
+    );
+    let body = fields
+        .iter()
+        .map(|(key, value)| format!("{}:{value}", serde_json::Value::String(key.clone())))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{body}}}")
 }
 
 /// 依頼 → 判定 → 承認の一巡が通り、監査台帳に受領証 2 行が並ぶ。
@@ -4403,8 +4457,8 @@ async fn a_retry_pending_request_reports_the_retry_and_does_not_spend_the_budget
     .await;
     assert_eq!(completion.code(), 0, "{completion:?}");
     assert_eq!(
-        completion.line(),
-        Some(r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#)
+        without_request_identity(completion.line().expect("stdout に 1 行が要る")),
+        r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#
     );
     // 元の判定を受領してから次の通常依頼へ進む。retryは通常回数を増やさない。
     record_verdict(&workspace, "1", "NOT-READY").await;

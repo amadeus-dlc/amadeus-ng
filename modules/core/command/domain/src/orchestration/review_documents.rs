@@ -1,5 +1,8 @@
 //! レビュー対象の安定した原文集合と、その時点のソース観測。
-use super::{ReviewArtifact, ReviewBinding, ReviewCompletion, ReviewEvidenceError, ReviewVerdict};
+use super::{
+    ReviewArtifact, ReviewBinding, ReviewCompletion, ReviewDraft, ReviewEvidenceError,
+    ReviewRequestIdentity, ReviewVerdict,
+};
 use core_infrastructure::{
     canon_json::{JsonValue, SerializationProfile, serialize},
     hash::sha256_hex,
@@ -12,9 +15,13 @@ pub struct ReviewDocuments {
     source: Option<String>,
     nonce: String,
     stable: bool,
+    drafts: Vec<ReviewDraft>,
 }
 impl ReviewDocuments {
     /// 入力境界が読み取った全材料を束ねる。
+    ///
+    /// `drafts` は判定の iteration に当たる単独レビュー（試行ごとの下書き）である。依頼では
+    /// 読まないので空でよい。
     #[must_use]
     pub const fn new(
         artifacts: Vec<ReviewArtifact>,
@@ -22,6 +29,7 @@ impl ReviewDocuments {
         source: Option<String>,
         nonce: String,
         stable: bool,
+        drafts: Vec<ReviewDraft>,
     ) -> Self {
         Self {
             artifacts,
@@ -29,6 +37,7 @@ impl ReviewDocuments {
             source,
             nonce,
             stable,
+            drafts,
         }
     }
     fn target(&self) -> Result<&ReviewArtifact, ReviewEvidenceError> {
@@ -85,9 +94,14 @@ impl ReviewDocuments {
         Ok(format!("sha256:{}", sha256_hex(encoded.as_bytes())))
     }
     /// 初回要求の原文と既存Review節を固定する。
+    ///
+    /// `opening` は同じ試行の最初の依頼の識別である（試行 ID を引き継ぐ）。
     /// # Errors
     /// 不安定・欠落成果物、不正な追記先またはnonce。
-    pub fn bind(&self) -> Result<ReviewBinding, ReviewEvidenceError> {
+    pub fn bind(
+        &self,
+        opening: Option<&ReviewRequestIdentity>,
+    ) -> Result<ReviewBinding, ReviewEvidenceError> {
         let target = self.target()?;
         let body = target
             .body()
@@ -111,6 +125,7 @@ impl ReviewDocuments {
                 Some(format!("review:{}", self.nonce))
             },
             self.source.clone(),
+            ReviewRequestIdentity::generate(&self.nonce, opening)?,
         )
     }
     /// 要求時点と同じ原文を再び観測したか。
@@ -129,9 +144,14 @@ impl ReviewDocuments {
         }
         Ok(())
     }
-    /// 原文とreviewerの追記を検証し、完成後の指紋を確定する。
+    /// レビュー（単独の下書き、または成果物への追記）を検証し、完成後の指紋を確定する。
+    ///
+    /// upstream 2.8.2 の `handleReview` と同じ順で決める: 依頼の試行に当たる下書きがあれば
+    /// それがレビューであり、成果物は依頼時の原文のままでなければならない（追記も併せて
+    /// あれば拒否）。下書きが無ければ、非推奨の入力経路である成果物への `## Review` 追記を
+    /// 読む。どちらも無いのは、再試行済みの依頼を NOT-READY で閉じる場合だけである。
     /// # Errors
-    /// 要求内容不一致、古いReview節、追記の不正。
+    /// 要求内容不一致、古いReview節、レビューの欠落・二重・不正。
     pub fn certify(
         &self,
         request: &ReviewBinding,
@@ -150,6 +170,19 @@ impl ReviewDocuments {
                 .ok_or(ReviewEvidenceError::ArtifactsUnavailable)?
                 .to_vec(),
         );
+        let appended = appendix.digest() != request.prior_digest();
+        let draft = self
+            .drafts
+            .iter()
+            .find(|draft| draft.attempt() == request.identity().attempt());
+        if let Some(draft) = draft {
+            if appended {
+                return Err(ReviewEvidenceError::ReviewWrittenTwice);
+            }
+            super::review_appendix::ReviewAppendix::new(draft.body().to_vec())
+                .validate(reviewer, iteration, verdict, None, true)?;
+            return ReviewCompletion::new(request.clone(), self.fingerprint(None)?);
+        }
         if request.prior_length() > 0
             && appendix
                 .evidence()
@@ -160,9 +193,15 @@ impl ReviewDocuments {
         {
             return Err(ReviewEvidenceError::StaleAppendix);
         }
-        if !(appendix.is_empty() && retried && verdict == ReviewVerdict::NotReady) {
-            appendix.validate(reviewer, iteration, verdict, request.challenge())?;
+        if appendix.is_empty() {
+            if retried && verdict == ReviewVerdict::NotReady {
+                return ReviewCompletion::new(request.clone(), self.fingerprint(None)?);
+            }
+            return Err(ReviewEvidenceError::ReviewMissing(
+                request.identity().attempt().to_string(),
+            ));
         }
+        appendix.validate(reviewer, iteration, verdict, request.challenge(), false)?;
         ReviewCompletion::new(request.clone(), self.fingerprint(None)?)
     }
     /// 受領後の全成果物とソースが一致するか。

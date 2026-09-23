@@ -345,8 +345,13 @@ fn request_and_bounded_retry_match_the_fixed_upstream_audit_and_output() {
     );
     let workspace = Workspace::new();
     workspace.requirements(false);
+    // 2.8.2 は依頼に Request Id を発行し、成功行へ `requestId` / `reviewFile` を、監査行へ
+    // `Request Id` を足した（`aidlc-log.ts` `handleReview`）。この採取は 2.7.1 のもので
+    // それらを持たないので、足された分だけを外して残りを 2.7.1 の採取と照合する。足された
+    // 分の形は `scripts/aidlc-selfhost/e2e/replay-bugfix.sh` が 2.8.2 の実体と突き合わせる。
     let normalize = |text: &str| {
         text.lines()
+            .filter(|line| !line.starts_with("**Request Id**: "))
             .map(|line| {
                 if line.starts_with("**Timestamp**: ") {
                     "**Timestamp**: <TS>"
@@ -357,6 +362,35 @@ fn request_and_bounded_retry_match_the_fixed_upstream_audit_and_output() {
             .collect::<Vec<_>>()
             .join("\n")
             + if text.ends_with('\n') { "\n" } else { "" }
+    };
+    let without_request_identity = |stdout: &str| {
+        let Ok(serde_json::Value::Object(mut line)) = serde_json::from_str(stdout) else {
+            return stdout.to_string();
+        };
+        let request = line.remove("requestId");
+        let file = line.remove("reviewFile");
+        assert!(
+            request
+                .as_ref()
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| id.starts_with("review:"))
+                == file
+                    .as_ref()
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|path| path.ends_with(".review.md")),
+            "Request Id と下書きの置き場は対で出る: {stdout}"
+        );
+        let mut rendered = String::from("{");
+        for (index, (key, value)) in line.iter().enumerate() {
+            if index > 0 {
+                rendered.push(',');
+            }
+            rendered.push_str(&format!(
+                "{}:{value}",
+                serde_json::Value::String(key.clone())
+            ));
+        }
+        rendered + "}\n"
     };
     for case in corpus.get("observations").unwrap().as_array().unwrap() {
         let args = case
@@ -378,7 +412,7 @@ fn request_and_bounded_retry_match_the_fixed_upstream_audit_and_output() {
                 .map(|n| i32::try_from(n).unwrap())
         );
         assert_eq!(
-            String::from_utf8(actual.stdout).unwrap(),
+            without_request_identity(&String::from_utf8(actual.stdout).unwrap()),
             case.get("stdout").unwrap().as_str().unwrap()
         );
         assert_eq!(

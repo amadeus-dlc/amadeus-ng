@@ -242,10 +242,35 @@ fn summary(
     ))
 }
 
-/// 宣言された成果物のうち、末尾に `## Review` 節を持つものの文脈。
+/// 現在のレビューの文脈（upstream 2.8.2 `readReviewArtifactContexts`）。
+///
+/// 最新のレビュー記録があればそれを `review_artifact` の文脈として描く。記録が無い段
+/// （記録導入前にレビューした段）は、成果物末尾の `## Review` 節へ戻る。
 fn contexts(layout: &Layout, stage: &Stage) -> Result<Vec<Context>, String> {
+    let entries = review_documents::artifacts(layout, &stage.slug)?;
+    if let Some(record) = latest_record(layout, &stage.slug) {
+        // 再試行の NOT-READY で閉じた記録は本文を持たない。所見が無いと言い張らず、
+        // ゲートが明示の代替所見を出せるよう文脈を空にする。
+        let body = record
+            .get("body")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let target = entries.iter().find(|entry| entry.is_appendix_target());
+        let (Some(target), false) = (target, body.is_empty()) else {
+            return Ok(Vec::new());
+        };
+        let artifact = display(layout, target.path());
+        return Ok(vec![Context {
+            verdict: record
+                .get("verdict")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            findings: recorded_findings(&record),
+            artifact,
+        }]);
+    }
     let mut found = Vec::new();
-    for entry in review_documents::artifacts(layout, &stage.slug)? {
+    for entry in entries {
         let Some(body) = entry.body() else { continue };
         let artifact = display(layout, entry.path());
         let text =
@@ -261,6 +286,97 @@ fn contexts(layout: &Layout, stage: &Stage) -> Result<Vec<Context>, String> {
         });
     }
     Ok(found)
+}
+
+/// 段の最新のレビュー記録（`recorded_at`、同時刻なら iteration の大きい方）。
+///
+/// upstream は監査台帳の最新の `REVIEW_COMPLETED` が名指す記録を引く。この build は記録を
+/// 判定のたびに 1 本だけ書くので、置き場の中で最も新しいものが同じ記録になる。
+fn latest_record(layout: &Layout, stage: &str) -> Option<Value> {
+    let root = layout
+        .record_dir()?
+        .join(".aidlc-reviews")
+        .join(stage)
+        .join("stage");
+    std::fs::read_dir(root)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter_map(|attempt| std::fs::read_dir(attempt.path()).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|file| file.path().extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|file| std::fs::read(file.path()).ok())
+        .filter_map(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .filter(|record| record.get("stage").and_then(Value::as_str) == Some(stage))
+        .max_by(|a, b| {
+            let key = |record: &Value| {
+                (
+                    record
+                        .get("recorded_at")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    record.get("iteration").and_then(Value::as_u64).unwrap_or(0),
+                )
+            };
+            key(a).cmp(&key(b))
+        })
+}
+
+/// レビュー記録の `findings` 欄を所見へ戻す。
+fn recorded_findings(record: &Value) -> Vec<Finding> {
+    record
+        .get("findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|finding| {
+            let field = |name: &str| {
+                finding
+                    .get(name)
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            Finding {
+                id: field("id"),
+                severity: field("severity"),
+                location: field("location"),
+                finding: field("finding"),
+                required_action: field("required_action"),
+                status: field("status"),
+            }
+        })
+        .collect()
+}
+
+/// レビュー記録の `findings` 欄（upstream `ReviewRecord.findings` の欄と順）。
+///
+/// 所見の表の読み方はゲートで描く所見と同じ [`parse_section`] を通す。
+/// # Errors
+/// 所見の表の行が壊れている場合（ID・Status の語彙外を含む）。
+pub(super) fn record_findings(
+    review: &str,
+    artifact: &str,
+) -> Result<Vec<core_infrastructure::canon_json::JsonValue>, String> {
+    use core_infrastructure::canon_json::{JsonValue, ObjectMembers};
+    let (_, findings) = parse_section(review, artifact)?;
+    Ok(findings
+        .into_iter()
+        .map(|finding| {
+            let mut members = ObjectMembers::new();
+            members.insert("id", JsonValue::String(finding.id));
+            members.insert("severity", JsonValue::String(finding.severity));
+            members.insert("location", JsonValue::String(finding.location));
+            members.insert("finding", JsonValue::String(finding.finding));
+            members.insert(
+                "required_action",
+                JsonValue::String(finding.required_action),
+            );
+            members.insert("status", JsonValue::String(finding.status));
+            JsonValue::Object(members)
+        })
+        .collect())
 }
 
 /// 終端の `## Review` 節（upstream `extractMarkdownSection(content, "## Review")`）。

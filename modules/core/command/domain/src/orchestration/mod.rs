@@ -603,6 +603,12 @@ pub use review_artifact::ReviewArtifact;
 mod review_binding;
 pub use review_binding::ReviewBinding;
 
+mod review_draft;
+pub use review_draft::ReviewDraft;
+
+mod review_request_identity;
+pub use review_request_identity::ReviewRequestIdentity;
+
 mod review_completion;
 pub use review_completion::ReviewCompletion;
 

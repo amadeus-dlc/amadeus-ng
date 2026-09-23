@@ -225,7 +225,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 true,
                 crate::review_test_fixture::binding(),
             )),
-            r#"{"ReviewRequested":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"retry":true,"evidence":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null}}}"#,
+            r#"{"ReviewRequested":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"retry":true,"evidence":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null,"request_id":"review:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","attempt":"3a95295afe393241"}}}"#,
         ),
         (
             IntentExecutionEvent::ReviewCompleted(ReviewCompleted::new(
@@ -237,7 +237,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
                 ReviewVerdict::NotReady,
                 crate::review_test_fixture::completion(),
             )),
-            r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady","evidence":{"request":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null},"fingerprint":"sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0"}}}"#,
+            r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":2,"verdict":"NotReady","evidence":{"request":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null,"request_id":"review:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","attempt":"3a95295afe393241"},"fingerprint":"sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0"}}}"#,
         ),
         (
             IntentExecutionEvent::PracticesAffirmed(PracticesAffirmed::new(
@@ -377,7 +377,7 @@ fn the_review_verdict_spelling_is_the_row_vocabulary_not_the_domain_one() {
     }
 
     // 監査行の綴り (`READY`) は行の面では読めない — 面が違う。
-    let tampered = r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":1,"verdict":"READY","evidence":{"request":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null},"fingerprint":"sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0"}}}"#;
+    let tampered = r#"{"ReviewCompleted":{"id":"0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002","aggregate_id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","stage":"intent-capture","reviewer":"aidlc-product-lead-agent","iteration":1,"verdict":"READY","evidence":{"request":{"fingerprint":"sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d","appendix_artifact":"stage/artifact.md","appendix_offset":11,"prior_digest":"none","prior_length":0,"challenge":null,"source":null,"request_id":"review:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","attempt":"3a95295afe393241"},"fingerprint":"sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0"}}}"#;
     let decoded: IntentExecutionEventDto =
         serde_json::from_str(tampered).expect("JSON としては読める");
     assert!(decoded.to_domain().is_err(), "閉集合の外は拒む");

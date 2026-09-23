@@ -82,21 +82,26 @@ impl ReviewAppendix {
         iteration: u32,
         verdict: ReviewVerdict,
         challenge: Option<&str>,
+        standalone: bool,
     ) -> Result<(), ReviewEvidenceError> {
         let invalid = |reason: &str| ReviewEvidenceError::InvalidAppendix(reason.to_string());
         let text = std::str::from_utf8(self.evidence())
             .map_err(|_| invalid("the reviewer appendix is not valid UTF-8"))?;
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-        let Some((heading, section)) = normalized.split_once('\n') else {
-            return Err(invalid(
-                "the appended bytes must begin with only blank lines followed by an exact `## Review` heading",
-            ));
+        // 単独のレビューファイルは `## Review` 見出しで始めてもよい（テンプレートどおり）が、
+        // 必須ではない（upstream `validateReviewAppendix` の `standalone`）。追記は必須である。
+        let opened = normalized
+            .split_once('\n')
+            .filter(|(heading, _)| heading.trim_end_matches([' ', '\t']) == "## Review");
+        let section = match opened {
+            Some((_, section)) => section,
+            None if standalone => normalized.as_str(),
+            None => {
+                return Err(invalid(
+                    "the appended bytes must begin with only blank lines followed by an exact `## Review` heading",
+                ));
+            }
         };
-        if heading.trim_end_matches([' ', '\t']) != "## Review" {
-            return Err(invalid(
-                "the appended bytes must begin with only blank lines followed by an exact `## Review` heading",
-            ));
-        }
         let lines = super::summary_questions::visible_markdown_lines(section);
         if lines
             .iter()

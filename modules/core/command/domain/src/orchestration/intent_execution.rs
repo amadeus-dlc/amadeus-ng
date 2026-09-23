@@ -2401,7 +2401,14 @@ impl IntentExecution {
                 .map_err(CommandError::ReviewEvidence)?;
             binding.clone()
         } else {
-            documents.bind().map_err(CommandError::ReviewEvidence)?
+            // 同じ試行の最初の依頼から試行 ID を引き継ぐ（無ければこの依頼が試行を開く）。
+            let opening = attempt
+                .history()
+                .request(1)
+                .map(super::ReviewBinding::identity);
+            documents
+                .bind(opening)
+                .map_err(CommandError::ReviewEvidence)?
         };
         let material = ReviewRequested::new(
             IntentExecution::next_event_id(),

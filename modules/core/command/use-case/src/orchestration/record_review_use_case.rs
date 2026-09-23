@@ -1,7 +1,9 @@
 //! `RecordReviewUseCase` — レビュー受領証の対を記録する（`aidlc-log review`、b48 / B10）。
 
 use chrono::{DateTime, Utc};
-use core_command_domain::orchestration::{Intent, IntentExecutionId, IntentReviewError};
+use core_command_domain::orchestration::{
+    Intent, IntentExecutionEvent, IntentExecutionId, IntentReviewError,
+};
 use core_command_domain::workflow_definition::ReviewPolicy;
 
 use super::port::IntentExecutionRepository;
@@ -40,7 +42,7 @@ pub struct RecordReviewUseCase<
 #[derive(Debug)]
 enum AttemptOutcome {
     /// 決着した — 受領証の行をコミットした。
-    Settled,
+    Settled(Box<IntentExecutionEvent>),
     /// 楽観 version が競合した（2 回目も競合したらこれを伝播する）。
     Conflicted(RepositoryError<IntentExecutionId>),
 }
@@ -62,7 +64,10 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         }
     }
 
-    /// 受領証の行を 1 つ記録する。
+    /// 受領証の行を 1 つ記録し、コミットしたイベントを返す。
+    ///
+    /// 返すのは合成ルートがレビューの置き場（下書きの枠・レビュー記録）を扱うためである —
+    /// 置き場は依頼の識別（集約が発行する）で決まる。
     ///
     /// `occurred_at` は呼出側が持つ時計の読みである — 集約は時計を持たない（NFR3.1）。
     ///
@@ -76,12 +81,12 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
         execution_id: &IntentExecutionId,
         request: &ReviewLogRequest,
         occurred_at: DateTime<Utc>,
-    ) -> Result<(), ReviewLogError> {
+    ) -> Result<IntentExecutionEvent, ReviewLogError> {
         match self.attempt(execution_id, request, occurred_at).await? {
-            AttemptOutcome::Settled => Ok(()),
+            AttemptOutcome::Settled(event) => Ok(*event),
             AttemptOutcome::Conflicted(_) => {
                 match self.attempt(execution_id, request, occurred_at).await? {
-                    AttemptOutcome::Settled => Ok(()),
+                    AttemptOutcome::Settled(event) => Ok(*event),
                     AttemptOutcome::Conflicted(conflict) => {
                         Err(ReviewLogError::Repository(conflict))
                     }
@@ -137,7 +142,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository, D: WorkflowDefinitionRep
             .store(&event, &aggregate)
             .await
         {
-            Ok(()) => Ok(AttemptOutcome::Settled),
+            Ok(()) => Ok(AttemptOutcome::Settled(Box::new(event))),
             Err(conflict @ RepositoryError::Conflict { .. }) => {
                 Ok(AttemptOutcome::Conflicted(conflict))
             }
@@ -212,7 +217,10 @@ mod tests {
 
     impl<D: super::super::port::WorkflowDefinitionRepository> Subject<D> {
         async fn execute(&mut self, request: &ReviewLogRequest) -> Result<(), ReviewLogError> {
-            self.use_case.execute(&execution_id(), request, at()).await
+            self.use_case
+                .execute(&execution_id(), request, at())
+                .await
+                .map(|_| ())
         }
 
         const fn intent_execution_repository(&self) -> &InMemoryIntentExecutionRepository {

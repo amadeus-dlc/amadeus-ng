@@ -38,6 +38,7 @@ mod reuse_artifact;
 mod review_brief;
 mod review_documents;
 mod review_guards;
+mod review_record;
 mod runtime_graph;
 mod session_hooks;
 mod session_start;
@@ -52,8 +53,8 @@ use std::path::Path;
 use crate::workspace_scanner::WorkspaceScanner;
 use chrono::Utc;
 use core_command_domain::orchestration::{
-    AutonomyMode, CommandError, IntentExecutionId, IntentId, ReportRefusal, ReportRequest,
-    ReviewVerdict, SkeletonStance, StartRequest, Verdict,
+    AutonomyMode, CommandError, IntentExecutionEvent, IntentExecutionId, IntentId, ReportRefusal,
+    ReportRequest, ReviewVerdict, SkeletonStance, StartRequest, Verdict,
 };
 use core_command_domain::workflow_definition::{PRACTICES_DISCOVERY_SLUG, StageSlug};
 use core_command_domain::workspace::{
@@ -1877,12 +1878,17 @@ async fn log_review(layout: &Layout, args: &crate::cli::ReviewArgs) -> Completio
     else {
         return Completion::refused(wording::orchestrate_failure("cannot open the event store"));
     };
+    // 判定なら reviewer の下書きを観測する（どれを証拠とするかは集約が決める）。
+    let drafts = match kind {
+        ReviewLogKind::Verdict(_) => review_record::drafts(layout, stage, iteration),
+        ReviewLogKind::Request { .. } => Vec::new(),
+    };
     let request = ReviewLogRequest::new(
         slug,
         reviewer,
         iteration,
         kind,
-        review_documents::read(layout, stage),
+        review_documents::read(layout, stage, drafts.clone()),
     );
     let recorded = RecordReviewUseCase::new(
         intent_execution_repository,
@@ -1891,14 +1897,52 @@ async fn log_review(layout: &Layout, args: &crate::cli::ReviewArgs) -> Completio
     )
     .execute(&execution_id, &request, Utc::now())
     .await;
-    if let Err(error) = recorded {
-        return Completion::refused(review_refusal(stage, reviewer, args, &error));
-    }
+    let event = match recorded {
+        Ok(event) => event,
+        Err(error) => {
+            let record = layout
+                .record_dir()
+                .and_then(|dir| dir.strip_prefix(layout.project_dir()).ok())
+                .map(|dir| format!("{}/", dir.to_string_lossy()))
+                .unwrap_or_default();
+            return Completion::refused(review_refusal(stage, reviewer, args, &record, &error));
+        }
+    };
+    // 依頼は reviewer の下書きの枠を開き、判定は下書きをレビュー記録へ移す（upstream 2.8.2）。
+    let placed = match &event {
+        IntentExecutionEvent::ReviewRequested(requested) => {
+            review_record::open_slot(layout, requested).map(|review_file| {
+                ReviewPlacement::Requested {
+                    request_id: requested.evidence().identity().request_id().to_string(),
+                    review_file,
+                }
+            })
+        }
+        IntentExecutionEvent::ReviewCompleted(completed) => {
+            review_record::write(layout, completed, &drafts).map(ReviewPlacement::Recorded)
+        }
+        _ => Ok(ReviewPlacement::Recorded(String::new())),
+    };
+    let placed = match placed {
+        Ok(placed) => placed,
+        Err(cause) => return Completion::refused(wording::review_log_failed(stage, &cause)),
+    };
     // 書いた事実をリードモデルへ落とす（監査 1 行はこの投影で台帳に現れる）。
     after_projection(layout, || {
-        Completion::emitted(review_log_line(stage, request.kind()))
+        Completion::emitted(review_log_line(stage, request.kind(), &placed))
     })
     .await
+}
+
+/// 受領証を記録したあとのレビューの置き場（成功行へ載せる）。
+enum ReviewPlacement {
+    /// 依頼 — Request Id と、reviewer が書く下書きのワークスペース相対パス。
+    Requested {
+        request_id: String,
+        review_file: String,
+    },
+    /// 判定 — レビュー記録の記録相対パス。
+    Recorded(String),
 }
 
 /// 通し番号と、依頼形／判定形の分岐（分岐は `--verdict` の有無だけで決まる — upstream `:983`）。
@@ -1948,7 +1992,7 @@ fn positive_iteration(raw: Option<&str>) -> Option<u32> {
 ///
 /// `aidlc-log` 面は directive プロトコルに参加しないので、`aidlc-utility` と同じく
 /// 契約 JSON をそのまま出す（直列化は canon-json を通す — BR1.7）。
-fn review_log_line(stage: &str, kind: ReviewLogKind) -> String {
+fn review_log_line(stage: &str, kind: ReviewLogKind, placed: &ReviewPlacement) -> String {
     let mut emitted = ObjectMembers::new();
     match kind {
         ReviewLogKind::Request {
@@ -1962,6 +2006,14 @@ fn review_log_line(stage: &str, kind: ReviewLogKind) -> String {
             if retry {
                 emitted.insert("retry", JsonValue::String("pending-request".to_string()));
             }
+            if let ReviewPlacement::Requested {
+                request_id,
+                review_file,
+            } = placed
+            {
+                emitted.insert("requestId", JsonValue::String(request_id.clone()));
+                emitted.insert("reviewFile", JsonValue::String(review_file.clone()));
+            }
         }
         ReviewLogKind::Verdict(_) => {
             emitted.insert(
@@ -1969,6 +2021,11 @@ fn review_log_line(stage: &str, kind: ReviewLogKind) -> String {
                 JsonValue::String(EventType::ReviewCompleted.as_str().to_string()),
             );
             emitted.insert("stage", JsonValue::String(stage.to_string()));
+            if let ReviewPlacement::Recorded(record) = placed
+                && !record.is_empty()
+            {
+                emitted.insert("reviewRecord", JsonValue::String(record.clone()));
+            }
         }
     }
     serialize(
@@ -1985,6 +2042,7 @@ fn review_refusal(
     stage: &str,
     reviewer: &str,
     args: &crate::cli::ReviewArgs,
+    record: &str,
     error: &ReviewLogError,
 ) -> String {
     match error {
@@ -2027,6 +2085,19 @@ fn review_refusal(
                 ReviewEvidenceError::InvalidBinding => {
                     format!("Refusing REVIEW_COMPLETED for \"{stage}\": invalid request binding.")
                 }
+                ReviewEvidenceError::ReviewMissing(attempt) => {
+                    let iteration = args.iteration().unwrap_or("");
+                    let slot = format!(
+                        "{record}.aidlc-reviews/{stage}/stage/{attempt}/{iteration}.review.md"
+                    );
+                    format!(
+                        "Cannot record review for \"{stage}\": no review was written for iteration {iteration}. The reviewer writes its review to {slot} (or pass --review-file <path>); a retried incomplete attempt records --verdict NOT-READY without a review."
+                    )
+                }
+                ReviewEvidenceError::ReviewWrittenTwice => format!(
+                    "Cannot record the verdict for \"{stage}\": a `## Review` section was appended to the reviewed artifact after review iteration {} started and a review file was also written. The review file is the review; remove the appended section so the artifact carries the bytes the reviewer was dispatched on.",
+                    args.iteration().unwrap_or("")
+                ),
             }
         }
         // 「定義がその slug を知らない」と「宣言が無い」は upstream では同じ文言である。
@@ -3190,6 +3261,7 @@ mod tests {
             "domain-design",
             "aidlc-quality-agent",
             &args,
+            "",
             &ReviewLogError::CorruptReviewOverride("Adversarial".to_string()),
         );
         assert_eq!(
@@ -3209,39 +3281,48 @@ corrupt review override: Adversarial"
                 "nowhere",
                 "aidlc-quality-agent",
                 &args,
+                "",
                 &ReviewLogError::UnknownStage(stage),
             ),
             "Cannot record review: stage \"nowhere\" has no declared reviewer."
         );
     }
 
-    /// 成功の JSON は動詞で 2 形（呼び直しだけ `retry` を足す）。
+    /// 成功の JSON は動詞で 2 形（呼び直しだけ `retry` を足す）。依頼は Request Id と
+    /// 下書きの置き場を、判定はレビュー記録の置き場を添える（upstream 2.8.2）。
     #[test]
     fn the_review_log_line_adds_the_retry_only_for_a_retry() {
+        let requested = ReviewPlacement::Requested {
+            request_id: "review:0".to_string(),
+            review_file: "r/1.review.md".to_string(),
+        };
         assert_eq!(
             review_log_line(
                 "domain-design",
                 ReviewLogKind::Request {
                     retry_pending: false
-                }
+                },
+                &requested,
             ),
-            r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design"}"#
+            r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","requestId":"review:0","reviewFile":"r/1.review.md"}"#
         );
         assert_eq!(
             review_log_line(
                 "domain-design",
                 ReviewLogKind::Request {
                     retry_pending: true
-                }
+                },
+                &requested,
             ),
-            r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#
+            r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request","requestId":"review:0","reviewFile":"r/1.review.md"}"#
         );
         assert_eq!(
             review_log_line(
                 "domain-design",
-                ReviewLogKind::Verdict(ReviewVerdict::Ready)
+                ReviewLogKind::Verdict(ReviewVerdict::Ready),
+                &ReviewPlacement::Recorded(".aidlc-reviews/d/stage/a/1.json".to_string()),
             ),
-            r#"{"emitted":"REVIEW_COMPLETED","stage":"domain-design"}"#
+            r#"{"emitted":"REVIEW_COMPLETED","stage":"domain-design","reviewRecord":".aidlc-reviews/d/stage/a/1.json"}"#
         );
     }
 
