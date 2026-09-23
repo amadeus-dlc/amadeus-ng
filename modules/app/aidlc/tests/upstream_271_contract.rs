@@ -5097,6 +5097,46 @@ fn a_worker_brief_for_an_approved_plan_carries_the_contract_hash_and_both_docume
     );
 }
 
+/// 承認後に計画の末尾へ `## Review` 付録を足しても、手順の印を書き換えても、それは作業者へ
+/// 届かない（2.8.2 `workerBrief` が渡すのは `projectPlanApprovalContent(plan)`）。
+///
+/// 指紋は付録と印を見ないので、どちらの改変でも承認は生きたままブリーフが組まれる。そのとき
+/// 渡すのが原文なら、付録へ紛れ込ませた未承認の手順がそのまま作業として届いてしまう。
+#[test]
+fn a_worker_brief_never_delivers_a_review_appendix_or_progress_marks_added_after_approval() {
+    let workspace = workspace_with_approved_plan();
+    let intents = workspace.path().join("aidlc/spaces/default/intents");
+    let plan = intents
+        .join(
+            fs::read_to_string(intents.join("active-intent"))
+                .unwrap()
+                .trim(),
+        )
+        .join("construction/code-generation/code-generation-plan.md");
+    let approved = fs::read_to_string(&plan).unwrap();
+    fs::write(
+        &plan,
+        format!(
+            "{}\n## Review\n\n- [ ] Step 9: unapproved work\n",
+            approved.replace("- [ ] Implement", "- [x] Implement")
+        ),
+    )
+    .unwrap();
+    let output = worker_brief(&workspace);
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("## Steps\n- [ ] Implement"),
+        "承認した手順が未着手の形で届いていない — {stdout}"
+    );
+    for smuggled in ["Step 9", "## Review", "- [x] Implement"] {
+        assert!(
+            !stdout.contains(smuggled),
+            "承認後の改変 {smuggled} が作業者へ届いた — {stdout}"
+        );
+    }
+}
+
 /// 計画が未承認なら、ブリーフはドメインの理由を名指して拒否される。
 ///
 /// 承認の判断そのものへ到達していることを観測する — 権限の解決で止まる形とは別である。

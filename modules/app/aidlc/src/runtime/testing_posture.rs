@@ -142,16 +142,17 @@ async fn fingerprint(layout: &Layout, args: &[String]) -> Result<String, String>
 
 /// 承認済みの作業ブリーフ（upstream `workerBrief`）。**読取専用**である。
 ///
-/// # 渡すのは指紋が束ねたバイトそのものである
+/// # 渡すのは指紋が束ねた形だけである
 ///
-/// upstream がブリーフの本体を投影（終端の `## Review` 付録を落とし、進捗印を戻す）してから
-/// 渡すのは、その投影こそが upstream の承認指紋が束ねた形だからである（`approvalFingerprint`
-/// が `projectPlanApprovalContent` を通す）。この build の指紋は
-/// [`core_command_domain::orchestration::CodeGenerationAuthority::approval_fingerprint`] が
-/// 原文をそのまま束ねるので、原文を渡すことが同じ不変条件（**作業者が受け取るのは指紋が
-/// 束ねたバイトだけ**）を満たす。ここで付録を落とすと、渡すバイトが指紋の束ねたものと
-/// 食い違ってしまう。付録に紛れ込んだ手順が届く危険も、この build では指紋が付録ごと
-/// 束ねているため承認そのものが失効する形で閉じている。
+/// 作業者へ渡す計画とテスト指示は [`PlanApprovalDocuments::approved_plan`] /
+/// [`PlanApprovalDocuments::approved_instructions`] — 承認の指紋
+/// （[`core_command_domain::orchestration::CodeGenerationAuthority::approval_fingerprint`]）が
+/// 束ねる形そのものである（upstream も `projectPlanApprovalContent(plan)` を渡す）。指紋は
+/// 末尾の `## Review` 付録と進捗の印を見ないので、原文を渡すと、承認後に付録へ足した手順や
+/// 印を書き換えた手順が、指紋を変えないまま作業として届いてしまう。
+///
+/// [`PlanApprovalDocuments::approved_plan`]: core_command_domain::orchestration::PlanApprovalDocuments::approved_plan
+/// [`PlanApprovalDocuments::approved_instructions`]: core_command_domain::orchestration::PlanApprovalDocuments::approved_instructions
 ///
 /// # 読み直さない
 ///
@@ -215,8 +216,8 @@ async fn brief(layout: &Layout, args: &[String]) -> Result<String, String> {
     let assembled = crate::wording::worker_brief(
         view.unit(),
         contract_hash,
-        input.documents().plan(),
-        input.documents().instructions(),
+        &input.documents().approved_plan(),
+        &input.documents().approved_instructions(),
     );
     // 末尾改行は `main.rs` の `writeln!` が付す（upstream は改行を足さずに書く）。
     Ok(assembled

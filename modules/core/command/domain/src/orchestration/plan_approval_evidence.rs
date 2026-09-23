@@ -110,11 +110,7 @@ impl PlanApprovalEvidence {
             .ok_or_else(|| {
                 PlanApprovalError::new("Plan Approval requires the current Testing Contract")
             })?;
-        let fingerprint = authority.approval_fingerprint(
-            documents.plan(),
-            documents.instructions(),
-            embedded.hash(),
-        );
+        let fingerprint = authority.approval_fingerprint(documents, embedded.hash());
         let questions = PlanQuestions::parse(documents.questions());
         if questions.fingerprint() != Some(fingerprint.as_str()) {
             return Err(PlanApprovalError::new(

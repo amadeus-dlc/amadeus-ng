@@ -92,13 +92,7 @@ impl CodeGenerationApproval {
         self.approval_fingerprint = embedded
             .as_ref()
             .filter(|_| plan_exists && instructions_exist && self.contract_valid)
-            .map(|contract| {
-                authority.approval_fingerprint(
-                    documents.plan(),
-                    documents.instructions(),
-                    contract.hash(),
-                )
-            });
+            .map(|contract| authority.approval_fingerprint(documents, contract.hash()));
         let reason = if !self.plan_exists {
             Some("code-generation-plan.md is missing or empty")
         } else if !self.instructions_exist {

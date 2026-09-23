@@ -110,8 +110,12 @@ fn fixed_challenge() -> core_command_domain::orchestration::PlanChallenge {
         .unwrap();
     let contract: serde_json::Value = serde_json::from_str(embedded).unwrap();
     let fingerprint = authority.approval_fingerprint(
-        &plan,
-        &instructions,
+        &core_command_domain::orchestration::PlanApprovalDocuments::new(
+            plan.clone(),
+            instructions.clone(),
+            String::new(),
+            String::new(),
+        ),
         contract.get("contract_sha256").unwrap().as_str().unwrap(),
     );
     assert_eq!(

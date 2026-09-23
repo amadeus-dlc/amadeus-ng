@@ -1390,11 +1390,7 @@ impl IntentExecution {
             };
             return Err(PlanApprovalError::new(reason));
         };
-        Ok(authority.approval_fingerprint(
-            documents.plan(),
-            documents.instructions(),
-            contract.hash(),
-        ))
+        Ok(authority.approval_fingerprint(documents, contract.hash()))
     }
 
     /// コード生成の現在の実行境界。旧保存データで情報が無い場合はNone。
