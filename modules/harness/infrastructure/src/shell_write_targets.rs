@@ -16,14 +16,20 @@ use std::path::{Component, Path, PathBuf};
 /// **保証は「書き換えうる」であって「書き換える」ではない。** 読取り専用のコマンドは宛先を
 /// 生まないが、綴りを読み切れないラッパー (`sudo --unknown` など) は作業ディレクトリ自身を
 /// 宛先として並べる — 「無害」ではなく「読めない」を表すためである。
+///
+/// 書込み位置の綴りが展開・グロブ (`$OUT` `src/*.rs` など) で実行前に確定しないときは、
+/// upstream と同じくその綴りを列に入れない。代わりに
+/// [`ShellWriteTargets::has_unresolved_target`] が真になる — 列が空でも「書かない」とは
+/// 限らないことを、宛先を名指せない利用者 (計画承認のガード) が読めるようにするためである。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellWriteTargets {
     items: Vec<String>,
+    unresolved: bool,
 }
 impl ShellWriteTargets {
-    /// 重複を除いた宛先列を固定する (**この型の唯一の構築経路**)。
-    const fn new(items: Vec<String>) -> Self {
-        Self { items }
+    /// 重複を除いた宛先列と、確定しなかった宛先の有無を固定する (**この型の唯一の構築経路**)。
+    const fn new(items: Vec<String>, unresolved: bool) -> Self {
+        Self { items, unresolved }
     }
     /// コマンド文字列から宛先を読む。`cwd` は相対綴りを解決する基点。
     #[must_use]
@@ -36,7 +42,15 @@ impl ShellWriteTargets {
                 scan_invocation(mutation, &mut found);
             }
         }
-        ShellWriteTargets::new(found.into_items())
+        let unresolved = found.has_unresolved();
+        ShellWriteTargets::new(found.into_items(), unresolved)
+    }
+    /// 書込み位置に、展開・グロブで実行前に確定しない綴りがあったか。
+    ///
+    /// その綴りは列に入らないので、真のときは列の外にも書込み先がありうる。
+    #[must_use]
+    pub const fn has_unresolved_target(&self) -> bool {
+        self.unresolved
     }
     /// 宛先の件数。
     #[must_use]
@@ -75,6 +89,7 @@ impl FirstClassCollection for ShellWriteTargets {
                 .filter(|target| predicate(target))
                 .cloned()
                 .collect(),
+            self.unresolved,
         )
     }
 }
@@ -83,6 +98,7 @@ impl FirstClassCollection for ShellWriteTargets {
 struct Found {
     cwd: PathBuf,
     items: Vec<String>,
+    unresolved: bool,
 }
 impl Found {
     /// 基点だけを与えて空から始める (**この型の唯一の構築経路**)。
@@ -90,15 +106,28 @@ impl Found {
         Self {
             cwd: cwd.to_path_buf(),
             items: Vec::new(),
+            unresolved: false,
         }
     }
-    /// 生の綴りを正規化して積む。宛先にならない綴りは捨てる。
+    /// 生の綴りを正規化して積む。宛先にならない綴りは捨て、それが展開・グロブのせいなら
+    /// 確定しなかった宛先として覚える。
     fn add(&mut self, raw: &str) {
-        if let Some(target) = normalize(raw, &self.cwd)
-            && !self.items.contains(&target)
-        {
+        let cleaned = clean(raw, &self.cwd);
+        if is_unresolved(&cleaned) {
+            self.unresolved = true;
+            return;
+        }
+        if cleaned.is_empty() {
+            return;
+        }
+        let target = resolve_lexically(&self.cwd, &cleaned);
+        if !self.items.contains(&target) {
             self.items.push(target);
         }
+    }
+    /// 書込み位置に確定しない綴りがあったか。
+    const fn has_unresolved(&self) -> bool {
+        self.unresolved
     }
     /// 作業ディレクトリ自身を積む。
     fn add_cwd(&mut self) {
@@ -478,12 +507,26 @@ fn word_at(chars: &[char], start: usize) -> Option<(String, usize)> {
 /// `$PWD` 起点だけを解決し、それ以外の展開・グロブを含む綴りは宛先にしない —
 /// 実行前に確定しないものを凍結の材料にしないためである。
 fn normalize(target: &str, cwd: &Path) -> Option<String> {
+    let cleaned = clean(target, cwd);
+    if cleaned.is_empty() || is_unresolved(&cleaned) {
+        return None;
+    }
+    Some(resolve_lexically(cwd, &cleaned))
+}
+
+/// 展開・グロブを含み、実行前に確定しない綴りか (upstream `/[$`*?]/`)。
+fn is_unresolved(cleaned: &str) -> bool {
+    cleaned.contains(['$', '`', '*', '?'])
+}
+
+/// 生の綴りから `of=` と囲みの記号を剥がし、`$PWD` 起点だけを作業ディレクトリへ置き換える。
+fn clean(target: &str, cwd: &Path) -> String {
     let stripped = target.strip_prefix("of=").unwrap_or(target);
     let trimmed =
         stripped.trim_matches(|ch| matches!(ch, ',' | ':' | '[' | ']' | '{' | '}' | '(' | ')'));
     // `${PWD}` 単独は直前の `trim_matches` が末尾の `}` を剥がして `${PWD` になり、`$` を
     // 含むので宛先にならない (本家 `normalizeShellTarget` も同じ順で剥がすため同じ観測)。
-    let cleaned = if trimmed == "$PWD" {
+    if trimmed == "$PWD" {
         cwd.to_string_lossy().into_owned()
     } else if let Some(rest) = trimmed
         .strip_prefix("$PWD/")
@@ -492,11 +535,7 @@ fn normalize(target: &str, cwd: &Path) -> Option<String> {
         cwd.join(rest).to_string_lossy().into_owned()
     } else {
         trimmed.to_string()
-    };
-    if cleaned.is_empty() || cleaned.contains(['$', '`', '*', '?']) {
-        return None;
     }
-    Some(resolve_lexically(cwd, &cleaned))
 }
 
 /// Node の `path.resolve` と同じ字句的な解決。ファイルシステムを読まない。
@@ -629,6 +668,45 @@ mod tests {
         ] {
             assert!(at_root(command).is_empty(), "{command}");
         }
+    }
+
+    /// 書込み位置の綴りが確定しなければ、列には入れずに「確定しない宛先があった」と覚える。
+    /// 書込み位置でない綴り (`cp` の源・`sed` のプログラム) の展開は数えない。
+    #[test]
+    fn an_unresolvable_write_position_is_reported_apart_from_the_list() {
+        let root = Path::new("/r");
+        for command in [
+            "printf x > $OUT/a.md",
+            r#"echo x > "$F""#,
+            "printf x > /r/*.md",
+            "rm $HOME/a.md",
+            "sed -i 's/a/b/' src/*.rs",
+            "cp /r/a.md $OUT",
+            "mv /r/*.md /r/dst.md",
+            "dd if=/r/a of=$OUT",
+            "touch `date`.md",
+        ] {
+            let parsed = ShellWriteTargets::parse(command, root);
+            assert!(parsed.has_unresolved_target(), "{command}");
+        }
+        for command in [
+            "printf x > /r/a.md",
+            "printf x > $PWD/a.md",
+            "cp $HOME/a.md /r/b.md",
+            "sed -i 's/a$/b/' /r/a.rs",
+            "cargo test $ARGS",
+            "cat /r/*.md",
+        ] {
+            let parsed = ShellWriteTargets::parse(command, root);
+            assert!(!parsed.has_unresolved_target(), "{command}");
+        }
+        let mixed = ShellWriteTargets::parse("rm /r/a.md $OUT", root);
+        assert_eq!(mixed.at(0), Some("/r/a.md"), "確定した綴りは列に残る");
+        assert!(mixed.has_unresolved_target());
+        assert!(
+            mixed.filter(|_| false).has_unresolved_target(),
+            "絞っても確定しなかった事実は残る"
+        );
     }
 
     #[test]
