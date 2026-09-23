@@ -2102,8 +2102,12 @@ fn review_refusal(
                     let slot = format!(
                         "{record}.aidlc-reviews/{stage}/stage/{attempt}/{iteration}.review.md"
                     );
+                    // upstream 2.8.2（`aidlc-log.ts:2307-2310`）はここで `(or pass
+                    // --review-file <path>)` を案内するが、native の `ReviewArgs` は
+                    // `--review-file` を受けない（暫定裁定で未対応）。受けないフラグへ誘導
+                    // しないため、その括弧書きだけを外している。
                     format!(
-                        "Cannot record review for \"{stage}\": no review was written for iteration {iteration}. The reviewer writes its review to {slot} (or pass --review-file <path>); a retried incomplete attempt records --verdict NOT-READY without a review."
+                        "Cannot record review for \"{stage}\": no review was written for iteration {iteration}. The reviewer writes its review to {slot}; a retried incomplete attempt records --verdict NOT-READY without a review."
                     )
                 }
                 ReviewEvidenceError::ReviewWrittenTwice => format!(
