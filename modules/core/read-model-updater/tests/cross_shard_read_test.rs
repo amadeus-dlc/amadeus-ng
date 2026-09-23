@@ -56,7 +56,7 @@ impl Ledger {
     }
 
     fn events(&self) -> Vec<(String, &'static str)> {
-        let buffer = read_all_audit_shards(&self.audit);
+        let buffer = read_all_audit_shards(&self.audit).expect("読める台帳");
         OrderedAuditEvents::find_in(&buffer)
             .iter()
             .map(|record| (record.timestamp().to_string(), record.event().as_str()))
@@ -133,7 +133,10 @@ fn the_shard_header_does_not_become_an_event() {
 #[test]
 fn an_empty_ledger_directory_reads_as_no_events() {
     let ledger = Ledger::new();
-    assert_eq!(read_all_audit_shards(&ledger.audit), "");
+    assert_eq!(
+        read_all_audit_shards(&ledger.audit).expect("読める台帳"),
+        ""
+    );
     assert!(OrderedAuditEvents::find_in("").is_empty());
 }
 
@@ -148,7 +151,7 @@ fn the_latest_is_taken_from_the_ordering_not_from_the_buffer_tail() {
         "zzz-00000002.md",
         &block(EventType::HumanTurn, "2026-08-21T09:00:01Z"),
     );
-    let buffer = read_all_audit_shards(&ledger.audit);
+    let buffer = read_all_audit_shards(&ledger.audit).expect("読める台帳");
     let ordered = OrderedAuditEvents::find_in(&buffer);
     assert_eq!(
         ordered.latest().map(AuditEventRecord::event),

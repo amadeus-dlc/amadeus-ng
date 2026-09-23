@@ -2853,6 +2853,62 @@ async fn approval_and_rejection_need_the_offered_choice_and_a_fresh_human_reply(
     assert_eq!(kind, "done");
 }
 
+/// 在るのに読めない監査シャードは「空の台帳」ではない — 人間の返答ガードは拒否側に倒れる
+/// （2.8.2 `humanActedSinceGate` は不在以外の読取失敗で false を返す）。読めるように戻せば
+/// 同じ承認が通る。
+#[tokio::test]
+async fn an_unreadable_audit_shard_fails_the_human_reply_guard_closed() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+    workspace.append_human_turn(&Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    // 読めないシャードの代役 — `.md` の位置にディレクトリを置く（名前順で最後に並ぶ）。
+    let unreadable = workspace
+        .record_dir()
+        .expect("record")
+        .join("audit/zzzz-unreadable.md");
+    fs::create_dir(&unreadable).expect("読めないシャードを置く");
+    for (verdict, input, reason, message) in [
+        (
+            "approved",
+            "Approve",
+            None,
+            "Cannot approve \"domain-design\" because no new human reply has been received for this approval question. Wait for the human to type their choice, then retry the approval.",
+        ),
+        (
+            "rejected",
+            "Request Changes",
+            Some("直して"),
+            "Cannot request changes for \"domain-design\" because no new human reply has been received for this approval question. Wait for the human to type Request Changes and their feedback, then retry.",
+        ),
+    ] {
+        let mut args = vec!["report", "--result", verdict, "--user-input", input];
+        if let Some(reason) = reason {
+            args.extend(["--reason", reason]);
+        }
+        let refused = invoke_without_human_reply(&workspace, "aidlc-orchestrate", &args).await;
+        assert_eq!(string_of(&line_of(&refused), "message"), message);
+    }
+    fs::remove_dir(&unreadable).expect("読めるように戻す");
+    let (kind, _) = report_directive(
+        &workspace,
+        &["--result", "approved", "--user-input", "Approve"],
+    )
+    .await;
+    assert_eq!(kind, "done");
+}
+
 /// forward 表 — `[-]` のゲートは明示 `--stage` を要し、名乗れば 2 段でコミットする。
 #[tokio::test]
 async fn approving_an_unopened_gate_needs_the_explicit_stage_and_then_recovers_it() {

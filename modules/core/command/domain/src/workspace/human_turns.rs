@@ -14,11 +14,11 @@ use super::ordered_audit_events::OrderedAuditEvents;
 /// メソッド引数で渡す」）。判断（昇格の可否）そのものは集約のクエリ
 /// [`human_acted_since_gate`] が持つ。
 ///
-/// # 構築経路は [`HumanTurns::find_in`] だけ
+/// # 構築経路は [`HumanTurns::find_in`] と [`HumanTurns::unreadable_ledger`] だけ
 ///
-/// フィールドは private で、値を直に組む口は無い。合成ルートは必ず連結バッファを渡して
-/// 組む — 「読取規則を通っていない証拠」を証拠として扱う経路を作らないためである
-/// （同型の先例は [`OrderedAuditEvents::find_in`]）。[`Default`] は「台帳が無い」
+/// フィールドは private で、値を直に組む口は無い。合成ルートは連結バッファを渡して組むか、
+/// 台帳が読めなかったことを告げて組む — 「読取規則を通っていない証拠」を証拠として扱う
+/// 経路を作らないためである（同型の先例は [`OrderedAuditEvents::find_in`]）。[`Default`] は「台帳が無い」
 /// （追跡が有効でなく、人間の turn も 1 つも無い）を表し、モデル駆動のテストのためにある。
 ///
 /// [`human_acted_since_gate`]: crate::orchestration::IntentExecution::human_acted_since_gate
@@ -87,6 +87,22 @@ impl HumanTurns {
         }
     }
 
+    /// 在るのに読めなかった台帳（2.8.2 `humanActedSinceGate` の fail-closed —
+    /// `aidlc-lib.ts:7092-7110`）。
+    ///
+    /// 読めなかったシャードが唯一の presence の証拠か、その不在の唯一の証拠かもしれない。
+    /// 「空の台帳」（追跡なし = 人が居たとみなす）と取り違えると判定が fail-open に反転する
+    /// ので、**追跡は有効・人間の turn は 1 つも無い**として組む。人間の返答を要るゲートは
+    /// これで拒否側に倒れる。
+    #[must_use]
+    pub const fn unreadable_ledger() -> HumanTurns {
+        HumanTurns {
+            latest: None,
+            tracked: true,
+            follows_resolution: false,
+        }
+    }
+
     /// 台帳の順序で、最後の返答消費行より後に `HUMAN_TURN` があるか。
     ///
     /// 同じ秒に並んだ turn と解決の前後を決める材料である。2.8.2 は同じシャード内の追記
@@ -135,6 +151,15 @@ mod tests {
         assert!(!turns.is_tracked());
         assert_eq!(turns.latest(), None);
         assert_eq!(HumanTurns::find_in(""), turns);
+    }
+
+    /// 読めなかった台帳は「空の台帳」と区別され、追跡が有効で turn が無い。
+    #[test]
+    fn an_unreadable_ledger_is_tracked_and_carries_no_turn() {
+        let turns = HumanTurns::unreadable_ledger();
+        assert!(turns.is_tracked());
+        assert_eq!(turns.latest(), None);
+        assert_ne!(turns, HumanTurns::default());
     }
 
     /// `HUMAN_TURN` が無くても、他のイベントが在れば追跡は有効である。

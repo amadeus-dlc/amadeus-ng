@@ -598,7 +598,7 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
             == Some("1"),
     )
     // 承認・差し戻しの human presence の外部材料（判断は集約 — set-autonomy と同じ形）。
-    .with_human_turns(HumanTurns::find_in(&audit_ledger(layout)));
+    .with_human_turns(human_turns(layout));
     let (
         Ok(intent_execution_repository),
         Ok(intent_repository),
@@ -2458,7 +2458,7 @@ async fn set_autonomy(layout: &Layout, args: &crate::cli::SetAutonomyArgs) -> Co
     }
     // 外部の材料 — `HUMAN_TURN` はフックが監査シャードへ直接書く一次の事実であり、我々の
     // 投影ではない。読んで値オブジェクトにするだけで、**判断はしない**（設計 §1）。
-    let turns = HumanTurns::find_in(&audit_ledger(layout));
+    let turns = human_turns(layout);
     // 状態ファイルの欄検査（upstream `setFieldStrict` を書込前に通す形の写し — 構文段）。
     if let Some(refusal) = autonomy_field_guard(layout) {
         return Completion::refused(refusal);
@@ -2486,11 +2486,25 @@ async fn set_autonomy(layout: &Layout, args: &crate::cli::SetAutonomyArgs) -> Co
 /// 列挙とファイル読取は投影側のヘルパが持つ（11-workspace §2.3 — シャードの I/O は投影の
 /// 責務であり、ドメインへは連結済みのバッファが渡る）。合成ルートは両側と RMU を知ってよい
 /// 唯一の場所である（`coding-rules/cqrs-boundaries.md`）。
-fn audit_ledger(layout: &Layout) -> String {
-    layout
-        .audit_dir()
-        .map(|dir| core_read_model_updater::workspace::read_all_audit_shards(&dir))
-        .unwrap_or_default()
+fn audit_ledger(
+    layout: &Layout,
+) -> Result<String, core_read_model_updater::workspace::AuditShardReadError> {
+    layout.audit_dir().map_or_else(
+        || Ok(String::new()),
+        |dir| core_read_model_updater::workspace::read_all_audit_shards(&dir),
+    )
+}
+
+/// 人間の返答ガードの外部材料（承認・差し戻し・autonomous への昇格）。
+///
+/// 在るのに読めないシャードがあれば、空の台帳と混ぜずに「読めなかった台帳」として渡す —
+/// 集約はそれを人間の turn が無いものとして拒否側に倒す（2.8.2 `humanActedSinceGate` は
+/// 不在以外の読取失敗で false を返す）。
+fn human_turns(layout: &Layout) -> HumanTurns {
+    audit_ledger(layout).map_or_else(
+        |_| HumanTurns::unreadable_ledger(),
+        |buffer| HumanTurns::find_in(&buffer),
+    )
 }
 
 /// 状態ファイルに `Construction Autonomy Mode` 欄が在るか（upstream `setFieldStrict` の検査）。
@@ -3874,7 +3888,7 @@ corrupt review override: Adversarial"
             .unwrap();
         let before = journal_count_at(store.as_path());
         let state = std::fs::read(layout.state_file().unwrap()).unwrap();
-        let audit = audit_ledger(&layout);
+        let audit = audit_ledger(&layout).ok();
         assert_eq!(
             database
                 .execute(
@@ -3915,7 +3929,7 @@ corrupt review override: Adversarial"
             assert!(message.contains(&execution), "{message}");
             assert_eq!(journal_count_at(store.as_path()), before);
             assert_eq!(std::fs::read(layout.state_file().unwrap()).unwrap(), state);
-            assert_eq!(audit_ledger(&layout), audit);
+            assert_eq!(audit_ledger(&layout).ok(), audit);
         }
         database
             .execute(
