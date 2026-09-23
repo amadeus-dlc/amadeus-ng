@@ -5143,7 +5143,19 @@ fn plan_guard(
     tool: &str,
     tool_input: &serde_json::Value,
 ) -> std::process::Output {
-    use std::io::Write as _;
+    plan_guard_with(
+        workspace,
+        &plan_guard_envelope(workspace, tool, tool_input),
+        &[],
+    )
+}
+
+/// plan-approval-guard へ渡す PreToolUse の封筒。
+fn plan_guard_envelope(
+    workspace: &Workspace,
+    tool: &str,
+    tool_input: &serde_json::Value,
+) -> String {
     let mut input = serde_json::Map::new();
     input.insert("session_id".into(), "guard".into());
     input.insert("hook_event_name".into(), "PreToolUse".into());
@@ -5153,6 +5165,16 @@ fn plan_guard(
     );
     input.insert("tool_name".into(), tool.into());
     input.insert("tool_input".into(), tool_input.clone());
+    serde_json::Value::Object(input).to_string()
+}
+
+/// 生の標準入力と追加の環境変数で plan-approval-guard を起動する。
+fn plan_guard_with(
+    workspace: &Workspace,
+    stdin: &str,
+    env: &[(&str, &str)],
+) -> std::process::Output {
+    use std::io::Write as _;
     let mut child = Command::new(env!("CARGO_BIN_EXE_aidlc"))
         .args(["engine", "hook", "plan-approval-guard"])
         .current_dir(workspace.path())
@@ -5161,6 +5183,7 @@ fn plan_guard(
         .env("HOME", workspace.path().join("aidlc/.capture-home"))
         .env("PATH", "/usr/bin:/bin")
         .env("CLAUDE_PROJECT_DIR", workspace.path())
+        .envs(env.iter().copied())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -5170,7 +5193,7 @@ fn plan_guard(
         .stdin
         .take()
         .unwrap()
-        .write_all(serde_json::Value::Object(input).to_string().as_bytes())
+        .write_all(stdin.as_bytes())
         .unwrap();
     child.wait_with_output().unwrap()
 }
@@ -5212,6 +5235,57 @@ fn the_plan_approval_guard_admits_generation_only_after_approval() {
         rewritten.status.code(),
         Some(0),
         "生成開始の後はソースの変化で失効しない: {rewritten:?}"
+    );
+}
+
+/// 承認の後でも、依頼文の契約の指紋が承認済みのものと違う・無い・2 つある派遣は止める。
+/// 指紋の形をしていない例示の行は印に数えない（2.8.2 `CONTRACT_MARKER_RE`）。
+#[test]
+fn the_plan_approval_guard_matches_the_dispatched_contract_hash() {
+    let workspace = workspace_with_approved_plan();
+    let brief = String::from_utf8(worker_brief(&workspace).stdout).unwrap();
+    let approved = brief
+        .lines()
+        .find_map(|line| line.strip_prefix("AIDLC-TESTING-CONTRACT: "))
+        .unwrap()
+        .to_string();
+    let other = format!("sha256:{}", "0".repeat(64));
+    assert_ne!(approved, other);
+    let task = |prompt: &str| {
+        object(&[
+            ("subagent_type", "aidlc-developer-agent".into()),
+            ("description", "generate".into()),
+            ("prompt", prompt.into()),
+        ])
+    };
+    let contract_line = format!("AIDLC-TESTING-CONTRACT: {approved}");
+    let without: String = brief
+        .lines()
+        .filter(|line| *line != contract_line)
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let refusals = [
+        ("違う指紋", brief.replace(&approved, &other)),
+        ("指紋なし", without),
+        (
+            "指紋が 2 つ",
+            format!("{brief}\nAIDLC-TESTING-CONTRACT: {other}\n"),
+        ),
+    ];
+    for (case, prompt) in refusals {
+        let refused = plan_guard(&workspace, "Task", &task(&prompt));
+        assert_eq!(refused.status.code(), Some(2), "{case}: {refused:?}");
+        assert!(
+            String::from_utf8_lossy(&refused.stderr).contains("not currently approved"),
+            "{case}: {refused:?}"
+        );
+    }
+    let example = format!("{brief}\nAIDLC-TESTING-CONTRACT: <contract hash>\n");
+    let admitted = plan_guard(&workspace, "Task", &task(&example));
+    assert_eq!(
+        admitted.status.code(),
+        Some(0),
+        "例示の行は印ではない: {admitted:?}"
     );
 }
 
@@ -5265,6 +5339,201 @@ fn the_plan_approval_guard_blocks_generation_before_approval() {
     )]));
     let read_only = plan_guard(&workspace, "Bash", &shell);
     assert_eq!(read_only.status.code(), Some(0), "{read_only:?}");
+}
+
+/// `serde_json` の値を 1 つの JSON オブジェクトへ組む。
+fn object(pairs: &[(&str, serde_json::Value)]) -> serde_json::Value {
+    serde_json::Value::Object(
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), value.clone()))
+            .collect(),
+    )
+}
+
+/// 計画承認の前で止まっているワークスペース（`next` で指示を発行済み）。
+fn workspace_before_plan_approval() -> Workspace {
+    let workspace = workspace_at_code_generation();
+    let issued = Command::new(env!("CARGO_BIN_EXE_aidlc"))
+        .arg("next")
+        .current_dir(workspace.path())
+        .env_clear()
+        .envs(coverage_profile_env())
+        .env("HOME", workspace.path().join("aidlc/.capture-home"))
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    assert!(issued.status.success(), "{issued:?}");
+    workspace
+}
+
+/// 計画承認の前は、シェルの明示的な書込みも止める。書込み位置が展開・グロブで確定しない
+/// 変更系コマンドは宛先を名指せないので、外への書込みとして止める（2.8.2 と同じ）。
+/// 読むだけのシェルは、展開を含んでいても通す。
+#[test]
+fn the_plan_approval_guard_blocks_shell_writes_before_approval() {
+    let workspace = workspace_before_plan_approval();
+    let bash = |command: &str| object(&[("command", command.into())]);
+    for command in ["echo x > src.rs", "printf x >> src/lib.rs", "rm -f src.rs"] {
+        let blocked = plan_guard(&workspace, "Bash", &bash(command));
+        assert_eq!(blocked.status.code(), Some(2), "{command}: {blocked:?}");
+        assert!(
+            String::from_utf8_lossy(&blocked.stderr).contains("cannot modify workspace path"),
+            "{command}: {blocked:?}"
+        );
+    }
+    for command in [
+        "sed -i 's/a/b/' src/*.rs",
+        "echo x > $F",
+        "touch src/$NAME.rs",
+    ] {
+        let blocked = plan_guard(&workspace, "Bash", &bash(command));
+        assert_eq!(blocked.status.code(), Some(2), "{command}: {blocked:?}");
+        assert!(
+            String::from_utf8_lossy(&blocked.stderr).contains(&format!(
+                "cannot run mutation-capable shell command: {command} for"
+            )),
+            "{command}: {blocked:?}"
+        );
+    }
+    for command in ["cat src/*.rs", "cargo test $ARGS", "ls -la"] {
+        let passed = plan_guard(&workspace, "Bash", &bash(command));
+        assert_eq!(passed.status.code(), Some(0), "{command}: {passed:?}");
+    }
+}
+
+/// 計画承認の前は、`MultiEdit` の `file_path` も `NotebookEdit` の `notebook_path` も
+/// 書込み先として読んで止める。
+#[test]
+fn the_plan_approval_guard_reads_every_write_tool_input_shape() {
+    let workspace = workspace_before_plan_approval();
+    let source = workspace
+        .path()
+        .join("src.rs")
+        .to_string_lossy()
+        .into_owned();
+    let notebook = workspace
+        .path()
+        .join("analysis.ipynb")
+        .to_string_lossy()
+        .into_owned();
+    for (tool, input) in [
+        (
+            "MultiEdit",
+            object(&[
+                ("file_path", source.clone().into()),
+                (
+                    "edits",
+                    serde_json::Value::Array(vec![object(&[
+                        ("old_string", "a".into()),
+                        ("new_string", "b".into()),
+                    ])]),
+                ),
+            ]),
+        ),
+        (
+            "NotebookEdit",
+            object(&[
+                ("notebook_path", notebook.into()),
+                ("new_source", "print(1)".into()),
+            ]),
+        ),
+        ("Edit", object(&[("file_path", source.into())])),
+    ] {
+        let blocked = plan_guard(&workspace, tool, &input);
+        assert_eq!(blocked.status.code(), Some(2), "{tool}: {blocked:?}");
+        assert!(
+            String::from_utf8_lossy(&blocked.stderr).contains("cannot modify workspace path"),
+            "{tool}: {blocked:?}"
+        );
+    }
+}
+
+/// 読めない入力は通し（fail-open）、`AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` は判定そのものを
+/// 止める。どちらも承認前なら止まるはずの書込みで確かめる。
+#[test]
+fn the_plan_approval_guard_fails_open_on_malformed_input_and_obeys_its_off_switch() {
+    let workspace = workspace_before_plan_approval();
+    let write = object(&[
+        (
+            "file_path",
+            workspace
+                .path()
+                .join("src.rs")
+                .to_string_lossy()
+                .into_owned()
+                .into(),
+        ),
+        ("content", "x".into()),
+    ]);
+    let envelope = plan_guard_envelope(&workspace, "Write", &write);
+    let baseline = plan_guard_with(&workspace, &envelope, &[]);
+    assert_eq!(baseline.status.code(), Some(2), "前提: {baseline:?}");
+    for malformed in ["not json", "", "{\"tool_name\":\"Write\",", "[]"] {
+        let passed = plan_guard_with(&workspace, malformed, &[]);
+        assert_eq!(passed.status.code(), Some(0), "{malformed:?}: {passed:?}");
+        assert!(passed.stderr.is_empty(), "{malformed:?}: {passed:?}");
+    }
+    let disabled = plan_guard_with(
+        &workspace,
+        &envelope,
+        &[("AIDLC_DISABLE_PLAN_APPROVAL_GUARD", "1")],
+    );
+    assert_eq!(disabled.status.code(), Some(0), "{disabled:?}");
+    let other = plan_guard_with(
+        &workspace,
+        &envelope,
+        &[("AIDLC_DISABLE_PLAN_APPROVAL_GUARD", "true")],
+    );
+    assert_eq!(
+        other.status.code(),
+        Some(2),
+        "`1` 以外では止めない: {other:?}"
+    );
+}
+
+/// 承認ディレクトリの中に置いた symlink を通る書込みも、承認ディレクトリ自身がリンクの
+/// ときの書込みも、綴りの上で中に見えても外として止める（2.8.2
+/// `assertNoSymlinkInChainOrThrow`）。
+#[test]
+fn the_plan_approval_guard_treats_a_path_through_a_symlink_as_outside() {
+    let workspace = workspace_before_plan_approval();
+    let intents = workspace.path().join("aidlc/spaces/default/intents");
+    let directory = intents
+        .join(
+            fs::read_to_string(intents.join("active-intent"))
+                .unwrap()
+                .trim(),
+        )
+        .join("construction/code-generation");
+    fs::create_dir_all(&directory).unwrap();
+    fs::create_dir_all(workspace.path().join("src")).unwrap();
+    std::os::unix::fs::symlink(workspace.path().join("src"), directory.join("link")).unwrap();
+    let write = |path: std::path::PathBuf| {
+        object(&[
+            ("file_path", path.to_string_lossy().into_owned().into()),
+            ("content", "x".into()),
+        ])
+    };
+    let inside = plan_guard(&workspace, "Write", &write(directory.join("plan-notes.md")));
+    assert_eq!(inside.status.code(), Some(0), "{inside:?}");
+    let through = plan_guard(&workspace, "Write", &write(directory.join("link/main.rs")));
+    assert_eq!(through.status.code(), Some(2), "{through:?}");
+    let shell = plan_guard(
+        &workspace,
+        "Bash",
+        &object(&[(
+            "command",
+            format!("echo x > {}", directory.join("link/main.rs").display()).into(),
+        )]),
+    );
+    assert_eq!(shell.status.code(), Some(2), "{shell:?}");
+    // 承認ディレクトリそのものがワークスペースの外へのリンクなら、中は 1 つも無い。
+    let outside = tempfile::tempdir().unwrap();
+    fs::remove_dir_all(&directory).unwrap();
+    std::os::unix::fs::symlink(outside.path(), &directory).unwrap();
+    let redirected = plan_guard(&workspace, "Write", &write(directory.join("plan-notes.md")));
+    assert_eq!(redirected.status.code(), Some(2), "{redirected:?}");
 }
 
 /// 計画が未承認なら、ブリーフはドメインの理由を名指して拒否される。

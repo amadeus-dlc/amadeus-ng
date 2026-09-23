@@ -861,9 +861,24 @@ pub fn plan_dispatch_blocked(mentioned: &[String], detail: Option<&str>) -> Stri
 /// 計画承認の無いワークスペースの書換えを止める（2.8.2 `mutationBlockReason` 逐語）。
 #[must_use]
 pub fn plan_mutation_blocked(target: &str, detail: Option<&str>) -> String {
+    mutation_blocked(&format!("modify workspace path \"{target}\""), detail)
+}
+
+/// 書込み位置を確定できない変更系のシェルを、計画承認が無いので止める（2.8.2
+/// `mutationBlockReason` の `opaqueShell` 逐語。コマンドは前後の空白を除いて 160 文字まで）。
+#[must_use]
+pub fn plan_shell_mutation_blocked(command: &str, detail: Option<&str>) -> String {
+    let shown = command.trim().chars().take(160).collect::<String>();
+    mutation_blocked(
+        &format!("run mutation-capable shell command: {shown}"),
+        detail,
+    )
+}
+
+fn mutation_blocked(action: &str, detail: Option<&str>) -> String {
     let reason = detail.map_or_else(String::new, |detail| format!(" Reason: {detail}."));
     format!(
-        "Code generation cannot modify workspace path \"{target}\" for the zero-Unit stage-level implementation because the plan, unit-test instructions, and current Testing Contract do not have a current matching approval.{reason} Writes inside the selected code-generation record directory remain available for Steps 2-3. Record the human's explicit \"Approve Plan\" answer before beginning Step 4 generation."
+        "Code generation cannot {action} for the zero-Unit stage-level implementation because the plan, unit-test instructions, and current Testing Contract do not have a current matching approval.{reason} Writes inside the selected code-generation record directory remain available for Steps 2-3. Record the human's explicit \"Approve Plan\" answer before beginning Step 4 generation."
     )
 }
 
