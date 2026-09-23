@@ -29,7 +29,7 @@
 //!   ただし変更系コマンドやリダイレクトの書込み位置が展開・グロブで確定しないときは
 //!   止める（2.8.2 と同じ）
 //! - 拒否の監査行 `PLAN_APPROVAL_BLOCKED` と無効化の `GUARD_DISABLED` は書かない
-use super::testing_posture::{PlanApprovalState, approval, begin_generation};
+use super::testing_posture::{approval, begin_generation};
 use super::{Completion, Layout};
 use core_command_domain::orchestration::PlanTarget;
 use serde_json::Value;
@@ -110,12 +110,14 @@ async fn guard_dispatch(layout: &Layout, markers: &Markers) -> Completion {
         Ok(state) => state,
         Err(error) => return fail_closed(layout, &error).await,
     };
-    let contract_matches = markers.contracts.len() == 1
-        && state.contract_hash.as_deref() == markers.contracts.first().map(String::as_str);
-    if !state.ok || !contract_matches {
+    let admitted = match markers.contracts.as_slice() {
+        [contract] => state.approves_contract(contract),
+        _ => false,
+    };
+    if !admitted {
         return Completion::hook_denied(crate::wording::plan_dispatch_blocked(
             &mentioned,
-            detail(&state),
+            state.refusal_reason(),
         ));
     }
     begin(layout, target).await
@@ -149,11 +151,13 @@ async fn guard_write(layout: &Layout, input: &str, command: &str) -> Completion 
         Ok(state) => state,
         Err(error) => return fail_closed(layout, &error).await,
     };
-    if !state.ok {
+    if !state.is_current() {
         return Completion::hook_denied(match blocked {
-            Blocked::Path(path) => crate::wording::plan_mutation_blocked(&path, detail(&state)),
+            Blocked::Path(path) => {
+                crate::wording::plan_mutation_blocked(&path, state.refusal_reason())
+            }
             Blocked::Shell(command) => {
-                crate::wording::plan_shell_mutation_blocked(&command, detail(&state))
+                crate::wording::plan_shell_mutation_blocked(&command, state.refusal_reason())
             }
         });
     }
@@ -180,10 +184,6 @@ async fn begin(layout: &Layout, target: PlanTarget) -> Completion {
 async fn fail_closed(layout: &Layout, error: &str) -> Completion {
     let _ = super::record_hook_drop(layout, NAME, error).await;
     Completion::hook_denied(crate::wording::plan_authority_unavailable(error))
-}
-
-fn detail(state: &PlanApprovalState) -> Option<&str> {
-    (!state.ok && !state.reason.is_empty()).then_some(state.reason.as_str())
 }
 
 /// 宛先 `target` が承認ディレクトリ `dir` の中か（2.8.2 `isTrustedRecordTarget`）。

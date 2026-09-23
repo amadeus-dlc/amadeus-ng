@@ -188,17 +188,34 @@ async fn brief(layout: &Layout, args: &[String]) -> Result<String, String> {
 /// ある承認対象の、いまの計画承認の評価（`brief` と plan-approval-guard が共有する）。
 pub(super) struct PlanApprovalState {
     /// 承認が現在のものか。
-    pub(super) ok: bool,
+    ok: bool,
     /// 現在でない理由（`ok` なら `approved`）。
-    pub(super) reason: String,
+    reason: String,
     /// 承認された Testing Contract の指紋。
-    pub(super) contract_hash: Option<String>,
+    contract_hash: Option<String>,
     /// 対象の Unit（段階全体なら `None`）。
-    pub(super) unit: Option<String>,
+    unit: Option<String>,
     /// 作業者へ渡す計画（承認の指紋が束ねた形 — 付録を落とし、進捗の印を戻したもの）。
-    pub(super) plan: String,
+    plan: String,
     /// 作業者へ渡すテスト指示（承認の指紋が束ねた形）。
-    pub(super) instructions: String,
+    instructions: String,
+}
+
+impl PlanApprovalState {
+    /// 承認が現在のものか。
+    pub(super) const fn is_current(&self) -> bool {
+        self.ok
+    }
+
+    /// 現在の承認が、依頼文の名乗る Testing Contract の指紋を承認しているか。
+    pub(super) fn approves_contract(&self, contract: &str) -> bool {
+        self.ok && self.contract_hash.as_deref() == Some(contract)
+    }
+
+    /// 現在でない理由（拒否文の detail）。現在の承認と、理由の空な評価は `None`。
+    pub(super) fn refusal_reason(&self) -> Option<&str> {
+        (!self.ok && !self.reason.is_empty()).then_some(self.reason.as_str())
+    }
 }
 
 /// 承認対象の計画承認を評価する（**読取専用** — 共有承認ストアを作らない）。
