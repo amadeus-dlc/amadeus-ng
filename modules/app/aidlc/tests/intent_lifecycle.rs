@@ -4389,6 +4389,128 @@ async fn the_review_round_trip_lets_the_gate_be_approved_and_records_both_rows()
     );
 }
 
+/// 2.8.2 の形 — reviewer は成果物へ追記せず、依頼が返す下書きへレビューを書く。判定は下書きを
+/// 検証してレビュー記録へ移し、成果物は依頼時のバイトのまま残る。
+#[tokio::test]
+async fn a_review_written_to_the_requested_draft_becomes_the_review_record() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    let artifact = record.join("inception/domain-design/domain-design.md");
+    fs::create_dir_all(artifact.parent().expect("parent")).expect("stage dir");
+    fs::write(&artifact, "# Domain design\n").expect("review input");
+    let request = |iteration: &'static str| {
+        let workspace = &workspace;
+        async move {
+            let completion = log_review(
+                workspace,
+                &[
+                    "--stage",
+                    "domain-design",
+                    "--reviewer",
+                    REVIEWER,
+                    "--iteration",
+                    iteration,
+                ],
+            )
+            .await;
+            assert_eq!(completion.code(), 0, "{completion:?}");
+            let line: serde_json::Value =
+                serde_json::from_str(completion.line().expect("1 行")).expect("JSON");
+            line.get("reviewFile")
+                .and_then(serde_json::Value::as_str)
+                .expect("下書きの置き場")
+                .to_string()
+        }
+    };
+    let verdict = |verdict: &'static str| {
+        let workspace = &workspace;
+        async move {
+            log_review(
+                workspace,
+                &[
+                    "--stage",
+                    "domain-design",
+                    "--reviewer",
+                    REVIEWER,
+                    "--iteration",
+                    "1",
+                    "--verdict",
+                    verdict,
+                ],
+            )
+            .await
+        }
+    };
+    let draft = workspace.project_dir().join(request("1").await);
+
+    // 下書きが無ければレビューは書かれていない。
+    let missing = verdict("READY").await;
+    assert_eq!(missing.code(), 1);
+    assert!(
+        format!("{missing:?}").contains("no review was written for iteration 1"),
+        "{missing:?}"
+    );
+
+    // 下書きと追記の両方があれば、どちらがレビューか決まらないので断る。
+    let review = format!(
+        "## Review\n\n**Verdict:** READY\n**Reviewer:** {REVIEWER}\n**Iteration:** 1\n\n### Findings\n\n| ID | Severity | Location | Finding | Required action | Status |\n|---|---|---|---|---|---|\n| R-01 | Minor | x.md > A | wording | reword | New |\n"
+    );
+    fs::create_dir_all(draft.parent().expect("parent")).expect("draft dir");
+    fs::write(&draft, &review).expect("draft");
+    fs::write(&artifact, format!("# Domain design\n\n{review}")).expect("append");
+    let twice = verdict("READY").await;
+    assert_eq!(twice.code(), 1);
+    assert!(
+        format!("{twice:?}").contains("a review file was also written"),
+        "{twice:?}"
+    );
+
+    // 追記を戻せば、下書きがレビューになる。
+    fs::write(&artifact, "# Domain design\n").expect("restore");
+    let completed = verdict("READY").await;
+    assert_eq!(completed.code(), 0, "{completed:?}");
+    let line: serde_json::Value =
+        serde_json::from_str(completed.line().expect("1 行")).expect("JSON");
+    let recorded = line
+        .get("reviewRecord")
+        .and_then(serde_json::Value::as_str)
+        .expect("記録の置き場");
+    let record_file: serde_json::Value =
+        serde_json::from_slice(&fs::read(record.join(recorded)).expect("記録")).expect("JSON");
+    assert_eq!(
+        record_file.get("verdict"),
+        Some(&serde_json::json!("READY"))
+    );
+    assert_eq!(record_file.get("body"), Some(&serde_json::json!(review)));
+    assert_eq!(
+        record_file
+            .get("findings")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(1),
+        "所見の表は記録の findings になる"
+    );
+    assert!(!draft.exists(), "使った下書きは記録へ移って消える");
+
+    // review-brief は最新の記録から所見を描く。
+    let brief = invoke(
+        &workspace,
+        "aidlc-review-brief",
+        &["context", "--stage", "domain-design"],
+    )
+    .await;
+    assert!(
+        format!("{brief:?}").contains("R-01"),
+        "記録の所見がゲートの文脈に出る: {brief:?}"
+    );
+}
+
 /// 受領証が無い承認は段 11 で拒まれる（`aidlc-state.ts approve` の逐語を包み文に入れて）。
 #[tokio::test]
 async fn approving_a_reviewer_bearing_stage_without_a_receipt_is_refused_verbatim() {
