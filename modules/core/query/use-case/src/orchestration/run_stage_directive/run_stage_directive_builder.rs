@@ -27,10 +27,12 @@ pub struct RunStageDirectiveBuilder {
     support_agents: Vec<String>,
     inline_context_paths: Vec<String>,
     consumes: Vec<String>,
+    consumes_absent: Vec<crate::orchestration::AbsentConsume>,
     produces: Vec<String>,
     sensors_applicable: Vec<String>,
     next_stage: Option<String>,
     reviewer: Option<String>,
+    review_artifact: Option<String>,
     review_class: Option<ReviewClassView>,
     reviewer_max_iterations: Option<u32>,
     protocol_modules: Vec<String>,
@@ -63,10 +65,12 @@ impl RunStageDirectiveBuilder {
             support_agents: Vec::new(),
             inline_context_paths: Vec::new(),
             consumes: Vec::new(),
+            consumes_absent: Vec::new(),
             produces: Vec::new(),
             sensors_applicable: Vec::new(),
             next_stage: None,
             reviewer: None,
+            review_artifact: None,
             review_class: None,
             reviewer_max_iterations: None,
             protocol_modules: Vec::new(),
@@ -133,6 +137,23 @@ impl RunStageDirectiveBuilder {
         self
     }
 
+    /// ディスクに無い必須入力を伴う（2.8.2 `consumes_absent`）。
+    #[must_use]
+    pub fn with_consumes_absent(
+        mut self,
+        absent: Vec<crate::orchestration::AbsentConsume>,
+    ) -> RunStageDirectiveBuilder {
+        self.consumes_absent = absent;
+        self
+    }
+
+    /// レビューの対象成果物を伴う（2.8.2 `review_artifact`）。
+    #[must_use]
+    pub fn with_review_artifact(mut self, artifact: impl Into<String>) -> RunStageDirectiveBuilder {
+        self.review_artifact = Some(artifact.into());
+        self
+    }
+
     /// プロトコルモジュールのヒント列を伴う。
     #[must_use]
     pub fn with_protocol_modules(mut self, modules: Vec<String>) -> RunStageDirectiveBuilder {
@@ -182,10 +203,12 @@ impl RunStageDirectiveBuilder {
             memory_path: self.memory_path,
             inline_context_paths: self.inline_context_paths,
             consumes: self.consumes,
+            consumes_absent: self.consumes_absent,
             produces: self.produces,
             sensors_applicable: self.sensors_applicable,
             next_stage: self.next_stage,
             reviewer: self.reviewer,
+            review_artifact: self.review_artifact,
             review_class: self.review_class,
             reviewer_max_iterations: self.reviewer_max_iterations,
             protocol_modules: self.protocol_modules,

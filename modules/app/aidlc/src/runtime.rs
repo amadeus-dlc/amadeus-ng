@@ -295,6 +295,55 @@ fn emit(outcome: Result<(Directive, Vec<u8>), String>) -> Completion {
     }
 }
 
+/// 内容確認を要するステージの集合（`AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD=1` なら空）。
+fn summary_confirmation_stages(
+    layout: &Layout,
+) -> core_command_domain::orchestration::StageSlugSet {
+    use core_command_domain::orchestration::StageSlugSet;
+    if std::env::var("AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD").as_deref() == Ok("1") {
+        return StageSlugSet::empty();
+    }
+    StageSlugSet::new(
+        crate::stage_context::StageContext::read(layout)
+            .summary_confirmation_stages()
+            .iter()
+            .filter_map(|slug| StageSlug::parse(slug).ok()),
+    )
+}
+
+/// ステージの日記 `memory.md` を指示の発行境界で作る（2.8.2 `bootstrapDirectiveMemory`）。
+///
+/// 指揮役が「在るかもしれないパス」を読んで確かめずに済むよう、エンジンが雛形
+/// `.claude/knowledge/aidlc-shared/memory-template.md` から作る。既に在れば触らない
+/// （再入・再開で書き溜めた記録を消さない）。**助言的**である — 雛形が無い、未解決の
+/// プレースホルダ、ファイル操作の失敗のいずれでも指示の発行は止めない。
+fn bootstrap_stage_diary(layout: &Layout, memory_path: &str) {
+    if memory_path.contains('{') {
+        return;
+    }
+    let template = layout
+        .project_dir()
+        .join(".claude/knowledge/aidlc-shared/memory-template.md");
+    let target = layout.project_dir().join(memory_path);
+    if !template.is_file() || target.exists() {
+        return;
+    }
+    let Some(parent) = target.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let Ok(body) = std::fs::read(&template) else {
+        return;
+    };
+    // 既存を上書きしない（2.8.2 は `COPYFILE_EXCL`）。
+    if let Ok(mut file) = core_infrastructure::atomic::create_new_file(&target) {
+        use std::io::Write as _;
+        let _ = file.write_all(&body);
+    }
+}
+
 /// 構造化済みの指示を表示する前に、発行の事実を保存して公開する。
 async fn publish_directive(
     layout: &Layout,
@@ -305,6 +354,9 @@ async fn publish_directive(
     // Stop自身の確認は発行権限を更新しない。本家 emit の同じ環境入力に対応する。
     if std::env::var("AIDLC_STOP_HOOK_PROBE").as_deref() == Ok("1") {
         return Ok(());
+    }
+    if let Directive::RunStage(run) = directive {
+        bootstrap_stage_diary(layout, run.memory_path());
     }
     let publication = match directive {
         Directive::RunStage(run) => PublishedDirective::RunStage {
@@ -3242,6 +3294,35 @@ mod tests {
     use core_command_domain::workflow_definition::WorkflowDefinitionId;
     use core_command_domain::workspace::CloneId;
     use core_command_use_case::orchestration::RepositoryError;
+
+    /// 日記は雛形から 1 度だけ作り、書き溜めた記録は上書きしない (2.8.2
+    /// `bootstrapDirectiveMemory`)。雛形が無ければ何もしない。
+    #[test]
+    fn the_stage_diary_is_created_once_from_the_template() {
+        let root = tempfile::tempdir().expect("一時ディレクトリ");
+        let layout = Layout::resolve(root.path());
+        let diary = "aidlc/spaces/default/intents/r/inception/x/memory.md";
+        bootstrap_stage_diary(&layout, diary);
+        assert!(!root.path().join(diary).exists(), "雛形が無ければ作らない");
+
+        let template = root.path().join(".claude/knowledge/aidlc-shared");
+        std::fs::create_dir_all(&template).expect("dir");
+        std::fs::write(template.join("memory-template.md"), "# Memory\n").expect("template");
+        bootstrap_stage_diary(&layout, diary);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(diary)).expect("作られた"),
+            "# Memory\n"
+        );
+        std::fs::write(root.path().join(diary), "# Memory\n- note\n").expect("追記");
+        bootstrap_stage_diary(&layout, diary);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(diary)).expect("残っている"),
+            "# Memory\n- note\n",
+            "既存の日記は上書きしない"
+        );
+        bootstrap_stage_diary(&layout, "aidlc/{unit-name}/memory.md");
+        assert!(!root.path().join("aidlc/{unit-name}").exists());
+    }
 
     /// 連鎖の途中に居る封筒 (自分の `Display` に子の文言を内包しない形)。
     #[derive(Debug)]

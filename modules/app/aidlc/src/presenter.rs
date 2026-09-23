@@ -164,6 +164,19 @@ fn fill_run_stage(object: &mut ObjectMembers, run: &RunStageDirective) {
     object.insert("rules_in_context", texts(run.rules_in_context()));
     object.insert("sensors_applicable", texts(run.sensors_applicable()));
     object.insert("stage_file", text(run.stage_file()));
+    if !run.consumes_absent().is_empty() {
+        let absent = run
+            .consumes_absent()
+            .iter()
+            .map(|entry| {
+                let mut value = ObjectMembers::new();
+                value.insert("path", text(entry.path()));
+                value.insert("expected", JsonValue::Bool(entry.is_expected()));
+                JsonValue::Object(value)
+            })
+            .collect();
+        object.insert("consumes_absent", JsonValue::Array(absent));
+    }
     if let Some(pipeline) = run.pipeline() {
         let mut value = ObjectMembers::new();
         value.insert("links", texts(pipeline.links()));
@@ -175,6 +188,9 @@ fn fill_run_stage(object: &mut ObjectMembers, run: &RunStageDirective) {
     }
     if let Some(reviewer) = run.reviewer() {
         object.insert("reviewer", text(reviewer));
+    }
+    if let Some(artifact) = run.review_artifact() {
+        object.insert("review_artifact", text(artifact));
     }
     if let Some(max) = run.reviewer_max_iterations() {
         object.insert("reviewer_max_iterations", number(max));
