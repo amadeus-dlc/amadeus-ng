@@ -337,6 +337,13 @@ async fn record_advisory_receipt(workspace: &Workspace, stage: &str) {
 
 /// `report` を 1 回叩いて出た 1 行を返す。
 async fn report_line(workspace: &Workspace, args: &[&str]) -> String {
+    // 承認・差し戻しは人間の返答の後にしか来ない（2.8.2 の承認ガード）。
+    if args
+        .windows(2)
+        .any(|pair| matches!(pair, ["--result", "approved" | "rejected"]))
+    {
+        human_reply::append_human_reply(&workspace.record_dir());
+    }
     let mut argv = vec!["report"];
     argv.extend_from_slice(args);
     let completion = workspace.invoke("aidlc-orchestrate", &argv).await;
@@ -373,7 +380,11 @@ async fn approving_a_gate_matches_the_recorded_reply_after_slug_substitution() {
     report_line(&workspace, &["--result", "awaiting-approval"]).await;
     record_advisory_receipt(&workspace, SYNTHETIC_SLUG).await;
     assert_eq!(
-        report_line(&workspace, &["--result", "approved", "--user-input", "A"]).await,
+        report_line(
+            &workspace,
+            &["--result", "approved", "--user-input", "Approve"]
+        )
+        .await,
         recorded_for_synthetic_graph("report/approved")
     );
 }
@@ -385,9 +396,13 @@ async fn rejecting_a_gate_matches_the_recorded_reply_after_slug_substitution() {
     assert_eq!(
         report_line(
             &workspace,
+            // 2.8.2 は差し戻しに人間の `Request Changes` の選択を要る（`handleReject`）。
+            // 出力の期待バイトは 2.7.1 の採取のまま変えない。
             &[
                 "--result",
                 "rejected",
+                "--user-input",
+                "Request Changes",
                 "--reason",
                 "Sharpen the testing posture."
             ]
@@ -406,6 +421,8 @@ async fn revising_a_gate_matches_the_recorded_reply_after_slug_substitution() {
         &[
             "--result",
             "rejected",
+            "--user-input",
+            "Request Changes",
             "--reason",
             "Sharpen the testing posture.",
         ],
@@ -425,3 +442,6 @@ async fn revising_a_gate_matches_the_recorded_reply_after_slug_substitution() {
         recorded_for_synthetic_graph("report/revised")
     );
 }
+
+#[path = "../../../../tests/support/human_reply.rs"]
+mod human_reply;

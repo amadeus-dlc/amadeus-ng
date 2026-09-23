@@ -603,6 +603,12 @@ pub use review_artifact::ReviewArtifact;
 mod review_binding;
 pub use review_binding::ReviewBinding;
 
+mod review_draft;
+pub use review_draft::ReviewDraft;
+
+mod review_request_identity;
+pub use review_request_identity::ReviewRequestIdentity;
+
 mod review_completion;
 pub use review_completion::ReviewCompletion;
 
@@ -613,6 +619,11 @@ mod review_evidence_error;
 pub use review_evidence_error::ReviewEvidenceError;
 
 mod review_appendix;
+
+mod review_finding;
+pub use review_finding::ReviewFinding;
+mod review_findings;
+pub use review_findings::ReviewFindings;
 
 mod review_record;
 pub use review_record::ReviewRecord;

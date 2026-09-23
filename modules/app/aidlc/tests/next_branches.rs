@@ -134,6 +134,13 @@ impl Workspace {
     /// `[-]` のゲートは明示 `--stage` を要し（forward 表）、前進は人間の選択を要する
     /// （段 13）ので、どちらも添えて叩く。
     async fn report(&self, result: &str, stage: &str) {
+        // 承認・差し戻しは人間の返答の後にしか来ない（2.8.2 の承認ガード）。
+        if ["approved", "rejected", "completed"].contains(&result) {
+            let intents = self.project_dir().join("aidlc/spaces/default/intents");
+            let active =
+                std::fs::read_to_string(intents.join("active-intent")).expect("active-intent");
+            human_reply::append_human_reply(&intents.join(active.trim()));
+        }
         let completion = self
             .invoke(
                 "aidlc-orchestrate",
@@ -142,7 +149,7 @@ impl Workspace {
                     "--result",
                     result,
                     "--user-input",
-                    "A",
+                    "Approve",
                     "--stage",
                     stage,
                 ],
@@ -1068,3 +1075,6 @@ async fn multiple_records_without_cursor_are_not_overwritten_by_next() {
 #[path = "../../../../tests/support/coverage_profile_env.rs"]
 mod coverage_profile_env;
 use coverage_profile_env::coverage_profile_env;
+
+#[path = "../../../../tests/support/human_reply.rs"]
+mod human_reply;

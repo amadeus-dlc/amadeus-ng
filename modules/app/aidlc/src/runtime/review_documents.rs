@@ -1,13 +1,14 @@
 //! 宣言されたレビュー成果物を、同一の安定読取りとして観測する入力境界。
 use crate::layout::Layout;
-use core_command_domain::orchestration::{ReviewArtifact, ReviewDocuments};
+use core_command_domain::orchestration::{ReviewArtifact, ReviewDocuments, ReviewDraft};
 use serde_json::Value;
 use std::{
     fs, io,
     path::{Path, PathBuf},
 };
 
-pub(super) fn read(layout: &Layout, stage: &str) -> ReviewDocuments {
+/// 宣言されたレビュー成果物と、判定なら reviewer の下書き（`drafts`）を束ねる。
+pub(super) fn read(layout: &Layout, stage: &str, drafts: Vec<ReviewDraft>) -> ReviewDocuments {
     let captured = observe(layout, stage).and_then(|(artifacts, require_artifacts, workspace)| {
         let source = workspace.then(|| {
             crate::source_fingerprint::read(layout.project_dir())
@@ -22,9 +23,12 @@ pub(super) fn read(layout: &Layout, stage: &str) -> ReviewDocuments {
             source,
             nonce,
             true,
+            drafts.clone(),
         ))
     });
-    captured.unwrap_or_else(|_| ReviewDocuments::new(Vec::new(), true, None, String::new(), false))
+    captured.unwrap_or_else(|_| {
+        ReviewDocuments::new(Vec::new(), true, None, String::new(), false, drafts)
+    })
 }
 
 /// 宣言されたレビュー成果物だけを観測する（読取専用の面が使う入口）。
@@ -249,14 +253,16 @@ mod tests {
             "# Domain design\n",
         )
         .expect("成果物");
-        let documents = read(&layout, "domain-design");
-        let binding = documents.bind().expect("束縛");
+        let documents = read(&layout, "domain-design", Vec::new());
+        let binding = documents.bind(None).expect("束縛");
         assert_eq!(
             binding.appendix_artifact(),
             "inception/domain-design/domain-design.md"
         );
         assert!(
-            read(&layout, "no-such-stage").bind().is_err(),
+            read(&layout, "no-such-stage", Vec::new())
+                .bind(None)
+                .is_err(),
             "未知の stage は束ねない"
         );
     }
@@ -270,25 +276,29 @@ mod tests {
         let artifact = record.join("inception/domain-design/domain-design.md");
         fs::create_dir(&artifact).expect("同名のディレクトリ");
         assert!(matches!(
-            read(&layout, "domain-design").bind(),
+            read(&layout, "domain-design", Vec::new()).bind(None),
             Err(ReviewEvidenceError::ArtifactsUnavailable)
         ));
         fs::remove_dir(&artifact).expect("消す");
         fs::write(&artifact, "# Domain design\n").expect("成果物");
         fs::hard_link(&artifact, record.join("twin.md")).expect("ハードリンク");
         assert!(matches!(
-            read(&layout, "domain-design").bind(),
+            read(&layout, "domain-design", Vec::new()).bind(None),
             Err(ReviewEvidenceError::ArtifactsUnavailable)
         ));
         fs::remove_file(record.join("twin.md")).expect("消す");
-        assert!(read(&layout, "domain-design").bind().is_ok());
+        assert!(
+            read(&layout, "domain-design", Vec::new())
+                .bind(None)
+                .is_ok()
+        );
         // stage ディレクトリをシンボリックリンクに差し替える。
         let stage = record.join("inception/domain-design");
         let elsewhere = record.join("elsewhere");
         fs::rename(&stage, &elsewhere).expect("退避");
         std::os::unix::fs::symlink(&elsewhere, &stage).expect("リンク");
         assert!(matches!(
-            read(&layout, "domain-design").bind(),
+            read(&layout, "domain-design", Vec::new()).bind(None),
             Err(ReviewEvidenceError::ArtifactsUnavailable)
         ));
     }
@@ -304,19 +314,35 @@ mod tests {
         fs::write(&artifact, "# Domain design\n").expect("成果物");
         // 読めない成果物（在るが権限が無い）。
         fs::set_permissions(&artifact, fs::Permissions::from_mode(0o000)).expect("権限");
-        assert!(read(&layout, "domain-design").bind().is_err());
+        assert!(
+            read(&layout, "domain-design", Vec::new())
+                .bind(None)
+                .is_err()
+        );
         fs::set_permissions(&artifact, fs::Permissions::from_mode(0o644)).expect("権限");
         // 途中の成分がディレクトリでない。
         let directory = record.join("inception/domain-design");
         fs::remove_dir_all(&directory).expect("削除");
         fs::write(&directory, "not a directory\n").expect("ファイル化");
-        assert!(read(&layout, "domain-design").bind().is_err());
+        assert!(
+            read(&layout, "domain-design", Vec::new())
+                .bind(None)
+                .is_err()
+        );
         // 定義グラフが壊れている・無い。
         let graph = root.path().join(".claude/tools/data/stage-graph.json");
         fs::write(&graph, "{").expect("壊す");
-        assert!(read(&layout, "domain-design").bind().is_err());
+        assert!(
+            read(&layout, "domain-design", Vec::new())
+                .bind(None)
+                .is_err()
+        );
         fs::remove_file(&graph).expect("消す");
-        assert!(read(&layout, "domain-design").bind().is_err());
+        assert!(
+            read(&layout, "domain-design", Vec::new())
+                .bind(None)
+                .is_err()
+        );
     }
 
     /// `workspace_requires` の段でソース指紋が採れなければ `unbindable` として束ねる。
@@ -340,9 +366,9 @@ mod tests {
         let sealed = root.path().join("src/sealed");
         fs::create_dir_all(&sealed).expect("src");
         fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).expect("権限");
-        let documents = read(&layout, "domain-design");
+        let documents = read(&layout, "domain-design", Vec::new());
         fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).expect("権限");
-        let binding = documents.bind().expect("束縛");
+        let binding = documents.bind(None).expect("束縛");
         assert_eq!(binding.source(), Some("unbindable"));
     }
 }

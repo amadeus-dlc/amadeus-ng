@@ -1,5 +1,5 @@
 //! reviewerが書く末尾Review節の証拠。
-use super::{ReviewEvidenceError, ReviewVerdict};
+use super::{ReviewEvidenceError, ReviewFindings, ReviewVerdict};
 use core_infrastructure::hash::sha256_hex;
 /// 生バイトを保ち、表示される証跡だけを照合する。
 #[derive(Debug)]
@@ -76,27 +76,37 @@ impl ReviewAppendix {
         });
         Some(trimmed.len() + retained)
     }
+    /// 判定の証拠として受理できるかを確かめる（upstream `validateReviewAppendix` と、
+    /// 記録の直前に置かれた所見表の解析 `aidlc-log.ts:2403-2415`）。
+    ///
+    /// `artifact` は所見表の拒否で成果物を名指す綴り（依頼が固定した追記先）である。
     pub(super) fn validate(
         &self,
+        artifact: &str,
         reviewer: &str,
         iteration: u32,
         verdict: ReviewVerdict,
         challenge: Option<&str>,
+        standalone: bool,
     ) -> Result<(), ReviewEvidenceError> {
         let invalid = |reason: &str| ReviewEvidenceError::InvalidAppendix(reason.to_string());
         let text = std::str::from_utf8(self.evidence())
             .map_err(|_| invalid("the reviewer appendix is not valid UTF-8"))?;
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-        let Some((heading, section)) = normalized.split_once('\n') else {
-            return Err(invalid(
-                "the appended bytes must begin with only blank lines followed by an exact `## Review` heading",
-            ));
+        // 単独のレビューファイルは `## Review` 見出しで始めてもよい（テンプレートどおり）が、
+        // 必須ではない（upstream `validateReviewAppendix` の `standalone`）。追記は必須である。
+        let opened = normalized
+            .split_once('\n')
+            .filter(|(heading, _)| heading.trim_end_matches([' ', '\t']) == "## Review");
+        let section = match opened {
+            Some((_, section)) => section,
+            None if standalone => normalized.as_str(),
+            None => {
+                return Err(invalid(
+                    "the appended bytes must begin with only blank lines followed by an exact `## Review` heading",
+                ));
+            }
         };
-        if heading.trim_end_matches([' ', '\t']) != "## Review" {
-            return Err(invalid(
-                "the appended bytes must begin with only blank lines followed by an exact `## Review` heading",
-            ));
-        }
         let lines = super::summary_questions::visible_markdown_lines(section);
         if lines
             .iter()
@@ -149,6 +159,12 @@ impl ReviewAppendix {
             }
             _ => (),
         }
+        // 所見表はレビュー記録の `findings` 欄になる。upstream 2.8.2 は記録を書く前に表を
+        // 解析し、読めなければ REVIEW_COMPLETED を拒否する（`aidlc-log.ts:2403-2415`）。
+        // 受理（イベントの確定）より後で読むと、「判定は確定したが記録は無く、打ち直しは
+        // 依頼が無いと断られる」状態が残るので、受理の検査の中で読む。読むのは記録が
+        // 本文として持つのと同じバイト（先頭の空行だけを除いた証跡）である。
+        ReviewFindings::parse(text, artifact)?;
         Ok(())
     }
 }

@@ -1854,6 +1854,8 @@ impl Workspace {
     }
 
     async fn approve(&self, stage: &str) {
+        // 承認は人間の返答の後にしか来ない（2.8.2 の承認ガード）。
+        human_reply::append_human_reply(&self.record());
         let completion = self
             .invoke(
                 "aidlc-orchestrate",
@@ -1862,7 +1864,7 @@ impl Workspace {
                     "--result",
                     "approved",
                     "--user-input",
-                    "A",
+                    "Approve",
                     "--stage",
                     stage,
                 ],
@@ -4590,3 +4592,6 @@ use coverage_profile_env::coverage_profile_env;
 
 #[path = "../../../../tests/support/tool_link.rs"]
 mod tool_link;
+
+#[path = "../../../../tests/support/human_reply.rs"]
+mod human_reply;

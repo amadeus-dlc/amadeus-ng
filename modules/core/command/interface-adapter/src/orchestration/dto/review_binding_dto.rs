@@ -1,6 +1,6 @@
 //! レビュー要求の内容結合。書込み側とRMUがそれぞれ所有する。
 use super::dto_decode_error::DtoDecodeError;
-use core_command_domain::orchestration::ReviewBinding;
+use core_command_domain::orchestration::{ReviewBinding, ReviewRequestIdentity};
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct ReviewBindingDto {
@@ -11,6 +11,8 @@ pub(super) struct ReviewBindingDto {
     prior_length: usize,
     challenge: Option<String>,
     source: Option<String>,
+    request_id: String,
+    attempt: String,
 }
 impl ReviewBindingDto {
     pub(super) fn of(value: &ReviewBinding) -> Self {
@@ -22,9 +24,13 @@ impl ReviewBindingDto {
             prior_length: value.prior_length(),
             challenge: value.challenge().map(str::to_string),
             source: value.source().map(str::to_string),
+            request_id: value.identity().request_id().into(),
+            attempt: value.identity().attempt().into(),
         }
     }
     pub(super) fn to_domain(&self) -> Result<ReviewBinding, DtoDecodeError> {
+        let identity = ReviewRequestIdentity::new(self.request_id.clone(), self.attempt.clone())
+            .map_err(|e| DtoDecodeError::malformed("review_binding", e.to_string()))?;
         ReviewBinding::new(
             self.fingerprint.clone(),
             self.appendix_artifact.clone(),
@@ -33,6 +39,7 @@ impl ReviewBindingDto {
             self.prior_length,
             self.challenge.clone(),
             self.source.clone(),
+            identity,
         )
         .map_err(|e| DtoDecodeError::malformed("review_binding", e.to_string()))
     }

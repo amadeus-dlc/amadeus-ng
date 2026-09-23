@@ -831,6 +831,65 @@ pub fn human_presence_required(result: &str, stage: &str) -> String {
     )
 }
 
+/// 承認の返答が提示した選択肢と一致しない (2.8.2 `aidlc-state.ts` `approvalPreconditions` 逐語)。
+#[must_use]
+pub fn approval_choice_unmatched(stage: &str, reply: &str) -> String {
+    format!(
+        "Cannot approve \"{stage}\" because the reply {} did not match one of the offered choices. Present the original question with every choice again and wait for the human to pick one.",
+        received_reply(reply)
+    )
+}
+
+/// 差し戻しの返答が `Request Changes` の選択と一致しない (2.8.2 `aidlc-state.ts`
+/// `handleReject` 逐語。cancellation boilerplate の追記文はまだ持たない)。
+#[must_use]
+pub fn reject_choice_unmatched(stage: &str, reply: &str) -> String {
+    format!(
+        "Refusing to reject \"{stage}\": received reply {} did not match an offered choice at the held gate. Re-present the original held gate with every offered choice and wait for the human to choose one.",
+        received_reply(reply)
+    )
+}
+
+/// 受け取った返答の表示 (2.8.2 `formatReceivedReply`) — 空白を畳み、空なら `(empty)`、
+/// 長ければ 80 文字で切り、JSON 文字列として引用する。
+fn received_reply(reply: &str) -> String {
+    const LIMIT: usize = 80;
+    let normalized = reply.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = if normalized.is_empty() {
+        "(empty)".to_string()
+    } else {
+        normalized
+    };
+    let shown = if normalized.chars().count() <= LIMIT {
+        normalized
+    } else {
+        format!(
+            "{}...",
+            normalized.chars().take(LIMIT - 3).collect::<String>()
+        )
+    };
+    core_infrastructure::canon_json::serialize(
+        &core_infrastructure::canon_json::JsonValue::String(shown),
+        core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+    )
+}
+
+/// 承認にゲート以降の人間の返答が無い (2.8.2 `aidlc-state.ts` `approvalPreconditions` 逐語)。
+#[must_use]
+pub fn approval_without_human_reply(stage: &str) -> String {
+    format!(
+        "Cannot approve \"{stage}\" because no new human reply has been received for this approval question. Wait for the human to type their choice, then retry the approval."
+    )
+}
+
+/// 差し戻しにゲート以降の人間の返答が無い (2.8.2 `aidlc-state.ts` `handleReject` 逐語)。
+#[must_use]
+pub fn rejection_without_human_reply(stage: &str) -> String {
+    format!(
+        "Cannot request changes for \"{stage}\" because no new human reply has been received for this approval question. Wait for the human to type Request Changes and their feedback, then retry."
+    )
+}
+
 /// forward 表 — `[S]` / `[R]` は前進の完了ではない (upstream `:5815` 逐語)。
 #[must_use]
 pub fn forward_commits_completions_only(stage: &str, state: &str) -> String {
@@ -2020,68 +2079,10 @@ pub const REVIEW_FINDINGS_SEPARATOR: &str = "|---|---|---|---|---|---|";
 pub const REVIEW_FINDINGS_EMPTY_ROW: &str =
     "| - | - | - | No findings | No action required | Resolved |";
 
-/// 表が宣言する列の名前（upstream `aidlc-lib.ts:10736`）。
-pub const REVIEW_FINDING_COLUMNS: [&str; 6] = [
-    "ID",
-    "Severity",
-    "Location",
-    "Finding",
-    "Required action",
-    "Status",
-];
-
 /// どの成果物の表かを名乗る見出し（upstream 逐語、同 `:410`）。
 #[must_use]
 pub fn review_artifact_heading(artifact: &str) -> String {
     format!("**Review artifact:** `{artifact}`")
-}
-
-/// セルが足りない行（upstream 逐語、`aidlc-lib.ts:10753-10756`）。
-#[must_use]
-pub fn review_row_missing_cells(
-    artifact: &str,
-    id: &str,
-    cells: usize,
-    headers: &[String],
-    hint: &str,
-) -> String {
-    format!(
-        "{artifact}#{id}: row has {cells} cells, header declares {}. Expected columns: {}. {hint}",
-        headers.len(),
-        headers.join(" | ")
-    )
-}
-
-/// 末尾のセルが状態らしいときの助言（upstream 逐語、同 `:10751`）。
-#[must_use]
-pub fn review_row_status_hint(last: &str) -> String {
-    format!(
-        "The last cell {last:?} looks like Status; check earlier cells for a missing value or \"|\" separator"
-    )
-}
-
-/// 欠けた列を言い当てられないときの助言（upstream 逐語、同 `:10752`）。
-pub const REVIEW_ROW_MISSING_HINT: &str = "Check for a missing cell or \"|\" separator";
-
-/// セルが多い行（upstream 逐語、同 `:10758-10762`）。
-#[must_use]
-pub fn review_row_extra_cells(artifact: &str, id: &str, cells: usize, declared: usize) -> String {
-    format!(
-        "{artifact}#{id}: row has {cells} cells, header declares {declared}: {} unexpected extra cell(s)",
-        cells.saturating_sub(declared)
-    )
-}
-
-/// 所見 ID が形を満たさない（upstream 逐語、同 `:10768`）。
-#[must_use]
-pub fn invalid_finding_id(artifact: &str, id: &str) -> String {
-    format!("{artifact}: invalid finding ID {id:?}")
-}
-
-/// 所見の状態が語彙の外（upstream 逐語、同 `:10773`）。
-#[must_use]
-pub fn invalid_finding_status(artifact: &str, id: &str, status: &str) -> String {
-    format!("{artifact}#{id}: invalid finding status {status:?}")
 }
 
 /// レビュー成果物が UTF-8 でない。upstream は置換文字を混ぜて読み進めるが、こちらは
@@ -2611,35 +2612,6 @@ instead."
         assert_eq!(
             unknown_review_stage("frobnicate"),
             "Unknown stage: frobnicate"
-        );
-    }
-
-    /// 表の行が宣言と食い違ったときの 4 形は、行と成果物を名指す。
-    #[test]
-    fn a_malformed_findings_row_is_named_by_artifact_and_row() {
-        let headers: Vec<String> = REVIEW_FINDING_COLUMNS
-            .iter()
-            .map(|name| (*name).to_string())
-            .collect();
-        assert_eq!(
-            review_row_missing_cells("a.md", "R-01", 5, &headers, REVIEW_ROW_MISSING_HINT),
-            "a.md#R-01: row has 5 cells, header declares 6. Expected columns: ID | Severity | Location | Finding | Required action | Status. Check for a missing cell or \"|\" separator"
-        );
-        assert_eq!(
-            review_row_status_hint("New"),
-            "The last cell \"New\" looks like Status; check earlier cells for a missing value or \"|\" separator"
-        );
-        assert_eq!(
-            review_row_extra_cells("a.md", "?", 8, 6),
-            "a.md#?: row has 8 cells, header declares 6: 2 unexpected extra cell(s)"
-        );
-        assert_eq!(
-            invalid_finding_id("a.md", "1"),
-            "a.md: invalid finding ID \"1\""
-        );
-        assert_eq!(
-            invalid_finding_status("a.md", "R-01", "Maybe"),
-            "a.md#R-01: invalid finding status \"Maybe\""
         );
     }
 

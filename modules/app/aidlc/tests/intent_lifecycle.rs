@@ -492,6 +492,31 @@ impl Workspace {
 }
 
 async fn invoke(workspace: &Workspace, argv0: &str, args: &[&str]) -> aidlc::runtime::Completion {
+    // 承認・差し戻しの報告は人間の返答の後にしか来ない。実運用では UserPromptSubmit の
+    // フックが `HUMAN_TURN` を書くので、試験ではその 1 行を代役として先に書く
+    // （2.8.2 の承認ガード `humanActedSinceGate`）。ガードそのものは
+    // `invoke_without_human_reply` を使う試験が確かめる。
+    if argv0 == "aidlc-orchestrate"
+        && args.first() == Some(&"report")
+        && args
+            .windows(2)
+            .any(|pair| matches!(pair, ["--result", "completed" | "approved" | "rejected"]))
+        && !args.contains(&"--single")
+        && workspace
+            .record_dir()
+            .is_some_and(|record| record.join("audit").is_dir())
+    {
+        workspace.append_human_turn(&Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    }
+    invoke_without_human_reply(workspace, argv0, args).await
+}
+
+/// 人間の返答を代役で書かずに公開入口を呼ぶ（承認ガードを確かめる試験のため）。
+async fn invoke_without_human_reply(
+    workspace: &Workspace,
+    argv0: &str,
+    args: &[&str],
+) -> aidlc::runtime::Completion {
     let mut owned: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
     owned.push("--project-dir".to_string());
     owned.push(workspace.project_dir().to_string_lossy().into_owned());
@@ -1124,7 +1149,7 @@ async fn report_starts_workspace_stage_with_the_report_time_source_baseline() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -1173,7 +1198,7 @@ async fn report_starts_workspace_stage_with_the_report_time_source_baseline() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -1240,7 +1265,7 @@ async fn completed_validation_keeps_the_observed_artifact_bytes_after_files_chan
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -1310,7 +1335,7 @@ async fn reporting_a_verdict_commits_and_projects() {
             "--result",
             "completed",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -1460,7 +1485,7 @@ async fn parking_a_completed_workflow_is_refused_verbatim() {
                 "--result",
                 "completed",
                 "--user-input",
-                "A",
+                "Approve",
                 "--stage",
                 stage,
             ],
@@ -2128,7 +2153,7 @@ async fn a_stage_outside_the_plan_is_refused_with_the_same_wording() {
             "--result",
             "completed",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "not-in-the-plan",
         ],
@@ -2161,7 +2186,7 @@ async fn reporting_a_stage_that_is_not_the_cursor_is_rejected() {
             "--result",
             "completed",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "contract-design",
         ],
@@ -2439,18 +2464,28 @@ async fn a_gated_stage_walks_through_rejection_and_revision_before_it_is_approve
         let next = invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
         assert_eq!(next.code(), 0, "{outcome} の直前の next: {next:?}");
 
-        let completion = invoke(
-            &workspace,
-            "aidlc-orchestrate",
+        // 差し戻しは人間の `Request Changes` の選択と `--reason` のフィードバックで打つ
+        // （2.8.2 `handleReject`）。
+        let args: &[&str] = if outcome == "rejected" {
+            &[
+                "report",
+                "--result",
+                outcome,
+                "--user-input",
+                "Request Changes",
+                "--reason",
+                "Sharpen the testing posture.",
+            ]
+        } else {
             &[
                 "report",
                 "--result",
                 outcome,
                 "--user-input",
                 "Sharpen the testing posture.",
-            ],
-        )
-        .await;
+            ]
+        };
+        let completion = invoke(&workspace, "aidlc-orchestrate", args).await;
 
         assert_eq!(
             completion.code(),
@@ -2469,7 +2504,7 @@ async fn a_gated_stage_walks_through_rejection_and_revision_before_it_is_approve
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "approved", "--user-input", "A"],
+        &["report", "--result", "approved", "--user-input", "Approve"],
     )
     .await;
     assert_eq!(completion.code(), 0, "{completion:?}");
@@ -2567,7 +2602,15 @@ async fn each_gate_verdict_refuses_with_its_own_precondition_wording() {
     invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "rejected", "--reason", "直して"],
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "直して",
+        ],
     )
     .await;
     let completion = invoke(
@@ -2584,7 +2627,15 @@ async fn each_gate_verdict_refuses_with_its_own_precondition_wording() {
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "rejected", "--reason", "もう一度"],
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "もう一度",
+        ],
     )
     .await;
     assert_eq!(
@@ -2607,7 +2658,15 @@ async fn a_rejection_without_feedback_is_refused() {
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "rejected", "--reason", "   "],
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "   ",
+        ],
     )
     .await;
 
@@ -2615,6 +2674,63 @@ async fn a_rejection_without_feedback_is_refused() {
         string_of(&line_of(&completion), "message"),
         "report --result rejected for \"domain-design\" requires nonblank --user-input or --reason feedback."
     );
+}
+
+/// 2.8.2 `handleReject` — 差し戻しの返答は提示した `Request Changes` の選択でなければならない。
+/// フィードバックを `--user-input` に書いても選択にはならない（保護されたゲートでは
+/// `--user-input` は選択であり、フィードバックは `--reason` が運ぶ）。
+#[tokio::test]
+async fn a_rejection_whose_reply_is_not_the_request_changes_choice_is_refused() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+
+    for (args, reply) in [
+        (
+            &["report", "--result", "rejected", "--reason", "直して"][..],
+            "(empty)",
+        ),
+        (
+            &[
+                "report",
+                "--result",
+                "rejected",
+                "--user-input",
+                "直して",
+                "--reason",
+                "直して",
+            ][..],
+            "直して",
+        ),
+    ] {
+        let completion = invoke(&workspace, "aidlc-orchestrate", args).await;
+        assert_eq!(
+            string_of(&line_of(&completion), "message"),
+            format!(
+                "Refusing to reject \"domain-design\": received reply \"{reply}\" did not match an offered choice at the held gate. Re-present the original held gate with every offered choice and wait for the human to choose one."
+            )
+        );
+    }
+    // 選択の揺れ（前置き・大文字小文字）は同じ選択として通る。
+    let completion = invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "B. request changes",
+            "--reason",
+            "直して",
+        ],
+    )
+    .await;
+    assert_eq!(string_of(&line_of(&completion), "kind"), "print");
 }
 
 /// 段 13 — ゲート付き未完了の前進は人間の選択を要する。
@@ -2647,6 +2763,152 @@ async fn the_human_presence_guard_refuses_a_blank_approval() {
     );
 }
 
+/// 2.8.2 の承認ガード — 返答は提示した選択肢そのもので、直近の解決より後に人間の返答が
+/// 要る（`aidlc-state.ts` `approvalPreconditions` / `handleReject`）。
+#[tokio::test]
+async fn approval_and_rejection_need_the_offered_choice_and_a_fresh_human_reply() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+    // 誕生を頼んだ人間の turn はある。直近の解決はまだ無いが、選択肢でない返答は断る。
+    workspace.append_human_turn(&Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    let (kind, message) = report_directive(
+        &workspace,
+        &["--result", "approved", "--user-input", "looks good"],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Cannot approve \"domain-design\" because the reply \"looks good\" did not match one of the offered choices. Present the original question with every choice again and wait for the human to pick one."
+    );
+
+    // 差し戻しを記録すると、その人間の turn は消費される。次の差し戻しにも新しい返答が要る。
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "Tighten it.",
+        ],
+    )
+    .await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "revised"],
+    )
+    .await;
+    let refused = invoke_without_human_reply(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "Again.",
+        ],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&refused), "message"),
+        "Cannot request changes for \"domain-design\" because no new human reply has been received for this approval question. Wait for the human to type Request Changes and their feedback, then retry."
+    );
+    let refused = invoke_without_human_reply(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "approved", "--user-input", "Approve"],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&refused), "message"),
+        "Cannot approve \"domain-design\" because no new human reply has been received for this approval question. Wait for the human to type their choice, then retry the approval."
+    );
+
+    // 人間が返答すれば通る（同じ秒でも、台帳で解決の後に並ぶ turn は新しい返答である）。
+    let (kind, _) = report_directive(
+        &workspace,
+        &["--result", "approved", "--user-input", "Approve"],
+    )
+    .await;
+    assert_eq!(kind, "done");
+}
+
+/// 在るのに読めない監査シャードは「空の台帳」ではない — 人間の返答ガードは拒否側に倒れる
+/// （2.8.2 `humanActedSinceGate` は不在以外の読取失敗で false を返す）。読めるように戻せば
+/// 同じ承認が通る。
+#[tokio::test]
+async fn an_unreadable_audit_shard_fails_the_human_reply_guard_closed() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+    workspace.append_human_turn(&Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    // 読めないシャードの代役 — `.md` の位置にディレクトリを置く（名前順で最後に並ぶ）。
+    let unreadable = workspace
+        .record_dir()
+        .expect("record")
+        .join("audit/zzzz-unreadable.md");
+    fs::create_dir(&unreadable).expect("読めないシャードを置く");
+    for (verdict, input, reason, message) in [
+        (
+            "approved",
+            "Approve",
+            None,
+            "Cannot approve \"domain-design\" because no new human reply has been received for this approval question. Wait for the human to type their choice, then retry the approval.",
+        ),
+        (
+            "rejected",
+            "Request Changes",
+            Some("直して"),
+            "Cannot request changes for \"domain-design\" because no new human reply has been received for this approval question. Wait for the human to type Request Changes and their feedback, then retry.",
+        ),
+    ] {
+        let mut args = vec!["report", "--result", verdict, "--user-input", input];
+        if let Some(reason) = reason {
+            args.extend(["--reason", reason]);
+        }
+        let refused = invoke_without_human_reply(&workspace, "aidlc-orchestrate", &args).await;
+        assert_eq!(string_of(&line_of(&refused), "message"), message);
+    }
+    fs::remove_dir(&unreadable).expect("読めるように戻す");
+    let (kind, _) = report_directive(
+        &workspace,
+        &["--result", "approved", "--user-input", "Approve"],
+    )
+    .await;
+    assert_eq!(kind, "done");
+}
+
 /// forward 表 — `[-]` のゲートは明示 `--stage` を要し、名乗れば 2 段でコミットする。
 #[tokio::test]
 async fn approving_an_unopened_gate_needs_the_explicit_stage_and_then_recovers_it() {
@@ -2661,7 +2923,7 @@ async fn approving_an_unopened_gate_needs_the_explicit_stage_and_then_recovers_i
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "approved", "--user-input", "A"],
+        &["report", "--result", "approved", "--user-input", "Approve"],
     )
     .await;
     assert_eq!(
@@ -2679,7 +2941,7 @@ so the engine cannot mistake a freshly advanced Current Stage for the completed 
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -2710,7 +2972,7 @@ async fn the_forward_table_refuses_a_pending_stage_and_folds_a_stale_re_report()
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "contract-design",
         ],
@@ -2730,7 +2992,7 @@ async fn the_forward_table_refuses_a_pending_stage_and_folds_a_stale_re_report()
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -2744,7 +3006,7 @@ async fn the_forward_table_refuses_a_pending_stage_and_folds_a_stale_re_report()
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -3247,7 +3509,7 @@ async fn the_skeleton_gate_round_trip_turns_unresolved_into_a_determined_gate() 
             "--stage",
             "domain-design",
             "--user-input",
-            "approve",
+            "Approve",
         ],
     )
     .await;
@@ -3751,7 +4013,7 @@ async fn a_restoration_failure_prevents_the_stance_from_being_recorded() {
             "--stage",
             "domain-design",
             "--user-input",
-            "approve",
+            "Approve",
         ],
     )
     .await;
@@ -3830,7 +4092,7 @@ async fn completing_the_last_gate_projects_the_workflow_completion_and_folds_a_r
                 "--result",
                 "approved",
                 "--user-input",
-                "A",
+                "Approve",
                 "--stage",
                 stage,
             ],
@@ -3870,7 +4132,7 @@ async fn completing_the_last_gate_projects_the_workflow_completion_and_folds_a_r
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "contract-design",
         ],
@@ -4063,7 +4325,15 @@ async fn a_revising_stage_cannot_be_reported_as_a_forward_completion() {
     invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "rejected", "--reason", "直して"],
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "直して",
+        ],
     )
     .await;
 
@@ -4073,7 +4343,7 @@ async fn a_revising_stage_cannot_be_reported_as_a_forward_completion() {
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -4121,7 +4391,37 @@ async fn request_review(workspace: &Workspace, iteration: &str) -> String {
     )
     .await;
     assert_eq!(completion.code(), 0, "依頼は通る: {completion:?}");
-    completion.line().expect("stdout に 1 行が要る").to_string()
+    without_request_identity(completion.line().expect("stdout に 1 行が要る"))
+}
+
+/// 依頼の成功行から 2.8.2 の `requestId` / `reviewFile` を確かめて外す（残りの欄を照合する）。
+fn without_request_identity(line: &str) -> String {
+    let serde_json::Value::Object(mut fields) = serde_json::from_str(line).expect("JSON 1 行")
+    else {
+        panic!("オブジェクトの行: {line}");
+    };
+    let request = fields.remove("requestId");
+    let file = fields.remove("reviewFile");
+    assert!(
+        request
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| id.starts_with("review:")),
+        "依頼は Request Id を返す: {line}"
+    );
+    assert!(
+        file.as_ref()
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|path| path.contains("/.aidlc-reviews/domain-design/stage/")
+                && path.ends_with(".review.md")),
+        "依頼は下書きの置き場を返す: {line}"
+    );
+    let body = fields
+        .iter()
+        .map(|(key, value)| format!("{}:{value}", serde_json::Value::String(key.clone())))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{body}}}")
 }
 
 /// 判定 1 件（成功を確かめて stdout の 1 行を返す）。
@@ -4162,7 +4462,31 @@ async fn record_verdict(workspace: &Workspace, iteration: &str, verdict: &str) -
     )
     .await;
     assert_eq!(completion.code(), 0, "判定は通る: {completion:?}");
-    completion.line().expect("stdout に 1 行が要る").to_string()
+    // 2.8.2 は判定をレビュー記録へ書き、その置き場を `reviewRecord` で返す。この試験の
+    // reviewer は成果物へ追記する（非推奨の入力経路）が、記録は同じく書かれる。
+    let line = completion.line().expect("stdout に 1 行が要る");
+    let serde_json::Value::Object(mut fields) = serde_json::from_str(line).expect("JSON 1 行")
+    else {
+        panic!("オブジェクトの行: {line}");
+    };
+    let record = fields
+        .remove("reviewRecord")
+        .and_then(|value| value.as_str().map(str::to_string))
+        .expect("判定はレビュー記録の置き場を返す");
+    assert!(
+        workspace
+            .record_dir()
+            .expect("record")
+            .join(&record)
+            .is_file(),
+        "レビュー記録が書かれている: {record}"
+    );
+    let body = fields
+        .iter()
+        .map(|(key, value)| format!("{}:{value}", serde_json::Value::String(key.clone())))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{body}}}")
 }
 
 /// 依頼 → 判定 → 承認の一巡が通り、監査台帳に受領証 2 行が並ぶ。
@@ -4193,7 +4517,7 @@ async fn the_review_round_trip_lets_the_gate_be_approved_and_records_both_rows()
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4220,6 +4544,229 @@ async fn the_review_round_trip_lets_the_gate_be_approved_and_records_both_rows()
     );
 }
 
+/// 2.8.2 の形 — reviewer は成果物へ追記せず、依頼が返す下書きへレビューを書く。判定は下書きを
+/// 検証してレビュー記録へ移し、成果物は依頼時のバイトのまま残る。
+#[tokio::test]
+async fn a_review_written_to_the_requested_draft_becomes_the_review_record() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    let artifact = record.join("inception/domain-design/domain-design.md");
+    fs::create_dir_all(artifact.parent().expect("parent")).expect("stage dir");
+    fs::write(&artifact, "# Domain design\n").expect("review input");
+    let request = |iteration: &'static str| {
+        let workspace = &workspace;
+        async move {
+            let completion = log_review(
+                workspace,
+                &[
+                    "--stage",
+                    "domain-design",
+                    "--reviewer",
+                    REVIEWER,
+                    "--iteration",
+                    iteration,
+                ],
+            )
+            .await;
+            assert_eq!(completion.code(), 0, "{completion:?}");
+            let line: serde_json::Value =
+                serde_json::from_str(completion.line().expect("1 行")).expect("JSON");
+            line.get("reviewFile")
+                .and_then(serde_json::Value::as_str)
+                .expect("下書きの置き場")
+                .to_string()
+        }
+    };
+    let verdict = |verdict: &'static str| {
+        let workspace = &workspace;
+        async move {
+            log_review(
+                workspace,
+                &[
+                    "--stage",
+                    "domain-design",
+                    "--reviewer",
+                    REVIEWER,
+                    "--iteration",
+                    "1",
+                    "--verdict",
+                    verdict,
+                ],
+            )
+            .await
+        }
+    };
+    let draft = workspace.project_dir().join(request("1").await);
+
+    // 下書きが無ければレビューは書かれていない。
+    let missing = verdict("READY").await;
+    assert_eq!(missing.code(), 1);
+    assert!(
+        format!("{missing:?}").contains("no review was written for iteration 1"),
+        "{missing:?}"
+    );
+
+    // 下書きと追記の両方があれば、どちらがレビューか決まらないので断る。
+    let review = format!(
+        "## Review\n\n**Verdict:** READY\n**Reviewer:** {REVIEWER}\n**Iteration:** 1\n\n### Findings\n\n| ID | Severity | Location | Finding | Required action | Status |\n|---|---|---|---|---|---|\n| R-01 | Minor | x.md > A | wording | reword | New |\n"
+    );
+    fs::create_dir_all(draft.parent().expect("parent")).expect("draft dir");
+    fs::write(&draft, &review).expect("draft");
+    fs::write(&artifact, format!("# Domain design\n\n{review}")).expect("append");
+    let twice = verdict("READY").await;
+    assert_eq!(twice.code(), 1);
+    assert!(
+        format!("{twice:?}").contains("a review file was also written"),
+        "{twice:?}"
+    );
+
+    // 追記を戻せば、下書きがレビューになる。
+    fs::write(&artifact, "# Domain design\n").expect("restore");
+    let completed = verdict("READY").await;
+    assert_eq!(completed.code(), 0, "{completed:?}");
+    let line: serde_json::Value =
+        serde_json::from_str(completed.line().expect("1 行")).expect("JSON");
+    let recorded = line
+        .get("reviewRecord")
+        .and_then(serde_json::Value::as_str)
+        .expect("記録の置き場");
+    let record_file: serde_json::Value =
+        serde_json::from_slice(&fs::read(record.join(recorded)).expect("記録")).expect("JSON");
+    assert_eq!(
+        record_file
+            .get("verdict")
+            .and_then(serde_json::Value::as_str),
+        Some("READY")
+    );
+    assert_eq!(
+        record_file.get("body").and_then(serde_json::Value::as_str),
+        Some(review.as_str())
+    );
+    assert_eq!(
+        record_file
+            .get("findings")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(1),
+        "所見の表は記録の findings になる"
+    );
+    assert!(!draft.exists(), "使った下書きは記録へ移って消える");
+
+    // review-brief は最新の記録から所見を描く。
+    let brief = invoke(
+        &workspace,
+        "aidlc-review-brief",
+        &["context", "--stage", "domain-design"],
+    )
+    .await;
+    assert!(
+        format!("{brief:?}").contains("R-01"),
+        "記録の所見がゲートの文脈に出る: {brief:?}"
+    );
+}
+
+/// 所見表の壊れた下書きで判定すると、受理の前に拒否される — 判定は確定せず、記録も書かれず、
+/// 表を直して同じ判定を打ち直せば通る（upstream 2.8.2 `aidlc-log.ts:2403-2415`）。
+#[tokio::test]
+async fn a_draft_with_a_malformed_findings_table_is_refused_before_the_verdict_commits() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    let artifact = record.join("inception/domain-design/domain-design.md");
+    fs::create_dir_all(artifact.parent().expect("parent")).expect("stage dir");
+    fs::write(&artifact, "# Domain design\n").expect("review input");
+    let requested = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(requested.code(), 0, "{requested:?}");
+    let line: serde_json::Value =
+        serde_json::from_str(requested.line().expect("1 行")).expect("JSON");
+    let draft = workspace.project_dir().join(
+        line.get("reviewFile")
+            .and_then(serde_json::Value::as_str)
+            .expect("下書きの置き場"),
+    );
+    let verdict = || {
+        log_review(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--iteration",
+                "1",
+                "--verdict",
+                "READY",
+            ],
+        )
+    };
+    let review = |row: &str| {
+        format!(
+            "## Review\n\n**Verdict:** READY\n**Reviewer:** {REVIEWER}\n**Iteration:** 1\n\n### Findings\n\n| ID | Severity | Location | Finding | Required action | Status |\n|---|---|---|---|---|---|\n{row}\n"
+        )
+    };
+    fs::create_dir_all(draft.parent().expect("parent")).expect("draft dir");
+    // Finding の欄が欠けた行（セルが 5 つ）。
+    fs::write(&draft, review("| R-01 | Minor | x.md > A | reword | New |")).expect("broken draft");
+
+    let refused = verdict().await;
+    assert_eq!(refused.code(), 1, "{refused:?}");
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(refused.diagnostic().expect("拒否の診断")).expect("JSON");
+    let message = diagnostic
+        .get("error")
+        .and_then(serde_json::Value::as_str)
+        .expect("error 欄");
+    assert!(
+        message.starts_with(
+            "Refusing REVIEW_COMPLETED for \"domain-design\": inception/domain-design/domain-design.md#R-01: row has 5 cells, header declares 6."
+        ),
+        "{message}"
+    );
+    // 判定は確定していない — 監査にも記録の置き場にも残らない。
+    let audit = workspace.audit_shard().expect("監査シャード");
+    assert!(!audit.contains("**Event**: REVIEW_COMPLETED"), "{audit}");
+    let attempt = draft.parent().expect("attempt dir");
+    assert!(
+        !attempt.join("1.json").exists(),
+        "拒否した判定の記録は書かれない"
+    );
+    assert!(draft.exists(), "拒否した下書きは残る（直して打ち直せる）");
+
+    // 表を直せば、同じ判定が通る（依頼が残っているので NoPendingReview にならない）。
+    fs::write(
+        &draft,
+        review("| R-01 | Minor | x.md > A | wording | reword | New |"),
+    )
+    .expect("fixed draft");
+    let completed = verdict().await;
+    assert_eq!(completed.code(), 0, "{completed:?}");
+    assert!(attempt.join("1.json").is_file(), "直した判定は記録になる");
+    let audit = workspace.audit_shard().expect("監査シャード");
+    assert_eq!(audit.matches("**Event**: REVIEW_COMPLETED").count(), 1);
+}
+
 /// 受領証が無い承認は段 11 で拒まれる（`aidlc-state.ts approve` の逐語を包み文に入れて）。
 #[tokio::test]
 async fn approving_a_reviewer_bearing_stage_without_a_receipt_is_refused_verbatim() {
@@ -4239,7 +4786,7 @@ async fn approving_a_reviewer_bearing_stage_without_a_receipt_is_refused_verbati
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4280,7 +4827,7 @@ async fn an_adversarial_not_ready_only_becomes_terminal_at_the_iteration_cap() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4296,7 +4843,7 @@ async fn an_adversarial_not_ready_only_becomes_terminal_at_the_iteration_cap() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4324,7 +4871,7 @@ async fn an_advisory_pass_is_terminal_at_the_first_verdict() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4369,7 +4916,7 @@ async fn a_scope_cap_of_none_waives_the_receipt_entirely() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4403,8 +4950,8 @@ async fn a_retry_pending_request_reports_the_retry_and_does_not_spend_the_budget
     .await;
     assert_eq!(completion.code(), 0, "{completion:?}");
     assert_eq!(
-        completion.line(),
-        Some(r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#)
+        without_request_identity(completion.line().expect("stdout に 1 行が要る")),
+        r#"{"emitted":"REVIEW_REQUESTED","stage":"domain-design","retry":"pending-request"}"#
     );
     // 元の判定を受領してから次の通常依頼へ進む。retryは通常回数を増やさない。
     record_verdict(&workspace, "1", "NOT-READY").await;
@@ -4796,7 +5343,14 @@ async fn a_gate_rejection_resets_the_attempt_and_the_receipt_must_be_recorded_ag
     record_verdict(&workspace, "1", "READY").await;
     report_directive(
         &workspace,
-        &["--result", "rejected", "--reason", "Sharpen the design."],
+        &[
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "Sharpen the design.",
+        ],
     )
     .await;
     report_directive(&workspace, &["--result", "revised"]).await;
@@ -4810,7 +5364,7 @@ async fn a_gate_rejection_resets_the_attempt_and_the_receipt_must_be_recorded_ag
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4827,7 +5381,7 @@ async fn a_gate_rejection_resets_the_attempt_and_the_receipt_must_be_recorded_ag
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5074,7 +5628,7 @@ async fn the_promotion_writes_the_memory_layer_and_opens_the_gate() {
             "--stage",
             "practices-discovery",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5094,7 +5648,7 @@ async fn approving_practices_discovery_without_a_promotion_is_refused_verbatim()
             "--stage",
             "practices-discovery",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5117,7 +5671,14 @@ async fn a_gate_rejection_floors_the_receipt_and_the_promotion_must_be_replayed(
     // 差し戻しも再入も `print` の directive である（遷移は 1 つコミットされる）。
     let (kind, _) = report_directive(
         &workspace,
-        &["--result", "rejected", "--reason", "Sharpen the practices."],
+        &[
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "Sharpen the practices.",
+        ],
     )
     .await;
     assert_eq!(kind, "print");
@@ -5132,7 +5693,7 @@ async fn a_gate_rejection_floors_the_receipt_and_the_promotion_must_be_replayed(
             "--stage",
             "practices-discovery",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5148,7 +5709,7 @@ async fn a_gate_rejection_floors_the_receipt_and_the_promotion_must_be_replayed(
             "--stage",
             "practices-discovery",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5649,7 +6210,7 @@ async fn a_human_turn_older_than_the_last_gate_resolution_is_refused() {
             "--stage",
             "domain-design",
             "--user-input",
-            "looks good",
+            "Approve",
         ],
     )
     .await;

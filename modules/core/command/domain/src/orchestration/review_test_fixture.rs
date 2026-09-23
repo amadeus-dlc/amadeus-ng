@@ -24,10 +24,11 @@ pub(crate) fn documents(
         None,
         "a".repeat(32),
         true,
+        Vec::new(),
     )
 }
 pub(crate) fn binding() -> ReviewBinding {
-    documents("r", 1, None).bind().expect("合成の要求原文")
+    documents("r", 1, None).bind(None).expect("合成の要求原文")
 }
 pub(crate) fn completion() -> ReviewCompletion {
     documents("r", 1, Some(ReviewVerdict::Ready))

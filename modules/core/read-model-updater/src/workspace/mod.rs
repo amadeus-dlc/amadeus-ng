@@ -14,6 +14,7 @@
 mod audit_block;
 mod audit_redaction;
 mod audit_shard;
+mod audit_shard_read_error;
 mod memory_faces;
 mod projection;
 mod read_model;
@@ -35,9 +36,8 @@ pub use audit_block::{SHARD_HEADER, render_audit_block};
 pub use audit_redaction::AuditRedaction;
 
 // 投影ライタ（リードモデルをディスクへ落とす 2 面。状態ファイルは置換、シャードは追記）
-pub use audit_shard::{
-    AuditShardWriteError, append as append_audit_shard, read_all as read_all_audit_shards,
-};
+pub use audit_shard::{AuditShardWriteError, append as append_audit_shard};
+pub use audit_shard_read_error::{AuditShardReadError, read_all as read_all_audit_shards};
 pub use state_file_read_error::{StateFileReadError, read as read_state_file};
 pub use state_file_write_error::{StateFileWriteError, write_atomic as write_state_file};
 

@@ -1,5 +1,5 @@
 //! レビュー要求を原文と追記境界へ結び付ける値。
-use super::ReviewEvidenceError;
+use super::{ReviewEvidenceError, ReviewRequestIdentity};
 /// 要求時点の証拠。判定や再試行で新しい原文へ置き換えない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewBinding {
@@ -10,11 +10,16 @@ pub struct ReviewBinding {
     prior_length: usize,
     challenge: Option<String>,
     source: Option<String>,
+    identity: ReviewRequestIdentity,
 }
 impl ReviewBinding {
     /// 全結合材料を検査して構築する。
     /// # Errors
     /// 指紋または追記証拠の形式が不正な場合。
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "要求時の証拠は互いに独立した材料であり、束ねる上位の語がドメインに無い"
+    )]
     pub fn new(
         fingerprint: String,
         appendix_artifact: String,
@@ -23,6 +28,7 @@ impl ReviewBinding {
         prior_length: usize,
         challenge: Option<String>,
         source: Option<String>,
+        identity: ReviewRequestIdentity,
     ) -> Result<Self, ReviewEvidenceError> {
         let digest = |s: &str| {
             s.strip_prefix("sha256:").is_some_and(|v| {
@@ -54,6 +60,7 @@ impl ReviewBinding {
             prior_length,
             challenge,
             source,
+            identity,
         })
     }
     /// 要求本文の指紋。
@@ -90,5 +97,10 @@ impl ReviewBinding {
     #[must_use]
     pub fn source(&self) -> Option<&str> {
         self.source.as_deref()
+    }
+    /// 依頼の識別（Request Id と試行 ID）。
+    #[must_use]
+    pub const fn identity(&self) -> &ReviewRequestIdentity {
+        &self.identity
     }
 }

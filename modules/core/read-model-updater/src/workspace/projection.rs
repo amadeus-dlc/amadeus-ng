@@ -1734,6 +1734,10 @@ fn review_completed(
         .with(
             key("Artifact Fingerprint")?,
             completed.evidence().fingerprint(),
+        )
+        .with(
+            key("Request Id")?,
+            completed.evidence().request().identity().request_id(),
         );
     let fields = review_appendix_fields(fields, completed.evidence().request())?;
     let fields = if let Some(source) = completed.evidence().request().source() {
@@ -1751,7 +1755,9 @@ fn review_binding_fields(
     fields: AuditFields,
     binding: &core_command_domain::orchestration::ReviewBinding,
 ) -> Result<AuditFields, ProjectionError> {
-    let fields = fields.with(key("Artifact Fingerprint")?, binding.fingerprint());
+    let fields = fields
+        .with(key("Artifact Fingerprint")?, binding.fingerprint())
+        .with(key("Request Id")?, binding.identity().request_id());
     let fields = review_appendix_fields(fields, binding)?;
     Ok(if let Some(source) = binding.source() {
         fields.with(key("Source Fingerprint")?, source)
@@ -3011,7 +3017,7 @@ mod tests {
         );
         // 要求原文とReview節を含む完成原文を、別の固定指紋で監査へ束縛する。
         assert!(read_model.appended_audit().contains(
-            "**Request Fingerprint**: sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d\n**Artifact Fingerprint**: sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0\n**Review Appendix Artifact**: stage/artifact.md\n**Review Appendix Offset**: 11\n**Review Appendix Prior Digest**: none\n**Review Appendix Prior Length**: 0\n"
+            "**Request Fingerprint**: sha256:40a450c7f1afe19930706ee78a898e60d9a4b93b81b308ed890cdafe8e74777d\n**Artifact Fingerprint**: sha256:e985de06efb4acc251ce219f41f822c0d3367e3e9ca13c8b2d0f2bb4541595f0\n**Request Id**: review:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n**Review Appendix Artifact**: stage/artifact.md\n**Review Appendix Offset**: 11\n**Review Appendix Prior Digest**: none\n**Review Appendix Prior Length**: 0\n"
         ), "{}", read_model.appended_audit());
         assert_eq!(read_model.state(), before.state());
     }
