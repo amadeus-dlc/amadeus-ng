@@ -56,6 +56,7 @@
         "commit": "0e7c65206e4dd112dcbdcb708c40182ad445a885",
         "run": "https://github.com/amadeus-dlc/amadeus-ng/actions/runs/35900058840",
         "event": "merge_group",
+        "conclusion": "success",
         "checked_at": "2026-09-23T18:37:00Z",
         "result": "conclusion success。ジョブは check・coverage・quint・audit（cargo audit）・aidlc-distribution・CI Success がすべて success。CI Review Thread Gate は skipped で、成功に数えていない。このジョブは .github/workflows/ci.yml で if: github.event_name == 'pull_request' の条件を持ち、merge_group では非適用である。同じ変更の最終の PR（#147、先端 28ba1b76）の pull_request の run https://github.com/amadeus-dlc/amadeus-ng/actions/runs/35896448565 では、このゲートを含む全ジョブが success だった。"
       },

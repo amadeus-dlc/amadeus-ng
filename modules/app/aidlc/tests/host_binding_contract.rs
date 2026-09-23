@@ -191,9 +191,24 @@ fn only_measured_preconditions_are_marked_met() {
                 "{id}: 証拠に CI のイベントが無い"
             );
             assert_eq!(
-                text(evidence, "commit").len(),
+                text(evidence, "conclusion"),
+                "success",
+                "{id}: CI の結論が成功ではない"
+            );
+            let doctor = preconditions
+                .iter()
+                .find(|other| text(other, "id") == "doctor_pass")
+                .expect("doctor_pass がある");
+            let commit = text(evidence, "commit");
+            assert_eq!(
+                commit.len(),
                 40,
                 "{id}: 証拠が対象コミットを完全な SHA で名指していない"
+            );
+            assert_eq!(
+                commit,
+                text(field(doctor, "evidence"), "commit"),
+                "{id}: CI と自己診断が別のコミットを測っている"
             );
             assert!(
                 !text(evidence, "result").is_empty(),
