@@ -44,6 +44,13 @@ impl ReviewAppendix {
             format!("sha256:{}", sha256_hex(self.evidence()))
         }
     }
+    /// 末尾の `## Review` 節より前の本文（節が無ければ全文 — 2.8.2
+    /// `contentBeforeTerminalReviewAppendix`）。
+    pub(super) fn content_before(text: &str) -> &str {
+        Self::existing_offset(text.as_bytes())
+            .and_then(|offset| text.get(..offset))
+            .unwrap_or(text)
+    }
     pub(super) fn existing_offset(body: &[u8]) -> Option<usize> {
         let text = std::str::from_utf8(body).ok()?;
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");

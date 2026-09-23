@@ -3501,13 +3501,23 @@ fn plan_fingerprint_uses_the_current_projected_plan() {
     let fingerprint = run(&posture, &["fingerprint", "--stage-level"]);
     assert!(fingerprint.status.success(), "{fingerprint:?}");
     let fingerprint = String::from_utf8(fingerprint.stdout).unwrap();
-    assert!(fingerprint.starts_with("sha256:"));
-    assert_eq!(fingerprint.len(), 72);
+    // 2.8.2 の形 — 計画承認節へ写す 2 行のタグ（内容の指紋と、計画を書いたときのソース）。
+    let tag = fingerprint.lines().next().unwrap();
+    let value = tag.strip_prefix("[Approval Fingerprint]: ").unwrap();
+    assert!(value.starts_with("sha256:"));
+    assert_eq!(value.len(), 71);
+    assert!(
+        fingerprint
+            .lines()
+            .nth(1)
+            .unwrap()
+            .starts_with("[Planned Source]: ")
+    );
     let db = rusqlite::Connection::open(intents.join(".aidlc-store.sqlite")).unwrap();
     let cursor = fs::read_to_string(record.join(".aidlc-execution")).unwrap();
     let execution = cursor.lines().next().unwrap();
     let saved: String = db.query_row("SELECT fingerprint FROM read_plan_fingerprint WHERE execution_id=?1 AND target_id='stage:code-generation'", [execution], |row| row.get(0)).unwrap();
-    assert_eq!(fingerprint, format!("{saved}\n"));
+    assert_eq!(value, saved);
     drop(db);
     let relocated_parent = tempfile::tempdir().unwrap();
     let relocated = relocated_parent.path().join("workspace");
@@ -3540,8 +3550,8 @@ fn plan_fingerprint_uses_the_current_projected_plan() {
         .unwrap();
     assert_eq!(copied.status.code().map(i64::from), Some(expected_code));
     assert_eq!(
-        String::from_utf8(copied.stdout).unwrap(),
-        fingerprint,
+        String::from_utf8(copied.stdout).unwrap().lines().next(),
+        Some(tag),
         "本家と同じく同一依頼の複写では保存済み発行に束縛した指紋を保持する"
     );
 }
@@ -3965,7 +3975,23 @@ fn workspace_with_plan_questions() -> (Workspace, String) {
     assert!(fingerprint.status.success(), "{fingerprint:?}");
     let fingerprint = String::from_utf8(fingerprint.stdout).unwrap();
     let questions = directory.join("code-generation-questions.md");
-    fs::write(&questions, format!("## Plan Approval\n[Approval Fingerprint]: {}\nA. Approve Plan\nB. Request Changes\n[Answer]:\n", fingerprint.trim())).unwrap();
+    // 指紋の出力は計画承認節へそのまま写す 2 行のタグである（2.8.2 の形）。
+    assert!(
+        fingerprint.starts_with("[Approval Fingerprint]: sha256:"),
+        "{fingerprint}"
+    );
+    assert!(
+        fingerprint.contains("\n[Planned Source]: "),
+        "{fingerprint}"
+    );
+    fs::write(
+        &questions,
+        format!(
+            "## Plan Approval\n{}\nA. Approve Plan\nB. Request Changes\n[Answer]:\n",
+            fingerprint.trim()
+        ),
+    )
+    .unwrap();
     let relative = questions
         .strip_prefix(workspace.path())
         .unwrap()

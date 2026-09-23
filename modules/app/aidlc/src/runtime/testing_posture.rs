@@ -128,9 +128,16 @@ async fn fingerprint(layout: &Layout, args: &[String]) -> Result<String, String>
     if let Some(error) = view.error() {
         return Err(error.to_string());
     }
-    view.fingerprint()
-        .map(str::to_string)
-        .ok_or_else(|| "Projected plan fingerprint is incomplete".to_string())
+    let fingerprint = view
+        .fingerprint()
+        .ok_or_else(|| "Projected plan fingerprint is incomplete".to_string())?;
+    // 2.8.2 は計画承認節へそのまま写す 2 行のタグを出す — 内容の指紋と、この計画が
+    // 書かれたときのワークスペースのソース（`aidlc-testing-posture.ts` `fingerprint`）。
+    let planned = crate::source_fingerprint::read(layout.project_dir())
+        .unwrap_or_else(|_| "unbindable".to_string());
+    Ok(format!(
+        "[Approval Fingerprint]: {fingerprint}\n[Planned Source]: {planned}"
+    ))
 }
 
 /// 承認済みの作業ブリーフ（upstream `workerBrief`）。**読取専用**である。

@@ -272,8 +272,10 @@ wrote "$D/code-generation-plan.md"
 printf '# Unit Test Instructions\n\n`cargo test -p aidlc --test statusline_contract`\n' | write "$D/unit-test-instructions.md"
 step ok "$st: 承認指紋を出す" -- engine testing-posture fingerprint --stage-level
 FP="$(cat "$LAST")"
+# 形式の版（2.8.2 は `sha256:v3:`）は実体ごとの束縛の違いなので照合しない。指揮役は
+# 出力された 2 行をそのまま写すので、2 行が揃っていることだけを確かめる。
 check "$st: 指紋が 2 行タグ（Approval Fingerprint / Planned Source）" \
-  "grep -q '^\[Approval Fingerprint\]: sha256:v3:' \"$LAST\" && grep -q '^\[Planned Source\]: ' \"$LAST\""
+  "grep -q '^\[Approval Fingerprint\]: sha256:' \"$LAST\" && grep -q '^\[Planned Source\]: ' \"$LAST\""
 Q="$D/code-generation-questions.md"
 printf '# Code Generation Questions\n\n## Plan Approval\n\nこの計画で進めてよいですか？\n\n%s\n\n- "Approve Plan" — proceed to code generation\n- "Request Changes" — revise the plan\n\n[Answer]:\n' "$FP" | write "$Q"
 step ok "$st: 計画承認の提示を記録" -- engine log decision --stage $st --checkpoint plan-approval --session "$SESSION" \
