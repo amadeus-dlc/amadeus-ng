@@ -1,60 +1,51 @@
-# stage-1 引き継ぎ その 2（2026-09-23 夕方）
+# stage-1 引き継ぎ その 2（2026-09-23 夕方 〜 2026-09-24）
 
-前の引き継ぎ（`stage1-handoff-20260923.md`）の後のセッションの終了時点。native が配布 2.8.2 と同じ手順列で bugfix 1 周を完走するところまで直し、PR 6 本のスタックにした。**いまはそのスタックを main へ順にマージしている途中**である。切替そのものの手順は `stage1-switch-runbook-20260923.md` にある。
+前の引き継ぎ（`stage1-handoff-20260923.md`）の後の 2 セッション分の記録。native が配布 2.8.2 と同じ手順列で bugfix 1 周を完走するところまで直し、PR 6 本のスタックにした。独立レビューで見つかった問題を直してから、順に main へマージした。**この文書が main に入った時点で、スタックはすべてマージ済み**である。切替そのものの手順は `stage1-switch-runbook-20260923.md` にある。
 
 ---
 
-## 1. いま進行中のもの（最初に確認すること）
+## 1. いまの状態（最初に確認すること）
 
-### 1-1. #142 はマージキューに入っている
+### 1-1. スタックはマージ済み
 
-2026-09-23 夕方に #142 をマージキューへ投入した（`QUEUED`, position 1）。キューの CI は 20 分前後かかる。
+| PR | 内容 | main のコミット |
+|---|---|---|
+| [#142](https://github.com/amadeus-dlc/amadeus-ng/pull/142) | 再生ハーネス | `a5bddd79` |
+| [#143](https://github.com/amadeus-dlc/amadeus-ng/pull/143) | レビュー受領の 2.8.2 形・runtime-graph・承認と差し戻しの人間の返答ガード | `36c1ca5b` |
+| [#144](https://github.com/amadeus-dlc/amadeus-ng/pull/144) | 計画承認の 2 行タグ・run-stage 指示の文脈・要約確認ガード | `1c7641a5` |
+| [#145](https://github.com/amadeus-dlc/amadeus-ng/pull/145) | plan-approval-guard の native 化 | `681dc4d2` |
+| [#146](https://github.com/amadeus-dlc/amadeus-ng/pull/146) | 再生に PreToolUse / Stop フックを追加 | — |
+| [#147](https://github.com/amadeus-dlc/amadeus-ng/pull/147) | 切替の手順書と、この文書 | — |
 
-```bash
-gh pr view 142 --json state,mergedAt --jq .
-```
+#146・#147 のコミットは、この文書を書いた時点ではまだ決まっていない。`git log --oneline origin/main` で確かめること。
 
-- `MERGED` なら §2 の手順で #143 へ進む
-- キューから外れていたら、落ちたジョブを確認する。coverage が Issue #134 のテスト（`pipeline_link_contract::concurrent_duplicate_completions_persist_only_one_receipt`）で落ちたなら、既知の flake なので再投入でよい。`check` が「Text file busy」（ETXTBSY）で落ちたのも既存の flake である
+### 1-2. 独立レビューの結果（マージ前に直したもの）
 
-### 1-2. #143〜#145 の独立レビューは結果を回収できていない
+#143〜#145 の差分をマージ前に独立レビューにかけ、blocker 2 件を含めて直した。
 
-マージ前の自己点検として、#143〜#145 の差分をレビュー担当のエージェントに読ませた。ただし結果を受け取る前にセッションを閉じた。**新しいセッションでやり直すこと**（観点は正しさ・パス脱出・ガードの抜け道・状態の戻し忘れ・DTO の復号・2.8.2 との挙動差）。
+- #143: `REVIEW_COMPLETED` をコミットした後で所見表を解析していた。表が壊れていると「CLI は失敗と言うが判定は確定済み、記録は無く、打ち直しは拒否」になっていた（blocker）。所見表の解析をドメイン（`ReviewFinding` / `ReviewFindings`）へ移し、記録前に拒否する
+- #143: autonomous なら全フェーズで承認・差し戻しのガードが外れていた。2.8.2 と同じく Construction に限った。差し戻しの返答を Request Changes の選択と照合し、監査シャードが読めないときは拒否側に倒す
+- #144: 指紋は射影した計画を束ねるのに、作業ブリーフは原文を渡していた。承認後に付録へ足した手順や印を書き換えた手順が、指紋を変えないまま作業者へ届いていた（blocker）。ブリーフも射影した計画を渡す
+- #144: 要約確認で "Request changes" でも確認済みになっていた。レビュー階級 `none` でも指示にレビュー欄が出ていた。定義グラフが読めないと要約確認ガードが黙って外れていた
+- #145: 経路に symlink があっても外と判定しなかった。`sed -i … src/*.rs` や `echo x > $F` が承認前に通っていた。契約の印が `sha256:` 以外の値も数えていた
+
+**直さずに後続へ回したものは Issue [#148](https://github.com/amadeus-dlc/amadeus-ng/issues/148) にまとめてある**（拒否文言の包み文、Unit を切る scope、レビュー方針の出どころの一本化など）。
 
 ### 1-3. 作業場所
 
-- worktree: `.claude/worktrees/stage1`（`mise trust` 済み）。スタックのブランチはすべてここで作った
-- 本体の作業ツリー（`docs-stage1-handoff-followup` ブランチ）の `.claude/settings.json` は、ユーザーがフックを外した状態のまま触っていない。コミットしないこと
-- 砂場や一時ファイルは scratchpad に置いた。残す必要のあるものは無い
+- worktree: `.claude/worktrees/stage1`（スタックを作った場所）。レビュー修正は `.claude/worktrees/{pr143,pr144,pr145}` で行った。どれも `mise trust` 済みで、マージ後は消してよい
+- 本体の作業ツリー（`docs-stage1-handoff-followup` ブランチ = PR [#141](https://github.com/amadeus-dlc/amadeus-ng/pull/141)）の `.claude/settings.json` は、ユーザーがフックを外した状態のまま触っていない。コミットしないこと
+- #141（前の引き継ぎメモの追記）はマージできる状態で残っている。マージするかはオーナーの判断待ち
 
 ---
 
-## 2. スタックのマージ手順
+## 2. スタックのマージで踏んだこと
 
-| PR | ブランチ | base | 内容 |
-|---|---|---|---|
-| [#142](https://github.com/amadeus-dlc/amadeus-ng/pull/142) | `feat/selfhost-e2e-replay` | main | 再生ハーネス（キュー投入済み） |
-| [#143](https://github.com/amadeus-dlc/amadeus-ng/pull/143) | `feat/selfhost-review-and-approval-2-8-2` | #142 | レビュー受領の 2.8.2 形・runtime-graph・承認と差し戻しの人間の返答ガード |
-| [#144](https://github.com/amadeus-dlc/amadeus-ng/pull/144) | `feat/selfhost-plan-approval-2-8-2` | #143 | 計画承認の 2 行タグ・run-stage 指示の文脈・要約確認ガード |
-| [#145](https://github.com/amadeus-dlc/amadeus-ng/pull/145) | `feat/selfhost-native-plan-approval-guard` | #144 | plan-approval-guard の native 化 |
-| [#146](https://github.com/amadeus-dlc/amadeus-ng/pull/146) | `feat/selfhost-replay-pretool-guards` | #145 | 再生に PreToolUse / Stop フックを追加 |
-| [#147](https://github.com/amadeus-dlc/amadeus-ng/pull/147) | `docs-stage1-switch-runbook` | #146 | 切替の手順書（このファイルもここに入る） |
-
-注意点:
-
-- **base が main 以外の PR には CI が走らない**（CodeRabbit も走らない）。#143 以降は、下がマージされて base を main へ付け替えた時点で初めて CI が走る
-- main は squash マージなので、下の PR の元コミットは main に入らない。そのまま base を付け替えると差分に下の PR の分が残る。**付け替えの前に main へ載せ直す**:
-
-```bash
-git fetch origin
-# 例: #142 がマージされた後の #143
-git rebase --onto origin/main feat/selfhost-e2e-replay feat/selfhost-review-and-approval-2-8-2
-git push --force-with-lease origin feat/selfhost-review-and-approval-2-8-2
-gh pr edit 143 --base main
-```
-
-- 上の PR はさらにその上で `git rebase --onto <載せ直した下のブランチ> <古い下のブランチの先端> <上のブランチ>` の要領で積み直す（または下がマージされるたびに同じ手順）
-- マージは GraphQL の `enqueuePullRequest` で入れる（`gh pr merge` は auto-merge 無効で弾かれる。前の引き継ぎの §4-4）
+- main は squash マージなので、下の PR がマージされたら、上の PR を**載せ直してから** base を付け替える: `git rebase --onto origin/main <古い下の先端> <上のブランチ>`。古い先端は、載せ直す前に控えておく
+- **base の付け替えだけでは CI が起動しない**（`pull_request` の `edited` は CI の起動条件に無い）。先に `gh pr edit N --base main` で付け替えてから push する。push 済みなら PR を閉じて開き直す
+- CodeRabbit のスレッドを解決する前に走った `CI Review Thread Gate` は失敗のまま残る。CI の run が終わってから `gh run rerun <run-id> --failed` で再実行する
+- マージは GraphQL の `enqueuePullRequest`（`gh pr merge` は auto-merge 無効で弾かれる）。キューの CI は 20 分前後
+- push が `Permission denied (publickey)` で落ちることが 1 度あった。再試行で通った
 - `delete_branch_on_merge` は無効なので、マージ後のブランチは残る
 
 ---
@@ -62,8 +53,10 @@ gh pr edit 143 --base main
 ## 3. 到達点（数値）
 
 - 再生ハーネス: native・配布 2.8.2 とも **102/102**。run-stage 指示の差分 0。session-start の文脈と deliver-stage-rules の配送内容も一致
-- `target/release/aidlc --doctor`（#146 の先端、クリーンな clone）: **28 passed / 0 failed**
-- #145 のブランチで `PROPTEST_RNG_SEED=20260823 cargo test --workspace --no-fail-fast`: 4025 passed / 0 failed。clippy・`cargo lint`・fmt も通過
+- 再生の数値は、独立レビューの修正を入れた後のスタック最上段でも同じだった
+- `target/release/aidlc --doctor`（レビュー修正前の #146 の先端、クリーンな clone）: **28 passed / 0 failed**。main の先端で取り直すこと（§6）
+- スタック最上段（レビュー修正後）で `PROPTEST_RNG_SEED=20260823 cargo test --workspace --no-fail-fast`: 4057 passed / 1 failed。clippy・`cargo lint`・fmt も通過
+- **macOS のローカルでは、子プロセスが signal 9（出力なし）で終わってテストが落ちることがある。** 落ちるテストは毎回違い、単独では通る。複数の worktree で同時にテストを回すと頻度が上がる。CI（Linux）では観測していない（#148 に記録）
 
 再生の回し方:
 
@@ -87,6 +80,11 @@ scripts/aidlc-selfhost/e2e/compare-directives.sh <dir>/dist <dir>/native
 - plan-approval-guard は Unit を切らない scope（bugfix など）だけ正しく判定する。書込先を特定できないシェルと未知の工具は通す（2.8.2 は止める）。監査行 `PLAN_APPROVAL_BLOCKED` は書かない
 - 要約確認ガードは、`upstream_271_contract` の 2 fixture でだけ `AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD=1` で外した
 - 承認が付随するだけの試験は `tests/support/human_reply.rs` で `HUMAN_TURN` を代役として書き、`Approve` で答える
+- 差し戻しのフィードバックは 2.8.2 の report と同じく `--reason` を優先し、保護されたゲートでは `--user-input` をフィードバックにしない
+- UTF-8 でない監査シャードは置換文字で読む（2.8.2 の `toString("utf-8")` と同じ）
+- 定義グラフが読めないときの報告は error 指示（exit 0）で止める（2.8.2 は stderr と exit 1）
+- plan-approval-guard は、変更系コマンドやリダイレクトの書込み位置が展開・グロブで確定しなければ止める（2.8.2 と同じ）。`<記録>/link/../x` のようにリンクを `..` で戻る綴りは、2.8.2 と同じく「中」と判定する
+- 承認前の `/dev/null` へのリダイレクトは止める（2.8.2 と同じ）
 
 ---
 
@@ -101,4 +99,4 @@ scripts/aidlc-selfhost/e2e/compare-directives.sh <dir>/dist <dir>/native
 
 1. main の先端で `doctor_pass` と `all_ci_jobs_pass` の証拠を採り、`host-binding.json` へ書く（手順書 §2-1・§2-2）
 2. 実地スモーク（人間の操作が必要）。手順書 §2-3〜§2-6 のとおりにする: `mise.local.toml` の `_.path` で `aidlc` を native に向け、フック登録を戻し（run-sensors だけ配布 TS）、完全に再起動し、Issue #134 を題材に `/aidlc bugfix`
-3. その後の候補: Unit を切る scope への対応（plan-approval-guard の Unit 判定、Issue #137 の 6 入口）、2.9.0 への追従調査
+3. その後の候補: Issue #148 の後続、Unit を切る scope への対応（plan-approval-guard の Unit 判定、Issue #137 の 6 入口）、2.9.0 への追従調査
