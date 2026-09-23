@@ -1,5 +1,8 @@
 //! 計画承認を現在の指示発行へ結び付ける値。
-use super::{ActiveDirective, CodeGenerationRunFloor, PlanApprovalError, PublishedDirective};
+use super::{
+    ActiveDirective, CodeGenerationRunFloor, PlanApprovalDocuments, PlanApprovalError,
+    PublishedDirective,
+};
 use core_infrastructure::canon_json::{JsonValue, Number, ObjectMembers, hash_canonical};
 /// 計画承認の対象と、発行時点の識別子。文書だけでは構築しない。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,18 +180,30 @@ impl CodeGenerationAuthority {
             directive.revision(),
         ))
     }
-    /// 計画・テスト指示・解決済み契約を、この承認対象へ束縛する。
+    /// 計画・テスト指示・解決済み契約を、この承認対象へ束縛する（`sha256:<hex>`）。
+    ///
+    /// 束ねるのは [`PlanApprovalDocuments::approved_plan`] と
+    /// [`PlanApprovalDocuments::approved_instructions`] — 作業ブリーフが作業者へ渡すのと
+    /// 同じ形である（2.8.2 は指紋 `approvalFingerprint` もブリーフ `workerBrief` も
+    /// `projectPlanApprovalContent` / `projectInstructionsContent` を通す）。原文ではなく
+    /// この形を束ねるので、承認後に段自身が命じる編集（進捗の印）と旧手順の `## Review`
+    /// 付録では承認が失効せず、その代わり付録へ紛れ込ませた手順は作業者へ届かない。
+    ///
+    /// 2.8.2 の `sha256:v3:` は内容・対象・intent・試行床だけを束ねるが、この build は指示の
+    /// 発行エポックとソース床も束ねる（より厳しい側。ソースのずれは 2.8.2 では
+    /// `[Planned Source]` と Change Control が扱う）。束ねる中身が違うので v3 を名乗らない。
     #[must_use]
     pub fn approval_fingerprint(
         &self,
-        plan: &str,
-        instructions: &str,
+        documents: &PlanApprovalDocuments,
         contract_hash: &str,
     ) -> String {
+        let plan = documents.approved_plan();
+        let instructions = documents.approved_instructions();
         let mut fields = ObjectMembers::new();
         for (name, value) in [
-            ("plan", plan),
-            ("instructions", instructions),
+            ("plan", plan.as_str()),
+            ("instructions", instructions.as_str()),
             ("testing_contract", contract_hash),
             ("target", self.target_id()),
             ("intent", self.intent_id()),

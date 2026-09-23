@@ -1390,11 +1390,7 @@ impl IntentExecution {
             };
             return Err(PlanApprovalError::new(reason));
         };
-        Ok(authority.approval_fingerprint(
-            documents.plan(),
-            documents.instructions(),
-            contract.hash(),
-        ))
+        Ok(authority.approval_fingerprint(documents, contract.hash()))
     }
 
     /// コード生成の現在の実行境界。旧保存データで情報が無い場合はNone。
@@ -2657,6 +2653,18 @@ impl IntentExecution {
                     self.interactions
                         .consume_summary(event.stage(), evidence.questions_file());
                     self.last_gate_resolution_at = Some(occurred_at);
+                    // 承認待ちを開く前提 (2.8.2 `checkSummaryConfirmationEvidence`) の受領証。
+                    // 立つのは `Looks correct` のときだけで、`Request changes` は先の確認も
+                    // 取り消す。試行の床 (開始・差し戻し・ジャンプ) でも消える。受理側は
+                    // 2 択以外を拒否するので、読めない綴りは確認済みへ倒さない。
+                    let choice = super::SummaryChoice::parse(event.details())
+                        .unwrap_or(super::SummaryChoice::RequestChanges);
+                    if let Some(stage) = StageSlug::parse(event.stage())
+                        .ok()
+                        .and_then(|slug| self.slots.position_of(&slug))
+                    {
+                        self.slots.record_summary_choice(stage, choice)?;
+                    }
                 }
                 super::AnswerDisposition::ApprovalGateReportOwned => {}
             },
@@ -3055,10 +3063,27 @@ impl IntentExecution {
         if !self.is_gated(stage) {
             return GateDecision::Ungated;
         }
-        if self.skeleton_gate_stage(intent) == Some(stage) && self.skeleton_stance.is_none() {
+        if self.skeleton_gate_stage(intent) == Some(stage)
+            && self.skeleton_stance.is_none()
+            && !self.skips_units_generation()
+        {
             return GateDecision::Unresolved;
         }
         GateDecision::Gated
+    }
+
+    /// 実効計画が units-generation を持ち、それを走らせないか。
+    ///
+    /// 走らせない scope (bugfix など) では Construction の per-unit ステージは Unit の DAG を
+    /// 持たず、ステージ単位の成果物で 1 度だけ走る。2.8.2 はこの形のゲートを stance の往復
+    /// なしに `true` と決める (`emitPerUnitRunStage` の `usesStageLevelPerUnitArtifacts` 分岐)。
+    /// 配布の定義は units-generation を常に計画へ載せる (SKIP か EXECUTE)。計画に無い合成の
+    /// 定義では往復を残す。
+    fn skips_units_generation(&self) -> bool {
+        StageSlug::parse("units-generation")
+            .ok()
+            .and_then(|slug| self.slots.position_of(&slug))
+            .is_some_and(|index| !self.in_scope(index))
     }
 
     // ---- 判断 (書込なし) — 報告のディスパッチ ----
@@ -3102,7 +3127,9 @@ impl IntentExecution {
         }
         match verdict {
             Verdict::Skipped => self.dispatch_skip(intent, request, target, slug, checkbox),
-            Verdict::AwaitingApproval => Self::dispatch_gate_open(intent.scope(), slug, checkbox),
+            Verdict::AwaitingApproval => {
+                self.dispatch_gate_open(intent.scope(), request, target, slug, checkbox)
+            }
             Verdict::Rejected => {
                 self.dispatch_gate_reject(intent.scope(), request, target, slug, checkbox)
             }
@@ -3373,7 +3400,10 @@ impl IntentExecution {
 
     /// 段 10 — `awaiting-approval` (ピン `:5699-5710`)。
     fn dispatch_gate_open(
+        &self,
         scope: &str,
+        request: &ReportRequest,
+        target: StageIndex,
         slug: StageSlug,
         checkbox: CheckboxState,
     ) -> Result<ReportDecision, ReportRefusal> {
@@ -3390,6 +3420,7 @@ impl IntentExecution {
                 actual: checkbox,
             });
         }
+        self.require_summary_confirmation(request, target, &slug)?;
         Ok(ReportDecision::Commit {
             scope: scope.to_string(),
             stage: slug,
@@ -3535,6 +3566,7 @@ impl IntentExecution {
                 if request.stage().is_none() {
                     return Err(ReportRefusal::InProgressRequiresExplicitStage { stage: slug });
                 }
+                self.require_summary_confirmation(request, target, &slug)?;
                 self.require_human_approval(request, target, &slug)?;
                 Ok(ReportDecision::Commit {
                     scope: scope.to_string(),
@@ -3560,6 +3592,38 @@ impl IntentExecution {
                 })
             }
         }
+    }
+
+    /// 内容確認を要するステージは、現在の試行で人間の確認を受領していなければ承認待ちを
+    /// 開けない (2.8.2 `checkSummaryConfirmationEvidence` の `SUMMARY_ANSWER_INVALID`)。
+    ///
+    /// どのステージが要するかは定義の `summary_confirmation` で決まり、入力境界が要求へ
+    /// 載せる。autonomous な Construction は対象外である (2.8.2 と同じ抜け道)。
+    fn require_summary_confirmation(
+        &self,
+        request: &ReportRequest,
+        target: StageIndex,
+        slug: &StageSlug,
+    ) -> Result<(), ReportRefusal> {
+        if !request.requires_summary_confirmation(slug) {
+            return Ok(());
+        }
+        let autonomous_construction = self.autonomy.is_autonomous()
+            && self
+                .slots
+                .at(target)
+                .is_some_and(|slot| slot.key().phase() == PhaseId::Construction);
+        if autonomous_construction
+            || self
+                .slots
+                .at(target)
+                .is_some_and(StageSlot::summary_confirmed)
+        {
+            return Ok(());
+        }
+        Err(ReportRefusal::SummaryConfirmationMissing {
+            stage: slug.clone(),
+        })
     }
 
     /// 承認をコミットする直前の人間の決定の検査 (2.8.2 `aidlc-state.ts`
@@ -3768,6 +3832,9 @@ mod tests {
     fn execution_event_id() -> IntentExecutionEventId {
         IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").unwrap()
     }
+    use crate::orchestration::{
+        AnswerId, AnswerRequest, DecisionPrompt, SummaryChoice, SummaryEvidence,
+    };
     use crate::orchestration::{
         ArtifactPaths, ReviewClosures, StageEntries, StageIndexSet, StageSlot, StageSlots,
         StageSlotsError, StageSlugSet, TransitionSteps,
@@ -4243,6 +4310,7 @@ mod tests {
                         ReviewAttempt::default(),
                         false,
                         false,
+                        false,
                     )
                 })
                 .collect(),
@@ -4306,6 +4374,7 @@ mod tests {
                     approved[index],
                     0,
                     ReviewAttempt::default(),
+                    false,
                     false,
                     false,
                 ));
@@ -4622,6 +4691,90 @@ mod tests {
             true,
         );
         assert_eq!(steps_of(&run.report_dispatch(&named).unwrap()), ["advance"]);
+    }
+
+    /// 2.8.2 — 内容確認を要するステージは、現在の試行の確認が無ければ承認待ちを開けない。
+    #[test]
+    fn a_gate_that_needs_a_summary_confirmation_opens_only_after_one() {
+        let summary = StageSlugSet::new([slug(1)]);
+        let open = |run: &Run, stages: StageSlugSet| {
+            run.report_dispatch(&request(Verdict::AwaitingApproval).with_summary_stages(stages))
+        };
+        let mut run = at_gate_with(InProgress);
+        assert!(matches!(
+            open(&run, summary.clone()),
+            Err(ReportRefusal::SummaryConfirmationMissing { stage }) if stage == slug(1)
+        ));
+        // 要しないステージ（集合に無い）は確認なしで開く。
+        assert!(open(&run, StageSlugSet::empty()).is_ok());
+        // 確認を受領すれば開く。
+        run.execution
+            .slots
+            .record_summary_choice(at(&run, 1), SummaryChoice::LooksCorrect)
+            .expect("位置は在る");
+        assert!(open(&run, summary.clone()).is_ok());
+        // 差し戻し（試行の床）で受領は消える。
+        run.execution
+            .slots
+            .reset_attempt(at(&run, 1))
+            .expect("位置は在る");
+        assert!(open(&run, summary).is_err());
+    }
+
+    /// 内容確認を提示し、人間の返答を受けて `choice` を記録する（`aidlc-log.ts decision` →
+    /// フック → `answer --checkpoint summary-confirmation`）。
+    fn answer_summary(run: &mut Run, choice: &str) {
+        let stage = slug(1);
+        run.execution
+            .record_decision(
+                DecisionPrompt::new(stage.as_str(), "Does this all look correct?")
+                    .with_summary_file("q.md"),
+                occurred(),
+            )
+            .expect("提示を記録できる");
+        run.execution
+            .observe_prompt("s", choice, false, occurred())
+            .expect("返答を観測できる");
+        run.execution
+            .record_answer(
+                AnswerId::generate(),
+                &AnswerRequest::new(stage.as_str(), choice, true)
+                    .with_summary(SummaryEvidence::new("q.md", "f".repeat(64)).expect("64 桁")),
+                occurred(),
+            )
+            .expect("2 択のどちらも受領として記録される");
+    }
+
+    /// 2.8.2 — `Request changes` の受領は確認ではない。承認待ちは開かない。
+    #[test]
+    fn a_request_changes_summary_answer_does_not_open_the_gate() {
+        let summary = StageSlugSet::new([slug(1)]);
+        let mut run = at_gate_with(InProgress);
+        answer_summary(&mut run, "Request changes");
+        assert!(matches!(
+            run.report_dispatch(&request(Verdict::AwaitingApproval).with_summary_stages(summary)),
+            Err(ReportRefusal::SummaryConfirmationMissing { stage }) if stage == slug(1)
+        ));
+    }
+
+    /// 2.8.2 — 最新の受領が勝つ。`Looks correct` の後に `Request changes` と答え直せば、
+    /// 先の確認は取り消され、承認待ちは開かない。
+    #[test]
+    fn a_later_request_changes_withdraws_an_earlier_summary_confirmation() {
+        let summary = StageSlugSet::new([slug(1)]);
+        let open = |run: &Run| {
+            run.report_dispatch(
+                &request(Verdict::AwaitingApproval).with_summary_stages(summary.clone()),
+            )
+        };
+        let mut run = at_gate_with(InProgress);
+        answer_summary(&mut run, "Looks correct");
+        assert!(open(&run).is_ok(), "確認済みなら開く");
+        answer_summary(&mut run, "Request changes");
+        assert!(matches!(
+            open(&run),
+            Err(ReportRefusal::SummaryConfirmationMissing { stage }) if stage == slug(1)
+        ));
     }
 
     /// 段 13 — ゲート付き未完了・gated モード・ガード有効で `--user-input` が空なら拒む。
@@ -5593,6 +5746,50 @@ mod tests {
     /// initialization 1 + inception 1 + construction 2 の合成計画で開始する。
     ///
     /// skeleton-gate ステージ (Construction フェーズの最初の EXECUTE) を持つ最小形である。
+    /// units-generation を inception に置いた合成計画（位置 1 の slug だけが違う）。
+    ///
+    /// skeleton-gate の往復は Unit を切る計画でだけ起こる — 切らない計画（bugfix など）では
+    /// 2.8.2 はゲートを `true` と決める。
+    fn with_units_generation(actions: &[PlanAction]) -> Run {
+        let phases = [
+            PhaseId::Initialization,
+            PhaseId::Inception,
+            PhaseId::Construction,
+            PhaseId::Construction,
+        ];
+        let stages: Vec<StageEntry> = phases
+            .iter()
+            .zip(actions.iter())
+            .enumerate()
+            .map(|(i, (phase, action))| {
+                let name = if i == 1 {
+                    StageSlug::parse("units-generation").unwrap()
+                } else {
+                    slug(i)
+                };
+                StageEntry::new(
+                    name,
+                    *phase,
+                    *action,
+                    false,
+                    display(&format!("{}.{}", phase.index(), i + 1)),
+                )
+            })
+            .collect();
+        Run::start(Intent::from((
+            Created::new(
+                intent_event_id(),
+                intent_id(),
+                def_id("claude"),
+                revision('0'),
+                start_request(),
+                StageEntries::new(stages).unwrap(),
+                scan(),
+            ),
+            occurred(),
+        )))
+    }
+
     fn with_construction(actions: &[PlanAction]) -> Run {
         start_with_phases(
             &[
@@ -5798,6 +5995,20 @@ mod tests {
         // 他人の計画からは答えない。
         let w = all_exec(3);
         assert_eq!(w.execution.skeleton_gate_stage(&foreign_plan(3)), None);
+    }
+
+    #[test]
+    fn the_skeleton_gate_is_decided_without_a_round_trip_when_no_units_are_cut() {
+        let w = with_units_generation(&[Execute, Skip, Execute, Execute]);
+        assert_eq!(w.skeleton_gate_stage(), Some(at(&w, 2)));
+        assert_eq!(
+            w.next_decision(&NextRequest::default()),
+            NextDecision::RunStage {
+                stage: at(&w, 2),
+                gate: GateDecision::Gated
+            },
+            "units-generation を走らせない計画はステージ単位で走り、ゲートは決まっている"
+        );
     }
 
     #[test]
@@ -7579,6 +7790,7 @@ mod tests {
                     ),
                     slot.practices_affirmed(),
                     slot.memory_empty_reported(),
+                    slot.summary_confirmed(),
                 )
             })
             .collect();

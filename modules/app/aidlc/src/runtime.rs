@@ -295,6 +295,65 @@ fn emit(outcome: Result<(Directive, Vec<u8>), String>) -> Completion {
     }
 }
 
+/// 内容確認を要するステージの集合（`AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD=1` なら空）。
+///
+/// # Errors
+///
+/// 定義グラフが読めない場合。空の集合へ倒すとガードが黙って外れるので、報告ごと止める
+/// （2.8.2 もグラフが読めなければ `aidlc-orchestrate` が失敗する — fail-closed）。止め方は
+/// 同じ報告の `source_baseline::for_report` がグラフを読めないときに合わせ、error 指示にする。
+fn summary_confirmation_stages(
+    layout: &Layout,
+) -> Result<core_command_domain::orchestration::StageSlugSet, String> {
+    use core_command_domain::orchestration::StageSlugSet;
+    if std::env::var("AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD").as_deref() == Ok("1") {
+        return Ok(StageSlugSet::empty());
+    }
+    Ok(StageSlugSet::new(
+        crate::stage_context::StageContext::read_with_graph(layout)?
+            .summary_confirmation_stages()
+            .iter()
+            .filter_map(|slug| StageSlug::parse(slug).ok()),
+    ))
+}
+
+/// ステージの日記 `memory.md` を指示の発行境界で作る（2.8.2 `bootstrapDirectiveMemory`）。
+///
+/// 指揮役が「在るかもしれないパス」を読んで確かめずに済むよう、エンジンが雛形
+/// `.claude/knowledge/aidlc-shared/memory-template.md` から作る。既に在れば触らない
+/// （再入・再開で書き溜めた記録を消さない）。**助言的**である — 雛形が無い、未解決の
+/// プレースホルダ、ファイル操作の失敗のいずれでも指示の発行は止めない。
+fn bootstrap_stage_diary(layout: &Layout, memory_path: &str) {
+    if memory_path.contains('{') {
+        return;
+    }
+    let template = layout
+        .project_dir()
+        .join(".claude/knowledge/aidlc-shared/memory-template.md");
+    let target = layout.project_dir().join(memory_path);
+    if !template.is_file() || target.exists() {
+        return;
+    }
+    let Some(parent) = target.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let Ok(body) = std::fs::read(&template) else {
+        return;
+    };
+    // 既存を上書きしない（2.8.2 は `COPYFILE_EXCL`）。書き切れなければ消す — 途中までの
+    // ファイルが残ると、次の発行は「在る」と見て二度と雛形から作り直さない。
+    if let Ok(mut file) = core_infrastructure::atomic::create_new_file(&target) {
+        use std::io::Write as _;
+        if file.write_all(&body).is_err() {
+            drop(file);
+            let _ = std::fs::remove_file(&target);
+        }
+    }
+}
+
 /// 構造化済みの指示を表示する前に、発行の事実を保存して公開する。
 async fn publish_directive(
     layout: &Layout,
@@ -305,6 +364,9 @@ async fn publish_directive(
     // Stop自身の確認は発行権限を更新しない。本家 emit の同じ環境入力に対応する。
     if std::env::var("AIDLC_STOP_HOOK_PROBE").as_deref() == Ok("1") {
         return Ok(());
+    }
+    if let Directive::RunStage(run) = directive {
+        bootstrap_stage_diary(layout, run.memory_path());
     }
     let publication = match directive {
         Directive::RunStage(run) => PublishedDirective::RunStage {
@@ -580,6 +642,15 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
             core_command_domain::orchestration::StageSlugSet::empty(),
         )
     };
+    // 内容確認のガードが効くのは承認待ちを開く報告と、ゲートを進める報告だけである。
+    let summary_stages = if matches!(verdict, Verdict::AwaitingApproval | Verdict::Forward) {
+        match summary_confirmation_stages(layout) {
+            Ok(stages) => stages,
+            Err(message) => return emit_error(message),
+        }
+    } else {
+        core_command_domain::orchestration::StageSlugSet::empty()
+    };
     // 段 13 の env — 判定そのものは集約が持つ（ここは観測を載せるだけ）。
     let request = ReportRequest::new(
         verdict,
@@ -598,7 +669,9 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
             == Some("1"),
     )
     // 承認・差し戻しの human presence の外部材料（判断は集約 — set-autonomy と同じ形）。
-    .with_human_turns(human_turns(layout));
+    .with_human_turns(human_turns(layout))
+    // 内容確認を要するステージ（定義の宣言。判断は集約）。
+    .with_summary_stages(summary_stages);
     let (
         Ok(intent_execution_repository),
         Ok(intent_repository),
@@ -1158,6 +1231,9 @@ fn report_refusal(raw: &str, refusal: &ReportRefusal) -> String {
         }
         ReportRefusal::RejectChoiceUnmatched { stage, reply } => {
             wording::reject_choice_unmatched(stage.as_str(), reply)
+        }
+        ReportRefusal::SummaryConfirmationMissing { stage } => {
+            wording::summary_confirmation_missing(stage.as_str())
         }
         ReportRefusal::HumanReplyMissing { stage, verdict } => {
             if *verdict == Verdict::Rejected {
@@ -3242,6 +3318,35 @@ mod tests {
     use core_command_domain::workflow_definition::WorkflowDefinitionId;
     use core_command_domain::workspace::CloneId;
     use core_command_use_case::orchestration::RepositoryError;
+
+    /// 日記は雛形から 1 度だけ作り、書き溜めた記録は上書きしない (2.8.2
+    /// `bootstrapDirectiveMemory`)。雛形が無ければ何もしない。
+    #[test]
+    fn the_stage_diary_is_created_once_from_the_template() {
+        let root = tempfile::tempdir().expect("一時ディレクトリ");
+        let layout = Layout::resolve(root.path());
+        let diary = "aidlc/spaces/default/intents/r/inception/x/memory.md";
+        bootstrap_stage_diary(&layout, diary);
+        assert!(!root.path().join(diary).exists(), "雛形が無ければ作らない");
+
+        let template = root.path().join(".claude/knowledge/aidlc-shared");
+        std::fs::create_dir_all(&template).expect("dir");
+        std::fs::write(template.join("memory-template.md"), "# Memory\n").expect("template");
+        bootstrap_stage_diary(&layout, diary);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(diary)).expect("作られた"),
+            "# Memory\n"
+        );
+        std::fs::write(root.path().join(diary), "# Memory\n- note\n").expect("追記");
+        bootstrap_stage_diary(&layout, diary);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(diary)).expect("残っている"),
+            "# Memory\n- note\n",
+            "既存の日記は上書きしない"
+        );
+        bootstrap_stage_diary(&layout, "aidlc/{unit-name}/memory.md");
+        assert!(!root.path().join("aidlc/{unit-name}").exists());
+    }
 
     /// 連鎖の途中に居る封筒 (自分の `Display` に子の文言を内包しない形)。
     #[derive(Debug)]

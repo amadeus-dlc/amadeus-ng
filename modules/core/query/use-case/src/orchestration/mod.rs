@@ -38,6 +38,7 @@
 //! パスは `core_query_use_case::orchestration::<型>` で安定する
 //! (`coding-rules/module-visibility.md`)。
 
+mod absent_consume;
 mod ask_directive;
 mod ask_kind;
 mod bindings;
@@ -118,6 +119,7 @@ pub use load_steering_directive::LoadSteeringDirective;
 pub use rule_content::RuleContent;
 // ビルダーは対象型の所有サブツリー (`run_stage_directive/`) に住み、型ファイル自身が
 // ファサード連鎖の一段を担う (`coding-rules/module-visibility.md` §追記 2026-09-01)。
+pub use absent_consume::AbsentConsume;
 pub use run_stage_directive::{RunStageDirective, RunStageDirectiveBuilder};
 
 // steering 連鎖 (継続トークン・束縛・部の番号)

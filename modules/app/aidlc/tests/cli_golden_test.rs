@@ -259,17 +259,19 @@ async fn the_terminal_run_stage_keys_and_persona_match_the_recorded_case() {
         string_of(&line(&completion), "conductor_persona"),
         string_of(&recorded("continue/load-steering"), "conductor_persona")
     );
-    // 採取済みのステージ (`practices-discovery`) はレビュアを宣言しないので、任意の 3 キーが
-    // 現れない。こちらのフィクスチャは宣言するので現れる — その 3 つ以外は増やさない。
+    // 採取済みのステージ (`practices-discovery`) はレビュアを宣言しないので、任意の 4 キーが
+    // 現れない。こちらのフィクスチャは宣言するので現れる — その 4 つ以外は増やさない
+    // (`review_artifact` は 2.8.2 で加わった)。
     let extra: Vec<&String> = emitted.difference(&expected).collect();
     assert_eq!(
         extra,
         vec![
+            &"review_artifact".to_string(),
             &"review_class".to_string(),
             &"reviewer".to_string(),
             &"reviewer_max_iterations".to_string(),
         ],
-        "採取済みケースに無いキーは、レビュア宣言に応じた任意の 3 つだけである"
+        "採取済みケースに無いキーは、レビュア宣言に応じた任意の 4 つだけである"
     );
 }
 

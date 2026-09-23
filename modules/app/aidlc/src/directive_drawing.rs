@@ -25,6 +25,7 @@ use core_query_use_case::orchestration::{
 };
 
 use crate::layout::Layout;
+use crate::stage_context::ReviewResolution;
 
 /// 行の値が公開言語の閉集合に無い (投影と描画の食い違い)。
 ///
@@ -128,6 +129,38 @@ pub(crate) fn run_stage(
         .map_err(|_| unreadable_row("stage_slug", row.stage_slug()))?;
     let phase = PhaseView::parse(row.phase()).map_err(|_| unreadable_row("phase", row.phase()))?;
     let mode = StageModeView::parse(row.mode()).map_err(|_| unreadable_row("mode", row.mode()))?;
+    // 入力・会話の文脈・レビュー形は、2.8.2 と同じく指示を描く瞬間のディスクと状態で決める。
+    let context = crate::stage_context::StageContext::read(layout);
+    let review = context.review(row.stage_slug());
+    let resolved = context.consumes(
+        row.stage_slug(),
+        project_kind.map(|kind| match kind {
+            BrownfieldGreenfield::Brownfield => "brownfield",
+            BrownfieldGreenfield::Greenfield => "greenfield",
+        }),
+        None,
+    );
+    // 定義グラフが読めない（またはそのステージを知らない）ときは、読み取りモデルの行の
+    // 宣言を record の下へ置いたものを使う（2.7 系の形）。
+    let (consumes, consumes_absent) = match resolved {
+        Some(resolved) => resolved,
+        None => (
+            match project_kind {
+                Some(BrownfieldGreenfield::Brownfield) => under(
+                    &record,
+                    "consumes_brownfield_rel",
+                    row.consumes_brownfield_rel(),
+                )?,
+                Some(BrownfieldGreenfield::Greenfield) => under(
+                    &record,
+                    "consumes_greenfield_rel",
+                    row.consumes_greenfield_rel(),
+                )?,
+                None => under(&record, "consumes_rel", row.consumes_rel())?,
+            },
+            Vec::new(),
+        ),
+    };
     let mut builder = RunStageDirectiveBuilder::new(
         slug,
         phase,
@@ -138,24 +171,16 @@ pub(crate) fn run_stage(
         format!("{record}/{}", row.memory_path_rel()),
     )
     .with_support_agents(strings("support_agents", row.support_agents())?)
-    .with_inline_context_paths(under(
-        &harness,
-        "inline_context_paths_rel",
-        row.inline_context_paths_rel(),
-    )?)
-    .with_consumes(match project_kind {
-        Some(BrownfieldGreenfield::Brownfield) => under(
-            &record,
-            "consumes_brownfield_rel",
-            row.consumes_brownfield_rel(),
+    .with_inline_context_paths(context.inline_context_paths(
+        row.stage_slug(),
+        &under(
+            &harness,
+            "inline_context_paths_rel",
+            row.inline_context_paths_rel(),
         )?,
-        Some(BrownfieldGreenfield::Greenfield) => under(
-            &record,
-            "consumes_greenfield_rel",
-            row.consumes_greenfield_rel(),
-        )?,
-        None => under(&record, "consumes_rel", row.consumes_rel())?,
-    })
+    ))
+    .with_consumes(consumes)
+    .with_consumes_absent(consumes_absent)
     .with_produces(if row.stage_slug() == "reverse-engineering" {
         let repo = layout
             .project_dir()
@@ -176,7 +201,19 @@ pub(crate) fn run_stage(
         under(&record, "produces_rel", row.produces_rel())?
     })
     .with_sensors(strings("sensors_applicable", row.sensors_applicable())?)
-    .with_protocol_modules(strings("protocol_modules", row.protocol_modules())?);
+    .with_protocol_modules({
+        let modules = strings("protocol_modules", row.protocol_modules())?;
+        // レビュー欄を省くなら `reviewer` の手順も渡さない（2.8.2 は reviewer と
+        // review_class が載ったときだけ `reviewer` を積む）。
+        if matches!(review, ReviewResolution::Omitted) {
+            modules
+                .into_iter()
+                .filter(|module| module != "reviewer")
+                .collect()
+        } else {
+            modules
+        }
+    });
     // 隔離実行は 1 ステージで止まるので次のステージを名乗らない (ピン `next_stage = null`)。
     if let Some(name) = row.next_stage_name()
         && !single
@@ -184,10 +221,30 @@ pub(crate) fn run_stage(
         builder = builder.with_next_stage(name);
     }
     if let (Some(reviewer), Some(class)) = (row.reviewer(), row.review_class()) {
-        let class =
-            ReviewClassView::parse(class).map_err(|_| unreadable_row("review_class", class))?;
-        builder =
-            builder.with_reviewer(reviewer, class, row.reviewer_max_iterations().unwrap_or(1));
+        // 実効の階級（scope の上限と状態の上書きで下げたもの）と往復の上限を載せる。
+        // 実効が `none` ならレビュー欄をまるごと省く（2.8.2 はレビューを宣言しないステージと
+        // 同じ形にする）。定義グラフが読めないときだけ行の宣言をそのまま使う。
+        let (class, max, artifact) = match review {
+            ReviewResolution::Omitted => (None, 1, None),
+            ReviewResolution::Unresolved => (
+                Some(class),
+                row.reviewer_max_iterations().unwrap_or(1),
+                None,
+            ),
+            ReviewResolution::Present(ref shape) => (
+                Some(shape.class.as_str()),
+                shape.max_iterations,
+                shape.artifact.clone(),
+            ),
+        };
+        if let Some(class) = class {
+            let class =
+                ReviewClassView::parse(class).map_err(|_| unreadable_row("review_class", class))?;
+            builder = builder.with_reviewer(reviewer, class, max);
+            if let Some(artifact) = artifact {
+                builder = builder.with_review_artifact(artifact);
+            }
+        }
     }
     if single {
         builder = builder.with_single();

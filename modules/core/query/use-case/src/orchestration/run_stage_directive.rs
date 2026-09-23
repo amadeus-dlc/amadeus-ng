@@ -30,10 +30,12 @@ pub struct RunStageDirective {
     memory_path: String,
     inline_context_paths: Vec<String>,
     consumes: Vec<String>,
+    consumes_absent: Vec<super::AbsentConsume>,
     produces: Vec<String>,
     sensors_applicable: Vec<String>,
     next_stage: Option<String>,
     reviewer: Option<String>,
+    review_artifact: Option<String>,
     review_class: Option<ReviewClassView>,
     reviewer_max_iterations: Option<u32>,
     protocol_modules: Vec<String>,
@@ -136,6 +138,12 @@ impl RunStageDirective {
         &self.consumes
     }
 
+    /// 解決した必須入力のうち、ディスクに無いもの（2.8.2 `consumes_absent`）。
+    #[must_use]
+    pub fn consumes_absent(&self) -> &[super::AbsentConsume] {
+        &self.consumes_absent
+    }
+
     /// 産出物のパス列。
     #[must_use]
     pub fn produces(&self) -> &[String] {
@@ -158,6 +166,12 @@ impl RunStageDirective {
     #[must_use]
     pub fn reviewer(&self) -> Option<&str> {
         self.reviewer.as_deref()
+    }
+
+    /// レビューの対象成果物（2.8.2 `review_artifact`）。
+    #[must_use]
+    pub fn review_artifact(&self) -> Option<&str> {
+        self.review_artifact.as_deref()
     }
 
     /// レビュークラス。

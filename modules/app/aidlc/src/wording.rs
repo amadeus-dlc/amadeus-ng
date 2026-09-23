@@ -471,6 +471,13 @@ pub fn stage_graph_not_readable(path: &str, cause: &str) -> String {
     )
 }
 
+/// `stage-graph.json` が JSON の配列として読めないときの逐語文言（2.8.2 `aidlc-lib.ts`
+/// `loadStageGraphAll` の 2 つ目の throw と同じ綴り。`cause` は実行系の文言なので揃わない）。
+#[must_use]
+pub fn stage_graph_invalid(path: &str, cause: &str) -> String {
+    format!("Stage graph at {path} is not valid JSON: {cause}")
+}
+
 /// 規則配送が要る規則ファイルを読めない (upstream
 /// `hooks/aidlc-deliver-stage-rules.ts` が使う `tools/aidlc-steering.ts:101-102`)。
 ///
@@ -871,6 +878,15 @@ fn received_reply(reply: &str) -> String {
     core_infrastructure::canon_json::serialize(
         &core_infrastructure::canon_json::JsonValue::String(shown),
         core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+    )
+}
+
+/// 内容確認を要するステージで、現在の試行に人間の確認が無い（2.8.2
+/// `SUMMARY_ANSWER_INVALID` の回復手順を文にしたもの）。
+#[must_use]
+pub fn summary_confirmation_missing(stage: &str) -> String {
+    format!(
+        "Cannot present \"{stage}\" for approval: no human-confirmed consolidated summary is recorded for this attempt. Present the current consolidated summary, record the human's confirmation with `aidlc engine log decision/answer --checkpoint summary-confirmation`, then regenerate or re-save the produced artifacts."
     )
 }
 

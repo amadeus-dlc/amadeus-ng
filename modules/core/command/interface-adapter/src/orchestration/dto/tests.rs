@@ -120,6 +120,7 @@ fn synthetic_slots(source: &IntentExecution, attempts: &[ReviewAttempt; 3]) -> S
                 attempts[index].clone(),
                 false,
                 false,
+                false,
             ));
             slots
         });
@@ -350,7 +351,7 @@ fn every_variant() -> Vec<(IntentExecutionEvent, &'static str)> {
 /// 誕生 = 初期化完了済み (issue #76) により、`checkbox` の先頭は `Completed`、`cursor` は
 /// 最初のゲート付きステージ (索引 1) である。U2の対話受領状態と進行通番を含む
 /// 現在のワイヤ形式を、項目名・順序も含めて固定する。
-const GENESIS_SNAPSHOT: &str = r#"{"pipeline_history":[{"Boundary":{"stage":null,"single":false,"at":"2026-08-23T00:00:00Z"}}],"code_generation_run_floor":{"workflow_started":1,"stage_started":0,"stage_jumped":0,"gate_rejected":0,"latest":{"kind":"WORKFLOW_STARTED","at":"2026-08-23T00:00:00Z"}},"active_directive":null,"interactions":{"summary_prompts":[],"latest_human":null,"consumed_human":null,"pending":[]},"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"cursor_synchronized":false,"cursor_foreign_scoped":false,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":0,"pending":[],"closed":[]}],"practices_affirmed":[false,false,false],"memory_empty_reported":[false,false,false],"approved":[false,false,false],"revision_count":[0,0,0],"last_gate_resolution_at":null,"progress_seq_nr":1,"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
+const GENESIS_SNAPSHOT: &str = r#"{"pipeline_history":[{"Boundary":{"stage":null,"single":false,"at":"2026-08-23T00:00:00Z"}}],"code_generation_run_floor":{"workflow_started":1,"stage_started":0,"stage_jumped":0,"gate_rejected":0,"latest":{"kind":"WORKFLOW_STARTED","at":"2026-08-23T00:00:00Z"}},"active_directive":null,"interactions":{"summary_prompts":[],"latest_human":null,"consumed_human":null,"pending":[]},"id":"0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000","intent_id":"01a02785-1bd8-76eb-aeea-5aa303ebd5b6","stages":[{"slug":"state-init","phase":"Initialization"},{"slug":"intent-capture","phase":"Ideation"},{"slug":"scope-definition","phase":"Ideation"}],"overlay":["Execute","Execute","Execute"],"checkbox":["Completed","InProgress","Pending"],"cursor":1,"cursor_synchronized":false,"cursor_foreign_scoped":false,"status":"Running","parked_at":null,"autonomy":"Gated","skeleton_stance":null,"review_attempts":[{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":0,"pending":[],"closed":[]},{"history":[],"requests":0,"pending":[],"closed":[]}],"practices_affirmed":[false,false,false],"memory_empty_reported":[false,false,false],"summary_confirmed":[false,false,false],"approved":[false,false,false],"revision_count":[0,0,0],"last_gate_resolution_at":null,"progress_seq_nr":1,"seq_nr":1,"last_updated_at":"2026-08-23T00:00:00Z"}"#;
 
 #[expect(
     clippy::disallowed_methods,

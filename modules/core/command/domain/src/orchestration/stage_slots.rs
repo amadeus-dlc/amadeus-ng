@@ -70,6 +70,7 @@ impl StageSlots {
                         super::ReviewAttempt::default(),
                         false,
                         false,
+                        false,
                     ));
                     (active || starts, items)
                 });
@@ -295,6 +296,20 @@ impl StageSlots {
         Ok(())
     }
 
+    /// 名指した位置で内容確認への人間の選択を記録する（`SUMMARY_CONFIRMATION_RECORDED`）。
+    ///
+    /// # Errors
+    ///
+    /// 範囲外の位置 (`OutOfRange`)。
+    pub fn record_summary_choice(
+        &mut self,
+        stage: StageIndex,
+        choice: super::SummaryChoice,
+    ) -> Result<(), StageSlotsError> {
+        self.slot_mut(stage)?.record_summary_choice(choice);
+        Ok(())
+    }
+
     /// 記録済みの再構成が名指すslugだけに、実効計画の反転を適用する。
     pub(super) fn apply_recomposition(
         &mut self,
@@ -510,6 +525,7 @@ mod tests {
                         false,
                         0,
                         ReviewAttempt::default(),
+                        false,
                         false,
                         false,
                     )

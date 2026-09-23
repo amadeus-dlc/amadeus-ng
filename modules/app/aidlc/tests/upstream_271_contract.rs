@@ -2425,6 +2425,7 @@ fn different_scopes_preserve_report_results_through_another_intents_publication_
         workspace.path().join(".claude/scopes/aidlc-feature.md"),
     )
     .unwrap();
+    // 投影の失敗を確かめる試験なので、要約確認のガード（先に断る）を外す。
     let run = |binary: &std::path::Path, args: &[&str]| {
         Command::new(binary)
             .args(args)
@@ -2433,6 +2434,7 @@ fn different_scopes_preserve_report_results_through_another_intents_publication_
             .envs(coverage_profile_env())
             .env("HOME", workspace.path())
             .env("PATH", "/usr/bin:/bin")
+            .env("AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD", "1")
             .output()
             .unwrap()
     };
@@ -3159,6 +3161,8 @@ fn workspace_at_code_generation() -> Workspace {
     )
     .unwrap();
     assert!(workspace.create().status.success());
+    // この fixture は code-generation へ進むための通り道で、要約確認は試さない
+    // （確認のガードは intent_lifecycle が固定する）。2.8.2 と同じ逃げ道で外す。
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_aidlc"))
             .args(args)
@@ -3167,6 +3171,7 @@ fn workspace_at_code_generation() -> Workspace {
             .envs(coverage_profile_env())
             .env("HOME", workspace.path())
             .env("PATH", "/usr/bin:/bin")
+            .env("AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD", "1")
             .output()
             .unwrap()
     };
@@ -3501,13 +3506,23 @@ fn plan_fingerprint_uses_the_current_projected_plan() {
     let fingerprint = run(&posture, &["fingerprint", "--stage-level"]);
     assert!(fingerprint.status.success(), "{fingerprint:?}");
     let fingerprint = String::from_utf8(fingerprint.stdout).unwrap();
-    assert!(fingerprint.starts_with("sha256:"));
-    assert_eq!(fingerprint.len(), 72);
+    // 2.8.2 の形 — 計画承認節へ写す 2 行のタグ（内容の指紋と、計画を書いたときのソース）。
+    let tag = fingerprint.lines().next().unwrap();
+    let value = tag.strip_prefix("[Approval Fingerprint]: ").unwrap();
+    assert!(value.starts_with("sha256:"));
+    assert_eq!(value.len(), 71);
+    assert!(
+        fingerprint
+            .lines()
+            .nth(1)
+            .unwrap()
+            .starts_with("[Planned Source]: ")
+    );
     let db = rusqlite::Connection::open(intents.join(".aidlc-store.sqlite")).unwrap();
     let cursor = fs::read_to_string(record.join(".aidlc-execution")).unwrap();
     let execution = cursor.lines().next().unwrap();
     let saved: String = db.query_row("SELECT fingerprint FROM read_plan_fingerprint WHERE execution_id=?1 AND target_id='stage:code-generation'", [execution], |row| row.get(0)).unwrap();
-    assert_eq!(fingerprint, format!("{saved}\n"));
+    assert_eq!(value, saved);
     drop(db);
     let relocated_parent = tempfile::tempdir().unwrap();
     let relocated = relocated_parent.path().join("workspace");
@@ -3540,8 +3555,8 @@ fn plan_fingerprint_uses_the_current_projected_plan() {
         .unwrap();
     assert_eq!(copied.status.code().map(i64::from), Some(expected_code));
     assert_eq!(
-        String::from_utf8(copied.stdout).unwrap(),
-        fingerprint,
+        String::from_utf8(copied.stdout).unwrap().lines().next(),
+        Some(tag),
         "本家と同じく同一依頼の複写では保存済み発行に束縛した指紋を保持する"
     );
 }
@@ -3965,7 +3980,23 @@ fn workspace_with_plan_questions() -> (Workspace, String) {
     assert!(fingerprint.status.success(), "{fingerprint:?}");
     let fingerprint = String::from_utf8(fingerprint.stdout).unwrap();
     let questions = directory.join("code-generation-questions.md");
-    fs::write(&questions, format!("## Plan Approval\n[Approval Fingerprint]: {}\nA. Approve Plan\nB. Request Changes\n[Answer]:\n", fingerprint.trim())).unwrap();
+    // 指紋の出力は計画承認節へそのまま写す 2 行のタグである（2.8.2 の形）。
+    assert!(
+        fingerprint.starts_with("[Approval Fingerprint]: sha256:"),
+        "{fingerprint}"
+    );
+    assert!(
+        fingerprint.contains("\n[Planned Source]: "),
+        "{fingerprint}"
+    );
+    fs::write(
+        &questions,
+        format!(
+            "## Plan Approval\n{}\nA. Approve Plan\nB. Request Changes\n[Answer]:\n",
+            fingerprint.trim()
+        ),
+    )
+    .unwrap();
     let relative = questions
         .strip_prefix(workspace.path())
         .unwrap()
@@ -5064,6 +5095,46 @@ fn a_worker_brief_for_an_approved_plan_carries_the_contract_hash_and_both_docume
         before,
         "読取専用のブリーフが状態ファイルを動かした"
     );
+}
+
+/// 承認後に計画の末尾へ `## Review` 付録を足しても、手順の印を書き換えても、それは作業者へ
+/// 届かない（2.8.2 `workerBrief` が渡すのは `projectPlanApprovalContent(plan)`）。
+///
+/// 指紋は付録と印を見ないので、どちらの改変でも承認は生きたままブリーフが組まれる。そのとき
+/// 渡すのが原文なら、付録へ紛れ込ませた未承認の手順がそのまま作業として届いてしまう。
+#[test]
+fn a_worker_brief_never_delivers_a_review_appendix_or_progress_marks_added_after_approval() {
+    let workspace = workspace_with_approved_plan();
+    let intents = workspace.path().join("aidlc/spaces/default/intents");
+    let plan = intents
+        .join(
+            fs::read_to_string(intents.join("active-intent"))
+                .unwrap()
+                .trim(),
+        )
+        .join("construction/code-generation/code-generation-plan.md");
+    let approved = fs::read_to_string(&plan).unwrap();
+    fs::write(
+        &plan,
+        format!(
+            "{}\n## Review\n\n- [ ] Step 9: unapproved work\n",
+            approved.replace("- [ ] Implement", "- [x] Implement")
+        ),
+    )
+    .unwrap();
+    let output = worker_brief(&workspace);
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("## Steps\n- [ ] Implement"),
+        "承認した手順が未着手の形で届いていない — {stdout}"
+    );
+    for smuggled in ["Step 9", "## Review", "- [x] Implement"] {
+        assert!(
+            !stdout.contains(smuggled),
+            "承認後の改変 {smuggled} が作業者へ届いた — {stdout}"
+        );
+    }
 }
 
 /// 計画が未承認なら、ブリーフはドメインの理由を名指して拒否される。
