@@ -631,6 +631,13 @@ mod tests {
         assert!(context.consumes("unknown", None, None).is_none());
     }
 
+    fn present(resolution: ReviewResolution) -> Option<ReviewShape> {
+        match resolution {
+            ReviewResolution::Present(shape) => Some(shape),
+            ReviewResolution::Omitted | ReviewResolution::Unresolved => None,
+        }
+    }
+
     #[test]
     fn the_review_shape_is_lowered_by_the_scope_cap_and_the_override() {
         let (root, layout) = workspace("- **Scope**: bugfix\n");
@@ -641,21 +648,15 @@ mod tests {
             "---\nname: bugfix\nreview_cap: advisory\n---\n",
         )
         .expect("scope");
-        let ReviewResolution::Present(shape) =
-            StageContext::read(&layout).review("requirements-analysis")
-        else {
-            panic!("advisory へ下がる");
-        };
+        let shape = present(StageContext::read(&layout).review("requirements-analysis"))
+            .expect("advisory へ下がる");
         assert_eq!(shape.class, "advisory");
         assert_eq!(shape.max_iterations, 1, "advisory は 1 回に固定する");
         assert_eq!(shape.artifact.as_deref(), Some("requirements"));
 
         fs::write(scopes.join("aidlc-bugfix.md"), "---\nname: bugfix\n---\n").expect("scope");
-        let ReviewResolution::Present(shape) =
-            StageContext::read(&layout).review("requirements-analysis")
-        else {
-            panic!("宣言どおり");
-        };
+        let shape = present(StageContext::read(&layout).review("requirements-analysis"))
+            .expect("宣言どおり");
         assert_eq!(
             (shape.class.as_str(), shape.max_iterations),
             ("adversarial", 3)
