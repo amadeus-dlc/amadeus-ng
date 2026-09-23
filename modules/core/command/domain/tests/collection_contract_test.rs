@@ -1,7 +1,8 @@
 //! 一級コレクション型への横展開漏れと共通契約を検証する。
 use core_command_domain::orchestration::{
-    ArtifactPaths, ReviewClosure, ReviewClosures, ReviewVerdict, StageDisplay, StageEntries,
-    StageEntry, StageIndexSet, StageSlots, StageSlugSet, TransitionStep, TransitionSteps,
+    ArtifactPaths, ReviewClosure, ReviewClosures, ReviewFindings, ReviewVerdict, StageDisplay,
+    StageEntries, StageEntry, StageIndexSet, StageSlots, StageSlugSet, TransitionStep,
+    TransitionSteps,
 };
 use core_command_domain::workflow_definition::{
     ExecutionKind, PhaseId, PlanAction, ScopeGrid, StageGraph, StageMode, StageNodeBuilder,
@@ -130,6 +131,16 @@ fn the_orchestration_and_workspace_collections_share_the_traversal_contract() {
         1,
     );
     check(&ReviewClosures::empty(), 0);
+
+    check(
+        &ReviewFindings::parse(
+            "### Findings\n| ID | Severity | Location | Finding | Required action | Status |\n|---|---|---|---|---|---|\n| R-01 | Minor | a.md | x | y | New |\n",
+            "a.md",
+        )
+        .unwrap(),
+        1,
+    );
+    check(&ReviewFindings::parse("", "a.md").unwrap(), 0);
 
     check(
         &PromotedSections::new(vec![PromotedSection::new(

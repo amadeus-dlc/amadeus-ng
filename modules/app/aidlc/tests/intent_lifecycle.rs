@@ -4516,6 +4516,102 @@ async fn a_review_written_to_the_requested_draft_becomes_the_review_record() {
     );
 }
 
+/// 所見表の壊れた下書きで判定すると、受理の前に拒否される — 判定は確定せず、記録も書かれず、
+/// 表を直して同じ判定を打ち直せば通る（upstream 2.8.2 `aidlc-log.ts:2403-2415`）。
+#[tokio::test]
+async fn a_draft_with_a_malformed_findings_table_is_refused_before_the_verdict_commits() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "review"],
+    )
+    .await;
+    let record = workspace.record_dir().expect("record");
+    let artifact = record.join("inception/domain-design/domain-design.md");
+    fs::create_dir_all(artifact.parent().expect("parent")).expect("stage dir");
+    fs::write(&artifact, "# Domain design\n").expect("review input");
+    let requested = log_review(
+        &workspace,
+        &[
+            "--stage",
+            "domain-design",
+            "--reviewer",
+            REVIEWER,
+            "--iteration",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(requested.code(), 0, "{requested:?}");
+    let line: serde_json::Value =
+        serde_json::from_str(requested.line().expect("1 行")).expect("JSON");
+    let draft = workspace.project_dir().join(
+        line.get("reviewFile")
+            .and_then(serde_json::Value::as_str)
+            .expect("下書きの置き場"),
+    );
+    let verdict = || {
+        log_review(
+            &workspace,
+            &[
+                "--stage",
+                "domain-design",
+                "--reviewer",
+                REVIEWER,
+                "--iteration",
+                "1",
+                "--verdict",
+                "READY",
+            ],
+        )
+    };
+    let review = |row: &str| {
+        format!(
+            "## Review\n\n**Verdict:** READY\n**Reviewer:** {REVIEWER}\n**Iteration:** 1\n\n### Findings\n\n| ID | Severity | Location | Finding | Required action | Status |\n|---|---|---|---|---|---|\n{row}\n"
+        )
+    };
+    fs::create_dir_all(draft.parent().expect("parent")).expect("draft dir");
+    // Finding の欄が欠けた行（セルが 5 つ）。
+    fs::write(&draft, review("| R-01 | Minor | x.md > A | reword | New |")).expect("broken draft");
+
+    let refused = verdict().await;
+    assert_eq!(refused.code(), 1, "{refused:?}");
+    let diagnostic: serde_json::Value =
+        serde_json::from_str(refused.diagnostic().expect("拒否の診断")).expect("JSON");
+    let message = diagnostic
+        .get("error")
+        .and_then(serde_json::Value::as_str)
+        .expect("error 欄");
+    assert!(
+        message.starts_with(
+            "Refusing REVIEW_COMPLETED for \"domain-design\": inception/domain-design/domain-design.md#R-01: row has 5 cells, header declares 6."
+        ),
+        "{message}"
+    );
+    // 判定は確定していない — 監査にも記録の置き場にも残らない。
+    let audit = workspace.audit_shard().expect("監査シャード");
+    assert!(!audit.contains("**Event**: REVIEW_COMPLETED"), "{audit}");
+    let attempt = draft.parent().expect("attempt dir");
+    assert!(
+        !attempt.join("1.json").exists(),
+        "拒否した判定の記録は書かれない"
+    );
+    assert!(draft.exists(), "拒否した下書きは残る（直して打ち直せる）");
+
+    // 表を直せば、同じ判定が通る（依頼が残っているので NoPendingReview にならない）。
+    fs::write(
+        &draft,
+        review("| R-01 | Minor | x.md > A | wording | reword | New |"),
+    )
+    .expect("fixed draft");
+    let completed = verdict().await;
+    assert_eq!(completed.code(), 0, "{completed:?}");
+    assert!(attempt.join("1.json").is_file(), "直した判定は記録になる");
+    let audit = workspace.audit_shard().expect("監査シャード");
+    assert_eq!(audit.matches("**Event**: REVIEW_COMPLETED").count(), 1);
+}
+
 /// 受領証が無い承認は段 11 で拒まれる（`aidlc-state.ts approve` の逐語を包み文に入れて）。
 #[tokio::test]
 async fn approving_a_reviewer_bearing_stage_without_a_receipt_is_refused_verbatim() {

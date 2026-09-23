@@ -356,6 +356,47 @@ fn a_standalone_review_is_validated_like_an_appended_one() {
     );
 }
 
+/// 所見表が読めないレビューは受理しない — 記録の `findings` 欄は受理の後で作るので、
+/// 読めない表を受理すると判定だけが確定して記録が残らない（upstream 2.8.2
+/// `aidlc-log.ts:2403-2415` は記録の前に拒否する）。下書きでも追記でも同じである。
+#[test]
+fn a_review_whose_findings_table_cannot_be_read_is_refused() {
+    let broken = format!(
+        "{}\n### Findings\n\n| ID | Severity | Location | Finding | Required action | Status |\n|---|---|---|---|---|---|\n| R-01 | Minor | x.md | reword | New |\n",
+        appendix("r", 1, ReviewVerdict::Ready)
+    );
+    let expected = ReviewEvidenceError::InvalidAppendix(format!(
+        "{TARGET}#R-01: row has 5 cells, header declares 6. Expected columns: ID | Severity | Location | Finding | Required action | Status. The last cell \"New\" looks like Status; check earlier cells for a missing value or \"|\" separator"
+    ));
+    let request = documents(vec![target("# Artifact\n")], true)
+        .bind(None)
+        .unwrap();
+    let draft = ReviewDraft::new(
+        request.identity().attempt().to_string(),
+        broken.clone().into_bytes(),
+    );
+    assert_eq!(
+        with_drafts(vec![target("# Artifact\n")], vec![draft])
+            .certify(&request, "r", 1, ReviewVerdict::Ready, false)
+            .unwrap_err(),
+        expected
+    );
+    assert_eq!(
+        documents(vec![target(&format!("# Artifact\n{broken}"))], true)
+            .certify(&request, "r", 1, ReviewVerdict::Ready, false)
+            .unwrap_err(),
+        expected
+    );
+    // 表を直せば同じ依頼で受理する。
+    let fixed = broken.replace("| x.md | reword |", "| x.md | wording | reword |");
+    let draft = ReviewDraft::new(request.identity().attempt().to_string(), fixed.into_bytes());
+    assert!(
+        with_drafts(vec![target("# Artifact\n")], vec![draft])
+            .certify(&request, "r", 1, ReviewVerdict::Ready, false)
+            .is_ok()
+    );
+}
+
 #[test]
 fn a_later_request_in_the_same_attempt_keeps_the_attempt_id() {
     let first = documents(vec![target("# Artifact\n")], true)

@@ -1,5 +1,5 @@
 //! reviewerが書く末尾Review節の証拠。
-use super::{ReviewEvidenceError, ReviewVerdict};
+use super::{ReviewEvidenceError, ReviewFindings, ReviewVerdict};
 use core_infrastructure::hash::sha256_hex;
 /// 生バイトを保ち、表示される証跡だけを照合する。
 #[derive(Debug)]
@@ -76,8 +76,13 @@ impl ReviewAppendix {
         });
         Some(trimmed.len() + retained)
     }
+    /// 判定の証拠として受理できるかを確かめる（upstream `validateReviewAppendix` と、
+    /// 記録の直前に置かれた所見表の解析 `aidlc-log.ts:2403-2415`）。
+    ///
+    /// `artifact` は所見表の拒否で成果物を名指す綴り（依頼が固定した追記先）である。
     pub(super) fn validate(
         &self,
+        artifact: &str,
         reviewer: &str,
         iteration: u32,
         verdict: ReviewVerdict,
@@ -154,6 +159,12 @@ impl ReviewAppendix {
             }
             _ => (),
         }
+        // 所見表はレビュー記録の `findings` 欄になる。upstream 2.8.2 は記録を書く前に表を
+        // 解析し、読めなければ REVIEW_COMPLETED を拒否する（`aidlc-log.ts:2403-2415`）。
+        // 受理（イベントの確定）より後で読むと、「判定は確定したが記録は無く、打ち直しは
+        // 依頼が無いと断られる」状態が残るので、受理の検査の中で読む。読むのは記録が
+        // 本文として持つのと同じバイト（先頭の空行だけを除いた証跡）である。
+        ReviewFindings::parse(text, artifact)?;
         Ok(())
     }
 }

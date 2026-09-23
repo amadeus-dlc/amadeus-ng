@@ -179,8 +179,14 @@ impl ReviewDocuments {
             if appended {
                 return Err(ReviewEvidenceError::ReviewWrittenTwice);
             }
-            super::review_appendix::ReviewAppendix::new(draft.body().to_vec())
-                .validate(reviewer, iteration, verdict, None, true)?;
+            super::review_appendix::ReviewAppendix::new(draft.body().to_vec()).validate(
+                request.appendix_artifact(),
+                reviewer,
+                iteration,
+                verdict,
+                None,
+                true,
+            )?;
             return ReviewCompletion::new(request.clone(), self.fingerprint(None)?);
         }
         if request.prior_length() > 0
@@ -201,7 +207,14 @@ impl ReviewDocuments {
                 request.identity().attempt().to_string(),
             ));
         }
-        appendix.validate(reviewer, iteration, verdict, request.challenge(), false)?;
+        appendix.validate(
+            request.appendix_artifact(),
+            reviewer,
+            iteration,
+            verdict,
+            request.challenge(),
+            false,
+        )?;
         ReviewCompletion::new(request.clone(), self.fingerprint(None)?)
     }
     /// 受領後の全成果物とソースが一致するか。

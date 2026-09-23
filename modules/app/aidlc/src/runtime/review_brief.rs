@@ -29,6 +29,7 @@
 //! 無い記録から行を作らない。`--why stale` は `**Why now:**` の文言だけが変わる。
 use super::{Completion, Layout, review_documents};
 use crate::wording;
+use core_command_domain::orchestration::ReviewFindings;
 use core_infrastructure::ecmascript::trim;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -352,31 +353,37 @@ fn recorded_findings(record: &Value) -> Vec<Finding> {
 
 /// レビュー記録の `findings` 欄（upstream `ReviewRecord.findings` の欄と順）。
 ///
-/// 所見の表の読み方はゲートで描く所見と同じ [`parse_section`] を通す。
+/// 所見の表の読み方はゲートで描く所見と同じ [`ReviewFindings::parse`] を通す。判定の受理
+/// （`ReviewAppendix` の検証）が同じ本文を先に読み終えているので、ここへ来た本文の表は
+/// 読める。
 /// # Errors
-/// 所見の表の行が壊れている場合（ID・Status の語彙外を含む）。
+/// 所見の表の行が壊れている場合（ID・Status の語彙外を含む）。受理を通った本文では起きない。
 pub(super) fn record_findings(
     review: &str,
     artifact: &str,
 ) -> Result<Vec<core_infrastructure::canon_json::JsonValue>, String> {
     use core_infrastructure::canon_json::{JsonValue, ObjectMembers};
-    let (_, findings) = parse_section(review, artifact)?;
-    Ok(findings
-        .into_iter()
-        .map(|finding| {
-            let mut members = ObjectMembers::new();
-            members.insert("id", JsonValue::String(finding.id));
-            members.insert("severity", JsonValue::String(finding.severity));
-            members.insert("location", JsonValue::String(finding.location));
-            members.insert("finding", JsonValue::String(finding.finding));
-            members.insert(
-                "required_action",
-                JsonValue::String(finding.required_action),
-            );
-            members.insert("status", JsonValue::String(finding.status));
-            JsonValue::Object(members)
-        })
-        .collect())
+    let findings = ReviewFindings::parse(review, artifact).map_err(|error| error.to_string())?;
+    Ok(findings.fold_left(Vec::new(), |mut rows, finding| {
+        let mut members = ObjectMembers::new();
+        members.insert("id", JsonValue::String(finding.id().to_string()));
+        members.insert(
+            "severity",
+            JsonValue::String(finding.severity().to_string()),
+        );
+        members.insert(
+            "location",
+            JsonValue::String(finding.location().to_string()),
+        );
+        members.insert("finding", JsonValue::String(finding.finding().to_string()));
+        members.insert(
+            "required_action",
+            JsonValue::String(finding.required_action().to_string()),
+        );
+        members.insert("status", JsonValue::String(finding.status().to_string()));
+        rows.push(JsonValue::Object(members));
+        rows
+    }))
 }
 
 /// 終端の `## Review` 節（upstream `extractMarkdownSection(content, "## Review")`）。
@@ -430,149 +437,29 @@ fn strip_fenced_code_blocks(content: &str) -> String {
 
 /// `## Review` 節の判定と所見表（upstream `parseReviewSection`）。
 ///
-/// 表の形が宣言と食い違ったら黙って読み飛ばさずに止める — 欠けたセルは後ろの値を 1 つずつ
-/// 左へずらすので、どの列のつもりだったかを取り戻せないからである。
+/// 判定行はここで拾い、所見表はドメインの [`ReviewFindings::parse`] に読ませる（判定の受理と
+/// 同じ規則で読むため）。表の形が宣言と食い違ったら黙って読み飛ばさずに止める。
 fn parse_section(section: &str, artifact: &str) -> Result<(Option<String>, Vec<Finding>), String> {
     let normalized = section.replace("\r\n", "\n");
     let verdict = normalized.split('\n').find_map(|line| {
         let value = trim(line.strip_prefix("**Verdict:**")?);
         matches!(value, "READY" | "NOT-READY").then(|| value.to_string())
     });
-    let lines: Vec<&str> = normalized.split('\n').collect();
-    let Some(heading) = lines.iter().position(|line| {
-        line.strip_prefix("### Findings")
-            .is_some_and(|rest| trim(rest).is_empty())
-    }) else {
-        return Ok((verdict, Vec::new()));
-    };
-    let end = lines
-        .iter()
-        .enumerate()
-        .skip(heading.saturating_add(1))
-        .find(|(_, line)| line.starts_with("### "))
-        .map_or(lines.len(), |(index, _)| index);
-    let table: Vec<&str> = lines
-        .get(heading.saturating_add(1)..end)
-        .unwrap_or_default()
-        .iter()
-        .copied()
-        .filter(|line| trim(line).starts_with('|'))
-        .collect();
-    let Some((header, body)) = table.split_first() else {
-        return Ok((verdict, Vec::new()));
-    };
-    let headers = split_row(header);
-    if wording::REVIEW_FINDING_COLUMNS
-        .iter()
-        .any(|name| !headers.iter().any(|found| found == name))
-    {
-        return Ok((verdict, Vec::new()));
-    }
-    let mut findings = Vec::new();
-    for line in body.iter().skip(1) {
-        findings.push(row(&split_row(line), &headers, artifact)?);
-    }
-    Ok((verdict, findings))
-}
-
-/// 表の 1 行を所見へ写す。
-fn row(cells: &[String], headers: &[String], artifact: &str) -> Result<Finding, String> {
-    let at = |name: &str| {
-        headers
-            .iter()
-            .position(|header| header == name)
-            .and_then(|index| cells.get(index))
-            .map_or_else(String::new, |value| trim(value).to_string())
-    };
-    if cells.len() != headers.len() {
-        let named = at("ID");
-        let named = if named.is_empty() {
-            "?".to_string()
-        } else {
-            named
-        };
-        if cells.len() > headers.len() {
-            return Err(wording::review_row_extra_cells(
-                artifact,
-                &named,
-                cells.len(),
-                headers.len(),
-            ));
-        }
-        let last = cells.last().map_or("", |value| value.as_str());
-        let hint = if headers.last().is_some_and(|name| name == "Status") && is_finding_status(last)
-        {
-            wording::review_row_status_hint(last)
-        } else {
-            wording::REVIEW_ROW_MISSING_HINT.to_string()
-        };
-        return Err(wording::review_row_missing_cells(
-            artifact,
-            &named,
-            cells.len(),
-            headers,
-            &hint,
-        ));
-    }
-    let id = at("ID");
-    if !is_finding_id(&id) {
-        return Err(wording::invalid_finding_id(artifact, &id));
-    }
-    let status = at("Status");
-    if !is_finding_status(&status) {
-        return Err(wording::invalid_finding_status(artifact, &id, &status));
-    }
-    Ok(Finding {
-        severity: at("Severity"),
-        location: at("Location"),
-        finding: at("Finding"),
-        required_action: at("Required action"),
-        id,
-        status,
-    })
-}
-
-/// `R-` と 1 桁以上の数字だけ（upstream `/^R-[0-9]+$/`）。
-fn is_finding_id(value: &str) -> bool {
-    value.strip_prefix("R-").is_some_and(|digits| {
-        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
-    })
-}
-
-/// 閉じた状態語彙（upstream `validReviewFindingStatus`）。
-fn is_finding_status(value: &str) -> bool {
-    matches!(value, "New" | "Unresolved" | "Resolved" | "Accepted risk")
-        || value
-            .strip_prefix("Rejected: ")
-            .is_some_and(|reason| reason.starts_with(|char: char| !char.is_whitespace()))
-}
-
-/// Markdown 表の 1 行をセルへ割る（upstream `splitMarkdownRow`）。
-fn split_row(line: &str) -> Vec<String> {
-    let trimmed = trim(line);
-    let inner = trimmed.strip_prefix('|').unwrap_or(trimmed);
-    let body = inner.strip_suffix('|').unwrap_or(inner);
-    let mut cells = Vec::new();
-    let mut cell = String::new();
-    let mut escaped = false;
-    for char in body.chars() {
-        if escaped {
-            cell.push(char);
-            escaped = false;
-        } else if char == '\\' {
-            escaped = true;
-        } else if char == '|' {
-            cells.push(trim(&cell).to_string());
-            cell.clear();
-        } else {
-            cell.push(char);
-        }
-    }
-    if escaped {
-        cell.push('\\');
-    }
-    cells.push(trim(&cell).to_string());
-    cells
+    let findings = ReviewFindings::parse(section, artifact).map_err(|error| error.to_string())?;
+    Ok((
+        verdict,
+        findings.fold_left(Vec::new(), |mut rows, finding| {
+            rows.push(Finding {
+                id: finding.id().to_string(),
+                severity: finding.severity().to_string(),
+                location: finding.location().to_string(),
+                finding: finding.finding().to_string(),
+                required_action: finding.required_action().to_string(),
+                status: finding.status().to_string(),
+            });
+            rows
+        }),
+    ))
 }
 
 /// 所見表（upstream `renderFindingsContext`）。
@@ -739,51 +626,21 @@ mod tests {
         assert!(empty.is_empty());
     }
 
-    /// セル数・ID・状態のいずれかが宣言と食い違えば、その行を名指して止める。
+    /// 表の行が壊れていれば、ドメインの逐語の理由をそのまま運ぶ（読み方はドメインが持つ）。
     #[test]
-    fn a_malformed_row_names_the_artifact_and_the_row() {
-        let header = "### Findings\n| ID | Severity | Location | Finding | Required action | Status |\n|---|---|---|---|---|---|\n";
-        let short = format!("{header}| R-01 | Major | a.md | 欠落 | New |\n");
-        let error = parse_section(&short, "a.md").expect_err("セル数が合わない");
+    fn a_malformed_row_carries_the_domain_reason() {
+        let short = "### Findings\n| ID | Severity | Location | Finding | Required action | Status |\n|---|---|---|---|---|---|\n| R-01 | Major | a.md | 欠落 | New |\n";
+        let error = parse_section(short, "a.md").expect_err("セル数が合わない");
         assert!(
-            error.contains("a.md#R-01") && error.contains("header declares 6"),
+            error.starts_with("a.md#R-01: row has 5 cells, header declares 6."),
             "{error}"
         );
-        let extra = format!("{header}| R-01 | Major | a.md | 欠落 | 足す | New | 余り |\n");
-        let error = parse_section(&extra, "a.md").expect_err("セルが多い");
-        assert!(error.contains("unexpected extra cell"), "{error}");
-        let bad_id = format!("{header}| 1 | Major | a.md | 欠落 | 足す | New |\n");
-        let error = parse_section(&bad_id, "a.md").expect_err("ID が違う");
-        assert!(error.contains("invalid finding ID"), "{error}");
-        let bad_status = format!("{header}| R-01 | Major | a.md | 欠落 | 足す | Maybe |\n");
-        let error = parse_section(&bad_status, "a.md").expect_err("状態が違う");
-        assert!(error.contains("invalid finding status"), "{error}");
-    }
-
-    /// 状態語彙は閉じている。`Rejected:` だけが自由文を伴う。
-    #[test]
-    fn the_status_vocabulary_is_closed_except_for_a_stated_rejection() {
-        for value in [
-            "New",
-            "Unresolved",
-            "Resolved",
-            "Accepted risk",
-            "Rejected: 別案を採る",
-        ] {
-            assert!(is_finding_status(value), "{value}");
-        }
-        for value in ["", "Rejected", "Rejected: ", "rejected: x", "Done"] {
-            assert!(!is_finding_status(value), "{value}");
-        }
-        assert!(is_finding_id("R-07") && !is_finding_id("R-") && !is_finding_id("X-1"));
     }
 
     /// セルは改行を畳み、区切りを逃がす。
     #[test]
     fn a_cell_folds_newlines_and_escapes_the_separator() {
         assert_eq!(cell(" a\r\nb\nc | d "), "a b c \\| d");
-        assert_eq!(split_row("| a | b\\|c | |"), owned(&["a", "b|c", ""]));
-        assert_eq!(split_row("a | b"), owned(&["a", "b"]));
     }
 
     /// 結びは、開いた所見 → 所見はあるが閉じている → 判定が NOT-READY → 何も無い、の順で決まる。
