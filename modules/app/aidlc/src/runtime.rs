@@ -296,19 +296,25 @@ fn emit(outcome: Result<(Directive, Vec<u8>), String>) -> Completion {
 }
 
 /// 内容確認を要するステージの集合（`AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD=1` なら空）。
+///
+/// # Errors
+///
+/// 定義グラフが読めない場合。空の集合へ倒すとガードが黙って外れるので、報告ごと止める
+/// （2.8.2 もグラフが読めなければ `aidlc-orchestrate` が失敗する — fail-closed）。止め方は
+/// 同じ報告の `source_baseline::for_report` がグラフを読めないときに合わせ、error 指示にする。
 fn summary_confirmation_stages(
     layout: &Layout,
-) -> core_command_domain::orchestration::StageSlugSet {
+) -> Result<core_command_domain::orchestration::StageSlugSet, String> {
     use core_command_domain::orchestration::StageSlugSet;
     if std::env::var("AIDLC_SKIP_SUMMARY_CONFIRMATION_GUARD").as_deref() == Ok("1") {
-        return StageSlugSet::empty();
+        return Ok(StageSlugSet::empty());
     }
-    StageSlugSet::new(
-        crate::stage_context::StageContext::read(layout)
+    Ok(StageSlugSet::new(
+        crate::stage_context::StageContext::read_with_graph(layout)?
             .summary_confirmation_stages()
             .iter()
             .filter_map(|slug| StageSlug::parse(slug).ok()),
-    )
+    ))
 }
 
 /// ステージの日記 `memory.md` を指示の発行境界で作る（2.8.2 `bootstrapDirectiveMemory`）。
@@ -632,6 +638,15 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
             core_command_domain::orchestration::StageSlugSet::empty(),
         )
     };
+    // 内容確認のガードが効くのは承認待ちを開く報告と、ゲートを進める報告だけである。
+    let summary_stages = if matches!(verdict, Verdict::AwaitingApproval | Verdict::Forward) {
+        match summary_confirmation_stages(layout) {
+            Ok(stages) => stages,
+            Err(message) => return emit_error(message),
+        }
+    } else {
+        core_command_domain::orchestration::StageSlugSet::empty()
+    };
     // 段 13 の env — 判定そのものは集約が持つ（ここは観測を載せるだけ）。
     let request = ReportRequest::new(
         verdict,
@@ -652,7 +667,7 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     // 承認・差し戻しの human presence の外部材料（判断は集約 — set-autonomy と同じ形）。
     .with_human_turns(human_turns(layout))
     // 内容確認を要するステージ（定義の宣言。判断は集約）。
-    .with_summary_stages(summary_confirmation_stages(layout));
+    .with_summary_stages(summary_stages);
     let (
         Ok(intent_execution_repository),
         Ok(intent_repository),

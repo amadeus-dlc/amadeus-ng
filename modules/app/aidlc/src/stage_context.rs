@@ -146,16 +146,23 @@ pub(crate) struct StageContext<'a> {
 impl<'a> StageContext<'a> {
     /// 指示を描く瞬間の材料を読む。読めないものは空として扱う。
     pub(crate) fn read(layout: &'a Layout) -> StageContext<'a> {
-        let data = layout.definition_data_dir();
-        let json = |name: &str| {
-            fs::read(data.join(name))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        };
-        let graph = json("stage-graph.json")
-            .and_then(|value| value.as_array().cloned())
-            .unwrap_or_default();
-        let grid = json("scope-grid.json").unwrap_or(Value::Null);
+        Self::assemble(layout, load_graph(layout).unwrap_or_default())
+    }
+
+    /// 定義グラフが読めることを前提に材料を読む。グラフが読めない・JSON でない・配列で
+    /// ないなら、空として扱わずに理由を返す（2.8.2 `loadStageGraphAll` は投げ、
+    /// `aidlc-orchestrate` はその命令ごと失敗する）。
+    ///
+    /// ガードの対象をグラフから決める呼び手が使う — 空へ倒すとガードが黙って外れる。
+    pub(crate) fn read_with_graph(layout: &'a Layout) -> Result<StageContext<'a>, String> {
+        Ok(Self::assemble(layout, load_graph(layout)?))
+    }
+
+    fn assemble(layout: &'a Layout, graph: Vec<Value>) -> StageContext<'a> {
+        let grid = fs::read(layout.definition_data_dir().join("scope-grid.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .unwrap_or(Value::Null);
         let state = layout
             .state_file()
             .and_then(|path| fs::read_to_string(path).ok())
@@ -433,6 +440,27 @@ impl<'a> StageContext<'a> {
             .lines()
             .find_map(|line| line.strip_prefix("review_cap:"))
             .map(|value| value.trim().trim_matches('"').to_string())
+    }
+}
+
+/// 定義グラフ（`<harness>/tools/data/stage-graph.json`）を読む。
+///
+/// # Errors
+///
+/// 読めない・JSON でない・配列でない場合、利用者向けの理由を返す。
+fn load_graph(layout: &Layout) -> Result<Vec<Value>, String> {
+    let path = layout.definition_data_dir().join("stage-graph.json");
+    let shown = path.to_string_lossy();
+    let bytes = fs::read(&path)
+        .map_err(|error| crate::wording::stage_graph_not_readable(&shown, &error.to_string()))?;
+    let value = serde_json::from_slice::<Value>(&bytes)
+        .map_err(|error| crate::wording::stage_graph_invalid(&shown, &error.to_string()))?;
+    match value {
+        Value::Array(nodes) => Ok(nodes),
+        _ => Err(crate::wording::stage_graph_invalid(
+            &shown,
+            "the top level is not an array",
+        )),
     }
 }
 

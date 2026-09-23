@@ -4946,6 +4946,59 @@ async fn run_stage_directive(workspace: &Workspace) -> JsonValue {
     panic!("規則の連鎖が終わらない");
 }
 
+/// 定義グラフが読めなければ、承認待ちを開く報告は止まる（ゲートを進める報告は既に
+/// ソース基準の読取りで止まる）。
+///
+/// 内容確認を要するステージはグラフから決まる。読めないグラフを空として扱うと、要約確認の
+/// ガードが黙って外れる。2.8.2 もグラフが読めなければ `aidlc-orchestrate` が失敗する。
+#[tokio::test]
+async fn an_unreadable_stage_graph_stops_the_report_instead_of_waiving_the_summary_guard() {
+    let workspace = Workspace::with_reviewer(None, None);
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "graph"],
+    )
+    .await;
+    let graph = workspace.path(".claude/tools/data/stage-graph.json");
+    let state = workspace.state_file().expect("状態ファイルが投影された");
+    let rows = workspace.journal_rows();
+    let shown = graph.to_string_lossy().into_owned();
+    for (broken, expected) in [
+        (
+            Some("{}"),
+            format!("Stage graph at {shown} is not valid JSON: "),
+        ),
+        (
+            Some("{not json"),
+            format!("Stage graph at {shown} is not valid JSON: "),
+        ),
+        (None, format!("Stage graph not readable at {shown}: ")),
+    ] {
+        match broken {
+            Some(text) => fs::write(&graph, text).expect("壊れたグラフ"),
+            None => fs::remove_file(&graph).expect("グラフを消す"),
+        }
+        for result in ["awaiting-approval", "approved"] {
+            let completion = invoke(
+                &workspace,
+                "aidlc-orchestrate",
+                &["report", "--result", result, "--stage", "domain-design"],
+            )
+            .await;
+            assert_eq!(completion.code(), 0, "{completion:?}");
+            let directive = line_of(&completion);
+            assert_eq!(string_of(&directive, "kind"), "error", "{directive:?}");
+            if result == "awaiting-approval" {
+                let message = string_of(&directive, "message");
+                assert!(message.starts_with(&expected), "{message}");
+            }
+            assert_eq!(workspace.state_file().as_deref(), Some(state.as_str()));
+            assert_eq!(workspace.journal_rows(), rows);
+        }
+    }
+}
+
 /// 実効の階級が `none` なら、run-stage 指示はレビュー欄をまるごと省く（2.8.2
 /// `aidlc-orchestrate.ts` — reviewer / review_artifact / review_class / 往復上限と、
 /// `protocol_modules` の `reviewer`）。定義グラフの宣言へ戻して欄を出してはならない。
