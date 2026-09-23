@@ -296,13 +296,17 @@ impl StageSlots {
         Ok(())
     }
 
-    /// 名指した位置で内容確認の受領を記録する（`SUMMARY_CONFIRMATION_RECORDED`）。
+    /// 名指した位置で内容確認への人間の選択を記録する（`SUMMARY_CONFIRMATION_RECORDED`）。
     ///
     /// # Errors
     ///
     /// 範囲外の位置 (`OutOfRange`)。
-    pub fn confirm_summary(&mut self, stage: StageIndex) -> Result<(), StageSlotsError> {
-        self.slot_mut(stage)?.confirm_summary();
+    pub fn record_summary_choice(
+        &mut self,
+        stage: StageIndex,
+        choice: super::SummaryChoice,
+    ) -> Result<(), StageSlotsError> {
+        self.slot_mut(stage)?.record_summary_choice(choice);
         Ok(())
     }
 

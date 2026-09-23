@@ -211,9 +211,14 @@ impl StageSlot {
         self.summary_confirmed
     }
 
-    /// 内容確認の受領を記録する（`SUMMARY_CONFIRMATION_RECORDED`）。
-    pub const fn confirm_summary(&mut self) {
-        self.summary_confirmed = true;
+    /// 内容確認への人間の選択を記録する（`SUMMARY_CONFIRMATION_RECORDED`）。
+    ///
+    /// 確認済みになるのは `Looks correct` のときだけで、`Request changes` は先の確認も
+    /// 取り消す — 2.8.2 は最新の受領の `Details` が `Looks correct` でなければ
+    /// `SUMMARY_RECEIPT_MISSING` で拒否し、否定の回答では承認用の記録を消す
+    /// （`aidlc-log.ts` の `positive` 分岐）。
+    pub const fn record_summary_choice(&mut self, choice: super::SummaryChoice) {
+        self.summary_confirmed = matches!(choice, super::SummaryChoice::LooksCorrect);
     }
 
     /// この承認について `MEMORY_EMPTY` を既に記録したか (**永続化境界の読取専用**)。

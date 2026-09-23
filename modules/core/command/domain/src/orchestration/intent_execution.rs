@@ -2654,12 +2654,16 @@ impl IntentExecution {
                         .consume_summary(event.stage(), evidence.questions_file());
                     self.last_gate_resolution_at = Some(occurred_at);
                     // 承認待ちを開く前提 (2.8.2 `checkSummaryConfirmationEvidence`) の受領証。
-                    // 試行の床 (開始・差し戻し・ジャンプ) で消える。
+                    // 立つのは `Looks correct` のときだけで、`Request changes` は先の確認も
+                    // 取り消す。試行の床 (開始・差し戻し・ジャンプ) でも消える。受理側は
+                    // 2 択以外を拒否するので、読めない綴りは確認済みへ倒さない。
+                    let choice = super::SummaryChoice::parse(event.details())
+                        .unwrap_or(super::SummaryChoice::RequestChanges);
                     if let Some(stage) = StageSlug::parse(event.stage())
                         .ok()
                         .and_then(|slug| self.slots.position_of(&slug))
                     {
-                        self.slots.confirm_summary(stage)?;
+                        self.slots.record_summary_choice(stage, choice)?;
                     }
                 }
                 super::AnswerDisposition::ApprovalGateReportOwned => {}
@@ -3829,6 +3833,9 @@ mod tests {
         IntentExecutionEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0002").unwrap()
     }
     use crate::orchestration::{
+        AnswerId, AnswerRequest, DecisionPrompt, SummaryChoice, SummaryEvidence,
+    };
+    use crate::orchestration::{
         ArtifactPaths, ReviewClosures, StageEntries, StageIndexSet, StageSlot, StageSlots,
         StageSlotsError, StageSlugSet, TransitionSteps,
     };
@@ -4703,7 +4710,7 @@ mod tests {
         // 確認を受領すれば開く。
         run.execution
             .slots
-            .confirm_summary(at(&run, 1))
+            .record_summary_choice(at(&run, 1), SummaryChoice::LooksCorrect)
             .expect("位置は在る");
         assert!(open(&run, summary.clone()).is_ok());
         // 差し戻し（試行の床）で受領は消える。
@@ -4712,6 +4719,62 @@ mod tests {
             .reset_attempt(at(&run, 1))
             .expect("位置は在る");
         assert!(open(&run, summary).is_err());
+    }
+
+    /// 内容確認を提示し、人間の返答を受けて `choice` を記録する（`aidlc-log.ts decision` →
+    /// フック → `answer --checkpoint summary-confirmation`）。
+    fn answer_summary(run: &mut Run, choice: &str) {
+        let stage = slug(1);
+        run.execution
+            .record_decision(
+                DecisionPrompt::new(stage.as_str(), "Does this all look correct?")
+                    .with_summary_file("q.md"),
+                occurred(),
+            )
+            .expect("提示を記録できる");
+        run.execution
+            .observe_prompt("s", choice, false, occurred())
+            .expect("返答を観測できる");
+        run.execution
+            .record_answer(
+                AnswerId::generate(),
+                &AnswerRequest::new(stage.as_str(), choice, true)
+                    .with_summary(SummaryEvidence::new("q.md", "f".repeat(64)).expect("64 桁")),
+                occurred(),
+            )
+            .expect("2 択のどちらも受領として記録される");
+    }
+
+    /// 2.8.2 — `Request changes` の受領は確認ではない。承認待ちは開かない。
+    #[test]
+    fn a_request_changes_summary_answer_does_not_open_the_gate() {
+        let summary = StageSlugSet::new([slug(1)]);
+        let mut run = at_gate_with(InProgress);
+        answer_summary(&mut run, "Request changes");
+        assert!(matches!(
+            run.report_dispatch(&request(Verdict::AwaitingApproval).with_summary_stages(summary)),
+            Err(ReportRefusal::SummaryConfirmationMissing { stage }) if stage == slug(1)
+        ));
+    }
+
+    /// 2.8.2 — 最新の受領が勝つ。`Looks correct` の後に `Request changes` と答え直せば、
+    /// 先の確認は取り消され、承認待ちは開かない。
+    #[test]
+    fn a_later_request_changes_withdraws_an_earlier_summary_confirmation() {
+        let summary = StageSlugSet::new([slug(1)]);
+        let open = |run: &Run| {
+            run.report_dispatch(
+                &request(Verdict::AwaitingApproval).with_summary_stages(summary.clone()),
+            )
+        };
+        let mut run = at_gate_with(InProgress);
+        answer_summary(&mut run, "Looks correct");
+        assert!(open(&run).is_ok(), "確認済みなら開く");
+        answer_summary(&mut run, "Request changes");
+        assert!(matches!(
+            open(&run),
+            Err(ReportRefusal::SummaryConfirmationMissing { stage }) if stage == slug(1)
+        ));
     }
 
     /// 段 13 — ゲート付き未完了・gated モード・ガード有効で `--user-input` が空なら拒む。
