@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "note": "U4 (selfhost-stage1) のホスト識別と切替準備 (契約 C8)。ホスト = 検証済みの安定版、ターゲット = 開発版である。この資料は準備の形を固定するものであって、実地スモーク・自己診断・CI 全ジョブ成功・切替の達成記録ではない。",
+  "note": "U4 (selfhost-stage1) のホスト識別と切替準備 (契約 C8)。ホスト = 検証済みの安定版、ターゲット = 開発版である。この資料の準備の部分（識別の手順・接続定義・切替手順の記述）は、実地スモーク・自己診断・CI 全ジョブ成功・切替の達成記録ではない。切替の前提の達成は、切替工程で実測した値だけを switch_preconditions の各 evidence に記録する。",
   "roles": {
     "host": "作業を進める実体。切替条件 3 つを満たした版に安定タグを付け、その実体をホストとする。",
     "target": "開発中の実体。検証前の版であり、安定版とは呼ばない。"
@@ -42,15 +42,23 @@
       "status": "met",
       "evidence": {
         "command": "cargo build --release -p aidlc && target/release/aidlc --doctor",
-        "ran_at": "2026-09-19T07:32:06Z",
-        "result": "28 passed, 0 failed、終了コード 0 (検査行 28 行はすべて ✓、✗ の行 0 件、stdout 全体 32 行、stderr 0 バイト)。測定した実体の指紋は sha256 69ae73b4c48c09c860d2c35036f0e09307036e8fa1dc58b6af95c3ab2944a8ad。この指紋は --doctor を走らせた実体そのものから採った: cargo build --release -p aidlc (終了コード 0) の直後に shasum -a 256 target/release/aidlc で採り、続けて同じ実体を起動した。ビルドは再コンパイルを起こさず Finished `release` profile in 0.17s で終えたので、この実体は現在のビルド入力のものである。実行されなかった検査 ID は D2.c / D4.a / D4.b / D4.c / D5.a / D5.b の 6 件で、いずれも合格に数えていない (上の 28 件は実際に出力された行だけを数えた)。D2.c は hook_checks.rs:62-67 が wiring.managed_hooks_only() のときだけ失敗行を足す検査で、組織ポリシーによるフック制限が掛かっていないため行が出ない。D4 / D5 は doctor_checks.rs:46 が observation.record() を Some のときだけ評価するため、作業記録の無いワークスペースでは非適用として行が出ない。採取条件: イベントストアだけが残っている状態で実行すると record.rs:22 の None 条件が崩れて D4.b / D4.c / D5.b が failed になり終了コードが 1 になるため、この測定は記録もイベントストアも無い状態で採った。具体的には gitignore 済みの aidlc/spaces/default/intents/.aidlc-store.sqlite を測定のあいだだけ作業ツリー外へ退避し、測定後に元の位置とサイズ (1331200 バイト) へ戻した。--doctor は新しいストアを作らなかったことを測定後に確認している。"
+        "ran_at": "2026-09-23T18:37:27Z",
+        "commit": "0e7c65206e4dd112dcbdcb708c40182ad445a885",
+        "sha256": "a433e1d9915f062d743f6452283a5a6b194578b131880ba49148a73223269608",
+        "result": "28 passed, 0 failed、終了コード 0（検査行 28 行はすべて ✓、✗ の行 0 件、stdout 全体 32 行、stderr 0 バイト）。測定したのは main の先端 0e7c6520（PR #142〜#147 をすべて含む）の実体で、指紋は cargo build --release -p aidlc（終了コード 0）の直後に shasum -a 256 target/release/aidlc で採り、同じ実体を起動した。測定の後にも同じ指紋であることを確かめた。採取条件は 2026-09-19 の測定と同じく、記録もイベントストアも無い状態である。main を detached で取り出した worktree で測り、aidlc/spaces/default/intents/ 自体が存在しなかった（退避は不要）。--doctor は新しいストアや記録を作らなかったことを測定後に確認した。"
       },
       "how": "同じ実体で target/release/aidlc --doctor を本リポジトリで実行し、終了コード 0 と失敗 0 を採る。"
     },
     {
       "id": "all_ci_jobs_pass",
-      "status": "unmet",
-      "evidence": null,
+      "status": "met",
+      "evidence": {
+        "commit": "0e7c65206e4dd112dcbdcb708c40182ad445a885",
+        "run": "https://github.com/amadeus-dlc/amadeus-ng/actions/runs/35900058840",
+        "event": "merge_group",
+        "checked_at": "2026-09-23T18:37:00Z",
+        "result": "conclusion success。ジョブは check・coverage・quint・audit（cargo audit）・aidlc-distribution・CI Success がすべて success。CI Review Thread Gate は skipped で、成功に数えていない。このジョブは .github/workflows/ci.yml で if: github.event_name == 'pull_request' の条件を持ち、merge_group では非適用である。同じ変更の最終の PR（#147、先端 28ba1b76）の pull_request の run https://github.com/amadeus-dlc/amadeus-ng/actions/runs/35896448565 では、このゲートを含む全ジョブが success だった。"
+      },
       "how": "対象コミットの CI 全ジョブの成功を確認する。cargo audit も今回の成功条件に含める。非適用になった検査は成功へ書き換えず、適用理由を記録する。"
     }
   ],

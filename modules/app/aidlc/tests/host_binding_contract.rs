@@ -123,10 +123,11 @@ fn an_unverified_side_carries_no_tag_and_is_never_called_stable() {
 /// 切替の前提条件は C8 の 3 つで、済みと書けるのはローカルで実測した自己診断だけである。
 ///
 /// 自己診断はこの工程で実際に走らせるので、実行したコマンド・日時・結果の要約を伴って
-/// `met` になる。実地スモークと CI 全ジョブは人が別途行うため `unmet` のまま残る —
-/// ローカル検証を CI 全ジョブ成功へ読み替えない。
+/// `met` になる。CI 全ジョブは、対象コミットの CI の run そのもの（URL・イベント・コミット・
+/// 結果）を証拠に名指したときだけ `met` にできる — ローカル検証を CI 全ジョブ成功へ読み
+/// 替えない。実地スモークは人が行うため `unmet` のまま残る。
 #[test]
-fn only_the_locally_measured_doctor_precondition_is_marked_met() {
+fn only_measured_preconditions_are_marked_met() {
     let manifest = manifest();
     let preconditions = field(&manifest, "switch_preconditions")
         .as_array()
@@ -171,6 +172,28 @@ fn only_the_locally_measured_doctor_precondition_is_marked_met() {
             assert!(
                 !text(evidence, "ran_at").is_empty(),
                 "{id}: 証拠に実行日時が無い"
+            );
+            assert!(
+                !text(evidence, "result").is_empty(),
+                "{id}: 証拠に結果の要約が無い"
+            );
+            continue;
+        }
+        if id == "all_ci_jobs_pass" && text(entry, "status") == "met" {
+            let evidence = field(entry, "evidence");
+            assert!(
+                text(evidence, "run")
+                    .starts_with("https://github.com/amadeus-dlc/amadeus-ng/actions/runs/"),
+                "{id}: 証拠が CI の run を名指していない — ローカル検証を読み替えていないか"
+            );
+            assert!(
+                !text(evidence, "event").is_empty(),
+                "{id}: 証拠に CI のイベントが無い"
+            );
+            assert_eq!(
+                text(evidence, "commit").len(),
+                40,
+                "{id}: 証拠が対象コミットを完全な SHA で名指していない"
             );
             assert!(
                 !text(evidence, "result").is_empty(),
@@ -294,7 +317,8 @@ fn preparation_is_never_recorded_as_achievement() {
             "達成を先取りした記述がある: {claim}"
         );
     }
-    // 済みと書けるのは、この工程でローカルに実測した自己診断だけである。
+    // 済みと書けるのは、実測した自己診断と CI 全ジョブだけである。人が行う実地スモークは
+    // この資料の上で達成と書かない。
     let met: BTreeSet<String> = field(&manifest, "switch_preconditions")
         .as_array()
         .expect("switch_preconditions は配列")
@@ -302,12 +326,14 @@ fn preparation_is_never_recorded_as_achievement() {
         .filter(|entry| text(entry, "status") == "met")
         .map(|entry| text(entry, "id"))
         .collect();
-    assert_eq!(
-        met,
-        ["doctor_pass".to_string()]
-            .into_iter()
-            .collect::<BTreeSet<_>>(),
-        "ローカル検証だけで済ませられない前提まで達成と書いている"
+    assert!(
+        met.contains("doctor_pass"),
+        "実測した自己診断が済みになっていない"
+    );
+    assert!(
+        met.iter()
+            .all(|id| id == "doctor_pass" || id == "all_ci_jobs_pass"),
+        "実測で済ませられない前提まで達成と書いている: {met:?}"
     );
     assert_eq!(
         text(&manifest, "binding_selected"),
