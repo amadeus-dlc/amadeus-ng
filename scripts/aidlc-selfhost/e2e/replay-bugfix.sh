@@ -60,12 +60,40 @@ is_refusal() {
   jq -e 'type == "object" and (has("error") or .kind == "error" or (.kind == "ask" and .ask_type == "guard-recovery"))' "$LAST" >/dev/null 2>&1
 }
 
+# pretool <tool_name> <tool_input JSON> — Claude Code が工具の前に発火させる PreToolUse の
+# 保護フック（配布 .claude/settings.json の登録どおり）。指揮役の正当な操作なので、どれかが
+# 拒否（終了コード 2）したら失敗として数える。
+#
+# plan-approval-guard はここに含めない（専用の `guard` 段が承認の前後を確かめる）。配布
+# 2.8.2 のガードはライフサイクルの報告も生成と同じく承認の対象にし、code-generation の
+# 承認待ちを開いた後は自分の active directive を失って `report --result approved` まで
+# 止める（2026-09-23 に再生で観測）。その挙動は正解として使えない。
+PRETOOL_GUARDS="state-transition-guard reviewer-scope review-freeze"
+pretool() {
+  local tool="$1" input="$2" hook rc
+  for hook in $PRETOOL_GUARDS; do
+    jq -nc --arg cwd "$PWD" --arg s "$SESSION" --arg t "$tool" --argjson i "$input" \
+      '{session_id:$s,transcript_path:"/dev/null",cwd:$cwd,hook_event_name:"PreToolUse",tool_name:$t,tool_input:$i}' \
+      | aidlc engine hook "$hook" > "$LAST.hook" 2>&1; rc=$?
+    # 2 は拒否、それ以外の非ゼロはフック自体の失敗。どちらも正当な操作では起きてはならない。
+    if [ "$rc" -ne 0 ]; then
+      local why="refused"
+      [ "$rc" -eq 2 ] || why="exited $rc"
+      STEPS=$((STEPS + 1)); FAILED=$((FAILED + 1))
+      log "FAIL [pretool $hook $why] $tool $(printf '%s' "$input" | head -c 200)"
+      head -c 400 "$LAST.hook" >> "$LOG"; echo >> "$LOG"
+      echo "FAIL [pretool $hook $why] $tool" >&2
+    fi
+  done
+}
+
 # step <ok|refuse|any> <説明> -- <aidlc 引数...>   (any は記録だけして数えない)
 # aidlc を実行し、Claude Code が Bash の後に発火させる PostToolUse フックを続けて発火させる。
 step() {
   local expect="$1" desc="$2"; shift 3
   local rc verdict
   STEPS=$((STEPS + 1))
+  pretool Bash "$(jq -nc --arg c "aidlc $*" '{command:$c}')"
   aidlc "$@" > "$LAST" 2> "$LAST.err"; rc=$?
   cat "$LAST.err" >> "$LAST"
   if is_refusal "$rc"; then verdict=refuse; else verdict=ok; fi
@@ -98,21 +126,24 @@ hook_post_bash() {
     | aidlc engine hook rebuild-stage-graph >/dev/null 2>&1
 }
 
-# guard <ok|refuse> <説明> <PreToolUse の tool_name> <tool_input JSON>
-# PreToolUse の plan-approval-guard を発火させる。終了コード 2 が拒否（Claude Code の契約）。
-guard() {
-  local expect="$1" desc="$2" tool="$3" input="$4" rc verdict
+# hook_check <ok|refuse> <説明> <フック名> <PreToolUse の tool_name> <tool_input JSON>
+# PreToolUse の保護フックを 1 本発火させる。終了コード 2 が拒否（Claude Code の契約）。
+hook_check() {
+  local expect="$1" desc="$2" hook="$3" tool="$4" input="$5" rc verdict
   STEPS=$((STEPS + 1))
   jq -nc --arg cwd "$PWD" --arg s "$SESSION" --arg t "$tool" --argjson i "$input" \
     '{session_id:$s,transcript_path:"/dev/null",cwd:$cwd,hook_event_name:"PreToolUse",tool_name:$t,tool_input:$i}' \
-    | aidlc engine hook plan-approval-guard > "$LAST" 2>&1; rc=$?
+    | aidlc engine hook "$hook" > "$LAST" 2>&1; rc=$?
   if [ "$rc" -eq 2 ]; then verdict=refuse; else verdict=ok; fi
-  if [ "$verdict" = "$expect" ]; then log "PASS [$expect] $desc :: guard $tool"; else
-    FAILED=$((FAILED + 1)); log "FAIL [expected $expect, got $verdict (exit $rc)] $desc :: guard $tool"
+  if [ "$verdict" = "$expect" ]; then log "PASS [$expect] $desc :: $hook $tool"; else
+    FAILED=$((FAILED + 1)); log "FAIL [expected $expect, got $verdict (exit $rc)] $desc :: $hook $tool"
     echo "FAIL [expected $expect, got $verdict] $desc" >&2
   fi
   head -c 600 "$LAST" >> "$LOG"; echo >> "$LOG"
 }
+
+# guard <ok|refuse> <説明> <tool_name> <tool_input JSON> — plan-approval-guard の検査。
+guard() { hook_check "$1" "$2" plan-approval-guard "$3" "$4"; }
 
 # human <text> — 人間の発話。UserPromptSubmit の record-human-turn を発火させる。
 human() {
@@ -131,8 +162,14 @@ wrote() {
     | aidlc engine hook write-audit-log >/dev/null 2>>"$LOG"
 }
 
-# write <relpath> — 標準入力を書いて write フックを発火させる。
-write() { mkdir -p "$(dirname "$1")"; cat > "$1"; wrote "$1"; }
+# write <relpath> — 標準入力を書いて write フックを発火させる（書く前に PreToolUse）。
+# パイプの末尾で呼ぶとサブシェルで動き、pretool が数えた失敗が親へ戻らない。本文は
+# ヒアドキュメントかプロセス置換（`write <relpath> < <(printf ...)`）で渡すこと。
+write() {
+  local body; body="$(cat)"
+  pretool Write "$(jq -nc --arg f "$PWD/$1" --arg c "$body" '{file_path:$f,content:$c}')"
+  mkdir -p "$(dirname "$1")"; printf '%s\n' "$body" > "$1"; wrote "$1"
+}
 
 # advance <tag> — next を叩き、load-steering を continue で送り切って run-stage 等を得る。
 advance() {
@@ -226,20 +263,45 @@ learnings() {
   step ok "$st: 学びの返答を記録" -- engine log answer --stage "$st" --details "Nothing to add"
 }
 
+# stop_check <ok|block> <説明> — ターンの終わりに Stop フック（continue-workflow）を発火させる。
+# 出力が `"decision":"block"` なら、フックは指揮役にターンを終えさせず作業を続けさせる。
+stop_check() {
+  local expect="$1" desc="$2" verdict
+  STEPS=$((STEPS + 1))
+  jq -nc --arg cwd "$PWD" --arg s "$SESSION" \
+    '{session_id:$s,transcript_path:"/dev/null",cwd:$cwd,hook_event_name:"Stop",stop_hook_active:false}' \
+    | aidlc engine hook continue-workflow > "$LAST" 2>&1
+  if grep -q '"decision" *: *"block"' "$LAST"; then verdict=block; else verdict=ok; fi
+  if [ "$verdict" = "$expect" ]; then log "PASS [stop $expect] $desc"; else
+    FAILED=$((FAILED + 1)); log "FAIL [stop expected $expect, got $verdict] $desc"
+    echo "FAIL [stop expected $expect, got $verdict] $desc" >&2
+  fi
+  head -c 600 "$LAST" >> "$LOG"; echo >> "$LOG"
+}
+
 # 承認ゲート。人間の返答が無いうちの承認は拒否されなければならない。
 gate() {
   local st="$1"
   step ok "$st: 承認待ちを記録" -- engine orchestrate report --stage "$st" --result awaiting-approval
+  # 承認の質問を出してターンを終える場面 — 人間の返答を待つので止まってよい。
+  stop_check ok "$st: 承認待ちではターンを終えてよい"
   step refuse "$st: 人間の返答なしの承認は拒否" -- engine orchestrate report --stage "$st" --result approved --user-input "Approve"
   human "Approve"
   step ok "$st: 承認" -- engine orchestrate report --stage "$st" --result approved --user-input "Approve"
+  # 承認の後は次のステージへ進む。ここでターンを終えようとすれば、フックが続けさせる。
+  # 最終ステージの承認はワークフローの完了なので、止まってよい。
+  if [ "$st" = deployment-execution ]; then
+    stop_check ok "$st: ワークフロー完了の後はターンを終えてよい"
+  else
+    stop_check block "$st: 承認の直後にターンを終えるのは止める"
+  fi
 }
 
 # produces を仮の本文で埋める（questions ファイルは要約確認が書く）。
 fill_produces() {
   local f
   for f in $(cur '.produces[] | select(endswith("-questions.md") | not)'); do
-    printf '# %s\n\n仮の本文。\n\n## Sources\n\n- [desc]\n' "$(basename "$f")" | write "$f"
+    write "$f" < <(printf '# %s\n\n仮の本文。\n\n## Sources\n\n- [desc]\n' "$(basename "$f")")
   done
 }
 
@@ -257,7 +319,7 @@ advance reverse-engineering
 st=reverse-engineering; D="$R/inception/$st"
 diary_check $st
 fill_produces
-printf '# developer scan\n\n仮。\n' | write "$D/developer-scan.md"
+write "$D/developer-scan.md" < <(printf '# developer scan\n\n仮。\n')
 step refuse "$st: 順番外の link は拒否" -- engine log link --stage $st --link aidlc-architect-agent
 step ok "$st: developer link" -- engine log link --stage $st --link aidlc-developer-agent --artifact "$D/developer-scan.md"
 step ok "$st: architect link" -- engine log link --stage $st --link aidlc-architect-agent
@@ -272,8 +334,11 @@ check "$st: consumes が実在するパスに解決されている" \
   "jq -e '[.consumes[] | select(test(\"\\\\.(md|json)$\") | not)] | length == 0' \"$OUT/current.json\" >/dev/null"
 step refuse "$st: 要約確認の前の承認待ちは拒否" -- engine orchestrate report --stage $st --result awaiting-approval
 summary_confirm $st "$D/requirements-analysis-questions.md"
-printf '# 要件\n\n- FR-1: active intent が無いとき statusline は空文字でなく案内を出す\n\n## Sources\n\n- [desc]\n' | write "$D/requirements.md"
+write "$D/requirements.md" < <(printf '# 要件\n\n- FR-1: active intent が無いとき statusline は空文字でなく案内を出す\n\n## Sources\n\n- [desc]\n')
 review_pass $st "$(cur .reviewer)"
+# 終端の受領証の後で成果物を書き換えると受領証が無効になる（review-freeze が止める）。
+hook_check refuse "$st: 受領後の成果物の書換えは拒否" review-freeze Write \
+  "$(jq -nc --arg f "$PWD/$D/requirements.md" '{file_path:$f,content:"changed"}')"
 learnings $st
 gate $st
 
@@ -285,7 +350,7 @@ check "$st: gate が決定済み（bugfix は skeleton なし）" "[ \"\$(cur .g
 { printf '# Code Generation Plan\n\n'; aidlc engine testing-posture render
   printf '\n## Steps\n\n- [ ] Step 1: statusline を直す\n- [ ] Step 2: 回帰テストを書いて走らせる\n'; } > "$D/code-generation-plan.md"
 wrote "$D/code-generation-plan.md"
-printf '# Unit Test Instructions\n\n`cargo test -p aidlc --test statusline_contract`\n' | write "$D/unit-test-instructions.md"
+write "$D/unit-test-instructions.md" < <(printf '# Unit Test Instructions\n\n`cargo test -p aidlc --test statusline_contract`\n')
 SRC=modules/app/aidlc/src/wording.rs
 guard refuse "$st: 計画承認の前のソース書込は拒否" Write "$(jq -nc --arg f "$PWD/$SRC" '{file_path:$f,content:"x"}')"
 guard ok "$st: 記録ディレクトリ内の書込は承認前でも通す" Write "$(jq -nc --arg f "$PWD/$D/code-generation-plan.md" '{file_path:$f,content:"x"}')"
@@ -297,7 +362,7 @@ FP="$(cat "$LAST")"
 check "$st: 指紋が 2 行タグ（Approval Fingerprint / Planned Source）" \
   "grep -q '^\[Approval Fingerprint\]: sha256:' \"$LAST\" && grep -q '^\[Planned Source\]: ' \"$LAST\""
 Q="$D/code-generation-questions.md"
-printf '# Code Generation Questions\n\n## Plan Approval\n\nこの計画で進めてよいですか？\n\n%s\n\n- "Approve Plan" — proceed to code generation\n- "Request Changes" — revise the plan\n\n[Answer]:\n' "$FP" | write "$Q"
+write "$Q" < <(printf '# Code Generation Questions\n\n## Plan Approval\n\nこの計画で進めてよいですか？\n\n%s\n\n- "Approve Plan" — proceed to code generation\n- "Request Changes" — revise the plan\n\n[Answer]:\n' "$FP")
 step ok "$st: 計画承認の提示を記録" -- engine log decision --stage $st --checkpoint plan-approval --session "$SESSION" \
   --questions-file "$Q" --decision "Approve this exact Code Generation plan?" --options "Approve Plan,Request Changes" --stage-level
 human "Approve Plan"
@@ -312,9 +377,9 @@ guard ok "$st: 承認後のソース書込は通す" Write "$(jq -nc --arg f "$P
 printf '\n// statusline fix (replay)\n' >> "$SRC"; wrote "$SRC"
 guard ok "$st: ソースが変わった後の書込も通す（生成開始で承認が失効しない）" Edit "$(jq -nc --arg f "$PWD/$SRC" '{file_path:$f,old_string:"a",new_string:"b"}')"
 perl -pi -e 's/- \[ \] Step/- [x] Step/' "$D/code-generation-plan.md"; wrote "$D/code-generation-plan.md"
-printf '# Code Summary\n\n- %s を変更\n' "$SRC" | write "$D/code-summary.md"
-printf '{"stage":"code-generation","unit":null,"version":1,"writes":[{"path":"%s"}]}\n' "$SRC" | write "$D/source-manifest.json"
-printf '{"stage":"code-generation","upstream_ids":["FR-1"],"coverage":[{"id":"FR-1","status":"OK","target":"%s"}]}\n' "$SRC" | write "$D/traceability.json"
+write "$D/code-summary.md" < <(printf '# Code Summary\n\n- %s を変更\n' "$SRC")
+write "$D/source-manifest.json" < <(printf '{"stage":"code-generation","unit":null,"version":1,"writes":[{"path":"%s"}]}\n' "$SRC")
+write "$D/traceability.json" < <(printf '{"stage":"code-generation","upstream_ids":["FR-1"],"coverage":[{"id":"FR-1","status":"OK","target":"%s"}]}\n' "$SRC")
 review_pass $st "$(cur .reviewer)"
 learnings $st
 gate $st
