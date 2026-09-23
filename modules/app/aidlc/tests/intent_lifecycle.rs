@@ -4484,10 +4484,15 @@ async fn a_review_written_to_the_requested_draft_becomes_the_review_record() {
     let record_file: serde_json::Value =
         serde_json::from_slice(&fs::read(record.join(recorded)).expect("記録")).expect("JSON");
     assert_eq!(
-        record_file.get("verdict"),
-        Some(&serde_json::json!("READY"))
+        record_file
+            .get("verdict")
+            .and_then(serde_json::Value::as_str),
+        Some("READY")
     );
-    assert_eq!(record_file.get("body"), Some(&serde_json::json!(review)));
+    assert_eq!(
+        record_file.get("body").and_then(serde_json::Value::as_str),
+        Some(review.as_str())
+    );
     assert_eq!(
         record_file
             .get("findings")
