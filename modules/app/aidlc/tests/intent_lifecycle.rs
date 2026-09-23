@@ -492,6 +492,31 @@ impl Workspace {
 }
 
 async fn invoke(workspace: &Workspace, argv0: &str, args: &[&str]) -> aidlc::runtime::Completion {
+    // 承認・差し戻しの報告は人間の返答の後にしか来ない。実運用では UserPromptSubmit の
+    // フックが `HUMAN_TURN` を書くので、試験ではその 1 行を代役として先に書く
+    // （2.8.2 の承認ガード `humanActedSinceGate`）。ガードそのものは
+    // `invoke_without_human_reply` を使う試験が確かめる。
+    if argv0 == "aidlc-orchestrate"
+        && args.first() == Some(&"report")
+        && args
+            .windows(2)
+            .any(|pair| matches!(pair, ["--result", "completed" | "approved" | "rejected"]))
+        && !args.contains(&"--single")
+        && workspace
+            .record_dir()
+            .is_some_and(|record| record.join("audit").is_dir())
+    {
+        workspace.append_human_turn(&Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    }
+    invoke_without_human_reply(workspace, argv0, args).await
+}
+
+/// 人間の返答を代役で書かずに公開入口を呼ぶ（承認ガードを確かめる試験のため）。
+async fn invoke_without_human_reply(
+    workspace: &Workspace,
+    argv0: &str,
+    args: &[&str],
+) -> aidlc::runtime::Completion {
     let mut owned: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
     owned.push("--project-dir".to_string());
     owned.push(workspace.project_dir().to_string_lossy().into_owned());
@@ -1124,7 +1149,7 @@ async fn report_starts_workspace_stage_with_the_report_time_source_baseline() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -1173,7 +1198,7 @@ async fn report_starts_workspace_stage_with_the_report_time_source_baseline() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -1240,7 +1265,7 @@ async fn completed_validation_keeps_the_observed_artifact_bytes_after_files_chan
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -1310,7 +1335,7 @@ async fn reporting_a_verdict_commits_and_projects() {
             "--result",
             "completed",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -1460,7 +1485,7 @@ async fn parking_a_completed_workflow_is_refused_verbatim() {
                 "--result",
                 "completed",
                 "--user-input",
-                "A",
+                "Approve",
                 "--stage",
                 stage,
             ],
@@ -2128,7 +2153,7 @@ async fn a_stage_outside_the_plan_is_refused_with_the_same_wording() {
             "--result",
             "completed",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "not-in-the-plan",
         ],
@@ -2161,7 +2186,7 @@ async fn reporting_a_stage_that_is_not_the_cursor_is_rejected() {
             "--result",
             "completed",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "contract-design",
         ],
@@ -2469,7 +2494,7 @@ async fn a_gated_stage_walks_through_rejection_and_revision_before_it_is_approve
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "approved", "--user-input", "A"],
+        &["report", "--result", "approved", "--user-input", "Approve"],
     )
     .await;
     assert_eq!(completion.code(), 0, "{completion:?}");
@@ -2647,6 +2672,96 @@ async fn the_human_presence_guard_refuses_a_blank_approval() {
     );
 }
 
+/// 2.8.2 の承認ガード — 返答は提示した選択肢そのもので、直近の解決より後に人間の返答が
+/// 要る（`aidlc-state.ts` `approvalPreconditions` / `handleReject`）。
+#[tokio::test]
+async fn approval_and_rejection_need_the_offered_choice_and_a_fresh_human_reply() {
+    let workspace = Workspace::create();
+    invoke(
+        &workspace,
+        "aidlc-utility",
+        &["intent-create", "--scope", "classic", "--label", "demo"],
+    )
+    .await;
+    invoke(&workspace, "aidlc-orchestrate", &["next"]).await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "awaiting-approval"],
+    )
+    .await;
+    // 誕生を頼んだ人間の turn はある。直近の解決はまだ無いが、選択肢でない返答は断る。
+    workspace.append_human_turn(&Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string());
+    let (kind, message) = report_directive(
+        &workspace,
+        &["--result", "approved", "--user-input", "looks good"],
+    )
+    .await;
+    assert_eq!(kind, "error");
+    assert_eq!(
+        message,
+        "Cannot approve \"domain-design\" because the reply \"looks good\" did not match one of the offered choices. Present the original question with every choice again and wait for the human to pick one."
+    );
+
+    // 差し戻しを記録すると、その人間の turn は消費される。次の差し戻しにも新しい返答が要る。
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "Tighten it.",
+        ],
+    )
+    .await;
+    invoke(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "revised"],
+    )
+    .await;
+    let refused = invoke_without_human_reply(
+        &workspace,
+        "aidlc-orchestrate",
+        &[
+            "report",
+            "--result",
+            "rejected",
+            "--user-input",
+            "Request Changes",
+            "--reason",
+            "Again.",
+        ],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&refused), "message"),
+        "Cannot request changes for \"domain-design\" because no new human reply has been received for this approval question. Wait for the human to type Request Changes and their feedback, then retry."
+    );
+    let refused = invoke_without_human_reply(
+        &workspace,
+        "aidlc-orchestrate",
+        &["report", "--result", "approved", "--user-input", "Approve"],
+    )
+    .await;
+    assert_eq!(
+        string_of(&line_of(&refused), "message"),
+        "Cannot approve \"domain-design\" because no new human reply has been received for this approval question. Wait for the human to type their choice, then retry the approval."
+    );
+
+    // 人間が返答すれば通る（同じ秒でも、台帳で解決の後に並ぶ turn は新しい返答である）。
+    let (kind, _) = report_directive(
+        &workspace,
+        &["--result", "approved", "--user-input", "Approve"],
+    )
+    .await;
+    assert_eq!(kind, "done");
+}
+
 /// forward 表 — `[-]` のゲートは明示 `--stage` を要し、名乗れば 2 段でコミットする。
 #[tokio::test]
 async fn approving_an_unopened_gate_needs_the_explicit_stage_and_then_recovers_it() {
@@ -2661,7 +2776,7 @@ async fn approving_an_unopened_gate_needs_the_explicit_stage_and_then_recovers_i
     let completion = invoke(
         &workspace,
         "aidlc-orchestrate",
-        &["report", "--result", "approved", "--user-input", "A"],
+        &["report", "--result", "approved", "--user-input", "Approve"],
     )
     .await;
     assert_eq!(
@@ -2679,7 +2794,7 @@ so the engine cannot mistake a freshly advanced Current Stage for the completed 
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -2710,7 +2825,7 @@ async fn the_forward_table_refuses_a_pending_stage_and_folds_a_stale_re_report()
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "contract-design",
         ],
@@ -2730,7 +2845,7 @@ async fn the_forward_table_refuses_a_pending_stage_and_folds_a_stale_re_report()
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -2744,7 +2859,7 @@ async fn the_forward_table_refuses_a_pending_stage_and_folds_a_stale_re_report()
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -3247,7 +3362,7 @@ async fn the_skeleton_gate_round_trip_turns_unresolved_into_a_determined_gate() 
             "--stage",
             "domain-design",
             "--user-input",
-            "approve",
+            "Approve",
         ],
     )
     .await;
@@ -3751,7 +3866,7 @@ async fn a_restoration_failure_prevents_the_stance_from_being_recorded() {
             "--stage",
             "domain-design",
             "--user-input",
-            "approve",
+            "Approve",
         ],
     )
     .await;
@@ -3830,7 +3945,7 @@ async fn completing_the_last_gate_projects_the_workflow_completion_and_folds_a_r
                 "--result",
                 "approved",
                 "--user-input",
-                "A",
+                "Approve",
                 "--stage",
                 stage,
             ],
@@ -3870,7 +3985,7 @@ async fn completing_the_last_gate_projects_the_workflow_completion_and_folds_a_r
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "contract-design",
         ],
@@ -4073,7 +4188,7 @@ async fn a_revising_stage_cannot_be_reported_as_a_forward_completion() {
             "--result",
             "approved",
             "--user-input",
-            "A",
+            "Approve",
             "--stage",
             "domain-design",
         ],
@@ -4247,7 +4362,7 @@ async fn the_review_round_trip_lets_the_gate_be_approved_and_records_both_rows()
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4293,7 +4408,7 @@ async fn approving_a_reviewer_bearing_stage_without_a_receipt_is_refused_verbati
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4334,7 +4449,7 @@ async fn an_adversarial_not_ready_only_becomes_terminal_at_the_iteration_cap() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4350,7 +4465,7 @@ async fn an_adversarial_not_ready_only_becomes_terminal_at_the_iteration_cap() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4378,7 +4493,7 @@ async fn an_advisory_pass_is_terminal_at_the_first_verdict() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4423,7 +4538,7 @@ async fn a_scope_cap_of_none_waives_the_receipt_entirely() {
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4864,7 +4979,7 @@ async fn a_gate_rejection_resets_the_attempt_and_the_receipt_must_be_recorded_ag
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -4881,7 +4996,7 @@ async fn a_gate_rejection_resets_the_attempt_and_the_receipt_must_be_recorded_ag
             "--stage",
             "domain-design",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5128,7 +5243,7 @@ async fn the_promotion_writes_the_memory_layer_and_opens_the_gate() {
             "--stage",
             "practices-discovery",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5148,7 +5263,7 @@ async fn approving_practices_discovery_without_a_promotion_is_refused_verbatim()
             "--stage",
             "practices-discovery",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5186,7 +5301,7 @@ async fn a_gate_rejection_floors_the_receipt_and_the_promotion_must_be_replayed(
             "--stage",
             "practices-discovery",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5202,7 +5317,7 @@ async fn a_gate_rejection_floors_the_receipt_and_the_promotion_must_be_replayed(
             "--stage",
             "practices-discovery",
             "--user-input",
-            "A",
+            "Approve",
         ],
     )
     .await;
@@ -5703,7 +5818,7 @@ async fn a_human_turn_older_than_the_last_gate_resolution_is_refused() {
             "--stage",
             "domain-design",
             "--user-input",
-            "looks good",
+            "Approve",
         ],
     )
     .await;

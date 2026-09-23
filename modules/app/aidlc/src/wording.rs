@@ -831,6 +831,52 @@ pub fn human_presence_required(result: &str, stage: &str) -> String {
     )
 }
 
+/// 承認の返答が提示した選択肢と一致しない (2.8.2 `aidlc-state.ts` `approvalPreconditions` 逐語)。
+///
+/// 返答の表示は 2.8.2 `formatReceivedReply` と同じ — 空白を畳み、空なら `(empty)`、
+/// 長ければ 80 文字で切り、JSON 文字列として引用する。
+#[must_use]
+pub fn approval_choice_unmatched(stage: &str, reply: &str) -> String {
+    const LIMIT: usize = 80;
+    let normalized = reply.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = if normalized.is_empty() {
+        "(empty)".to_string()
+    } else {
+        normalized
+    };
+    let shown = if normalized.chars().count() <= LIMIT {
+        normalized
+    } else {
+        format!(
+            "{}...",
+            normalized.chars().take(LIMIT - 3).collect::<String>()
+        )
+    };
+    let quoted = core_infrastructure::canon_json::serialize(
+        &core_infrastructure::canon_json::JsonValue::String(shown),
+        core_infrastructure::canon_json::SerializationProfile::ContractCompact,
+    );
+    format!(
+        "Cannot approve \"{stage}\" because the reply {quoted} did not match one of the offered choices. Present the original question with every choice again and wait for the human to pick one."
+    )
+}
+
+/// 承認にゲート以降の人間の返答が無い (2.8.2 `aidlc-state.ts` `approvalPreconditions` 逐語)。
+#[must_use]
+pub fn approval_without_human_reply(stage: &str) -> String {
+    format!(
+        "Cannot approve \"{stage}\" because no new human reply has been received for this approval question. Wait for the human to type their choice, then retry the approval."
+    )
+}
+
+/// 差し戻しにゲート以降の人間の返答が無い (2.8.2 `aidlc-state.ts` `handleReject` 逐語)。
+#[must_use]
+pub fn rejection_without_human_reply(stage: &str) -> String {
+    format!(
+        "Cannot request changes for \"{stage}\" because no new human reply has been received for this approval question. Wait for the human to type Request Changes and their feedback, then retry."
+    )
+}
+
 /// forward 表 — `[S]` / `[R]` は前進の完了ではない (upstream `:5815` 逐語)。
 #[must_use]
 pub fn forward_commits_completions_only(stage: &str, state: &str) -> String {

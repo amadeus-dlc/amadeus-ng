@@ -88,6 +88,21 @@ pub enum ReportRefusal {
         /// 報告された結末。
         verdict: Verdict,
     },
+    /// 2.8.2 — 承認の返答が提示した選択肢（`Approve`、改訂 3 回以上なら `Accept as-is` も）
+    /// と一致しない。
+    ApprovalChoiceUnmatched {
+        /// 対象ステージ。
+        stage: StageSlug,
+        /// 受け取った返答（逐語）。
+        reply: String,
+    },
+    /// 2.8.2 — 直近のゲート解決より後に人間の turn が無い（`humanActedSinceGate`）。
+    HumanReplyMissing {
+        /// 対象ステージ。
+        stage: StageSlug,
+        /// 報告された結末（承認か差し戻しか）。
+        verdict: Verdict,
+    },
     /// forward 表 — `[S]` / `[R]` は前進の完了ではない。
     ForwardCommitsCompletionsOnly {
         /// 対象ステージ。
@@ -157,6 +172,16 @@ impl fmt::Display for ReportRefusal {
             ReportRefusal::HumanPresence { stage, verdict } => write!(
                 f,
                 "human presence required: {} for {verdict:?}",
+                stage.as_str()
+            ),
+            ReportRefusal::ApprovalChoiceUnmatched { stage, reply } => write!(
+                f,
+                "approval choice unmatched: {} replied {reply:?}",
+                stage.as_str()
+            ),
+            ReportRefusal::HumanReplyMissing { stage, verdict } => write!(
+                f,
+                "no human reply since the gate: {} for {verdict:?}",
                 stage.as_str()
             ),
             ReportRefusal::ForwardCommitsCompletionsOnly { stage, actual } => write!(

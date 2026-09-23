@@ -26,7 +26,19 @@ use super::ordered_audit_events::OrderedAuditEvents;
 pub struct HumanTurns {
     latest: Option<DateTime<Utc>>,
     tracked: bool,
+    follows_resolution: bool,
 }
+
+/// 人間の返答を消費する監査行（2.8.2 `GATE_RESOLUTION_EVENTS`）。`AUTONOMY_MODE_SET` は
+/// Mode が autonomous のときだけ数えるので、行の欄を読まないここでは扱わない（集約の時刻が
+/// 持つ）。
+const RESOLUTION_EVENTS: [EventType; 5] = [
+    EventType::GateApproved,
+    EventType::GateRejected,
+    EventType::QuestionAnswered,
+    EventType::SummaryConfirmationRecorded,
+    EventType::PlanApprovalRecorded,
+];
 
 impl Default for HumanTurns {
     fn default() -> Self {
@@ -47,18 +59,42 @@ impl HumanTurns {
     #[must_use]
     pub fn find_in(buffer: &str) -> HumanTurns {
         let events = OrderedAuditEvents::find_in(buffer);
-        let (latest, tracked) = events.fold_left((None, false), |(latest, tracked), record| {
-            let latest = if record.event() == EventType::HumanTurn {
-                latest.max(record.instant())
-            } else {
-                latest
-            };
-            (
-                latest,
-                tracked || record.event().category() != EventCategory::Documents,
-            )
-        });
-        HumanTurns { latest, tracked }
+        let (latest, tracked, follows_resolution) =
+            events.fold_left((None, false, true), |(latest, tracked, follows), record| {
+                let human = record.event() == EventType::HumanTurn;
+                let latest = if human {
+                    latest.max(record.instant())
+                } else {
+                    latest
+                };
+                let follows = if human {
+                    true
+                } else if RESOLUTION_EVENTS.contains(&record.event()) {
+                    false
+                } else {
+                    follows
+                };
+                (
+                    latest,
+                    tracked || record.event().category() != EventCategory::Documents,
+                    follows,
+                )
+            });
+        HumanTurns {
+            latest,
+            tracked,
+            follows_resolution,
+        }
+    }
+
+    /// 台帳の順序で、最後の返答消費行より後に `HUMAN_TURN` があるか。
+    ///
+    /// 同じ秒に並んだ turn と解決の前後を決める材料である。2.8.2 は同じシャード内の追記
+    /// 位置でタイを破る（`humanActedSinceGate`）。ここでは順序規則を通した並び（同秒は
+    /// 連結バッファ上の位置順）で同じ判断をする。
+    #[must_use]
+    pub const fn follows_last_resolution(&self) -> bool {
+        self.follows_resolution
     }
 
     /// 最新の `HUMAN_TURN` の発生時刻（1 つも読めなければ `None`）。

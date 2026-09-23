@@ -23,6 +23,7 @@ pub struct ReportRequest {
     user_input: Option<String>,
     reason: Option<String>,
     human_presence_guard: bool,
+    turns: crate::workspace::HumanTurns,
 }
 
 impl ReportRequest {
@@ -86,7 +87,7 @@ impl ReportRequest {
     /// `--user-input`、`reason` は `--reason`、`human_presence_guard` は環境変数
     /// `AIDLC_SKIP_HUMAN_PRESENCE_GUARD` が `"1"` **でない**こと (= ガードが効く) である。
     #[must_use]
-    pub const fn new(
+    pub fn new(
         verdict: Verdict,
         stage: Option<StageSlug>,
         user_input: Option<String>,
@@ -104,7 +105,19 @@ impl ReportRequest {
             user_input,
             reason,
             human_presence_guard,
+            turns: crate::workspace::HumanTurns::default(),
         }
+    }
+
+    /// 監査台帳から読んだ人間の turn を伴う要求（承認・差し戻しの human presence の材料 —
+    /// 2.8.2 `humanActedSinceGate`）。
+    #[must_use]
+    pub const fn with_human_turns(mut self, turns: crate::workspace::HumanTurns) -> Self {
+        self.turns = turns;
+        self
+    }
+    pub(super) const fn turns(&self) -> &crate::workspace::HumanTurns {
+        &self.turns
     }
 
     /// 楽観競合の再試行を、最初に判断した対象へ固定する。
@@ -120,6 +133,7 @@ impl ReportRequest {
         .with_pipeline_observation(self.pipeline_handoff.clone(), self.pipeline_disabled)
         .with_validation(self.validation.clone())
         .with_source_baseline(self.source_baseline.clone(), self.workspace_stages.clone())
+        .with_human_turns(self.turns.clone())
     }
 
     /// 報告された結末の分類。

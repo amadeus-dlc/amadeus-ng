@@ -596,7 +596,9 @@ async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
             .ok()
             .as_deref()
             == Some("1"),
-    );
+    )
+    // 承認・差し戻しの human presence の外部材料（判断は集約 — set-autonomy と同じ形）。
+    .with_human_turns(HumanTurns::find_in(&audit_ledger(layout)));
     let (
         Ok(intent_execution_repository),
         Ok(intent_repository),
@@ -1150,6 +1152,16 @@ fn report_refusal(raw: &str, refusal: &ReportRefusal) -> String {
         }
         ReportRefusal::HumanPresence { stage, .. } => {
             wording::human_presence_required(raw, stage.as_str())
+        }
+        ReportRefusal::ApprovalChoiceUnmatched { stage, reply } => {
+            wording::approval_choice_unmatched(stage.as_str(), reply)
+        }
+        ReportRefusal::HumanReplyMissing { stage, verdict } => {
+            if *verdict == Verdict::Rejected {
+                wording::rejection_without_human_reply(stage.as_str())
+            } else {
+                wording::approval_without_human_reply(stage.as_str())
+            }
         }
         ReportRefusal::ForwardCommitsCompletionsOnly { stage, actual } => {
             wording::forward_commits_completions_only(stage.as_str(), actual.spelling())

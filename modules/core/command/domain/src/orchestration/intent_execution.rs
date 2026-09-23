@@ -2124,8 +2124,10 @@ impl IntentExecution {
         let Some(resolution) = self.last_gate_resolution_at else {
             return true;
         };
-        // `turn` は秒精度なので、解決時刻も秒へ落として比べる (等しければ `false`)。
-        turn.timestamp() > resolution.timestamp()
+        // `turn` は秒精度なので、解決時刻も秒へ落として比べる。同じ秒なら台帳の並びで
+        // 前後を決める (2.8.2 の同一シャード内の位置によるタイ破り)。
+        let (turn, resolution) = (turn.timestamp(), resolution.timestamp());
+        turn > resolution || (turn == resolution && turns.follows_last_resolution())
     }
 
     /// 自律モードを切り替える — `AutonomyModeSet` (BR1.8)。
@@ -2637,14 +2639,25 @@ impl IntentExecution {
                 }
                 self.active_directive = Some(event.directive().clone());
             }
-            IntentExecutionEvent::PlanAnswerLogged(event) => self
-                .interactions
-                .record_plan_answer(event.operation_id().clone()),
+            // 人間の返答を記録した行はゲート解決でもある — その返答の turn を消費する
+            // (2.8.2 `GATE_RESOLUTION_EVENTS` の `QUESTION_ANSWERED` /
+            // `SUMMARY_CONFIRMATION_RECORDED` / `PLAN_APPROVAL_RECORDED`)。消費しないと、
+            // 質問への 1 回の返答で続くゲートの承認まで通ってしまう。
+            IntentExecutionEvent::PlanAnswerLogged(event) => {
+                self.interactions
+                    .record_plan_answer(event.operation_id().clone());
+                self.last_gate_resolution_at = Some(occurred_at);
+            }
             IntentExecutionEvent::AnswerRecorded(event) => match event.disposition() {
-                super::AnswerDisposition::Recorded => self.interactions.consume(event.stage()),
-                super::AnswerDisposition::SummaryConfirmed(evidence) => self
-                    .interactions
-                    .consume_summary(event.stage(), evidence.questions_file()),
+                super::AnswerDisposition::Recorded => {
+                    self.interactions.consume(event.stage());
+                    self.last_gate_resolution_at = Some(occurred_at);
+                }
+                super::AnswerDisposition::SummaryConfirmed(evidence) => {
+                    self.interactions
+                        .consume_summary(event.stage(), evidence.questions_file());
+                    self.last_gate_resolution_at = Some(occurred_at);
+                }
                 super::AnswerDisposition::ApprovalGateReportOwned => {}
             },
             IntentExecutionEvent::CommandFailed(_) => {}
@@ -3090,9 +3103,7 @@ impl IntentExecution {
         match verdict {
             Verdict::Skipped => self.dispatch_skip(intent, request, target, slug, checkbox),
             Verdict::AwaitingApproval => Self::dispatch_gate_open(intent.scope(), slug, checkbox),
-            Verdict::Rejected => {
-                Self::dispatch_gate_reject(intent.scope(), request, slug, checkbox)
-            }
+            Verdict::Rejected => self.dispatch_gate_reject(intent.scope(), request, slug, checkbox),
             Verdict::Revised => Self::dispatch_gate_revise(intent.scope(), slug, checkbox),
             Verdict::Forward => {
                 self.dispatch_forward(intent.scope(), request, target, slug, checkbox, gated)
@@ -3383,7 +3394,11 @@ impl IntentExecution {
     }
 
     /// 段 10 — `rejected` (ピン `:5711-5728`)。
+    ///
+    /// 2.8.2 は差し戻しにも人間の新しい返答を要求する (`aidlc-state.ts` `handleReject` —
+    /// 差し戻しは advisory レビューの予算を戻す唯一のイベントなので、最も偽造されやすい)。
     fn dispatch_gate_reject(
+        &self,
         scope: &str,
         request: &ReportRequest,
         slug: StageSlug,
@@ -3398,6 +3413,15 @@ impl IntentExecution {
         }
         if request.feedback().is_none() {
             return Err(ReportRefusal::RejectRequiresFeedback { stage: slug });
+        }
+        if !self.autonomy.is_autonomous()
+            && request.human_presence_guard()
+            && !self.human_acted_since_gate(request.turns())
+        {
+            return Err(ReportRefusal::HumanReplyMissing {
+                stage: slug,
+                verdict: Verdict::Rejected,
+            });
         }
         Ok(ReportDecision::Commit {
             scope: scope.to_string(),
@@ -3468,6 +3492,7 @@ impl IntentExecution {
                 if request.stage().is_none() {
                     return Err(ReportRefusal::InProgressRequiresExplicitStage { stage: slug });
                 }
+                self.require_human_approval(request, target, &slug)?;
                 Ok(ReportDecision::Commit {
                     scope: scope.to_string(),
                     stage: slug,
@@ -3475,11 +3500,14 @@ impl IntentExecution {
                     steps: TransitionSteps::recovered_approval(),
                 })
             }
-            CheckboxState::AwaitingApproval if gated => Ok(ReportDecision::Commit {
-                scope: scope.to_string(),
-                stage: slug,
-                steps: TransitionSteps::single(TransitionStep::Approve),
-            }),
+            CheckboxState::AwaitingApproval if gated => {
+                self.require_human_approval(request, target, &slug)?;
+                Ok(ReportDecision::Commit {
+                    scope: scope.to_string(),
+                    stage: slug,
+                    steps: TransitionSteps::single(TransitionStep::Approve),
+                })
+            }
             // 非ゲートの着手済み — 誕生 = 初期化完了済み (b34) 以降は到達しない。
             CheckboxState::InProgress | CheckboxState::AwaitingApproval => {
                 Ok(ReportDecision::Commit {
@@ -3489,6 +3517,38 @@ impl IntentExecution {
                 })
             }
         }
+    }
+
+    /// 承認をコミットする直前の人間の決定の検査 (2.8.2 `aidlc-state.ts`
+    /// `approvalPreconditions` — orchestrate の前進表を通った後に `approve` が確かめる順)。
+    ///
+    /// 返答は提示した選択肢そのもの (`Approve`、改訂 3 回以上なら `Accept as-is` も) であり、
+    /// 直近のゲート解決より後に人間の turn がある。autonomous な実行とガードを切った要求は
+    /// 対象外である (段 13 と同じ抜け道)。
+    fn require_human_approval(
+        &self,
+        request: &ReportRequest,
+        target: StageIndex,
+        slug: &StageSlug,
+    ) -> Result<(), ReportRefusal> {
+        if self.autonomy.is_autonomous() || !request.human_presence_guard() {
+            return Ok(());
+        }
+        let reply = request.user_input().map(str::trim).unwrap_or_default();
+        let revisions = self.slots.at(target).map_or(0, StageSlot::revision_count);
+        if reply != "Approve" && !(reply == "Accept as-is" && revisions >= 3) {
+            return Err(ReportRefusal::ApprovalChoiceUnmatched {
+                stage: slug.clone(),
+                reply: request.user_input().unwrap_or_default().to_string(),
+            });
+        }
+        if !self.human_acted_since_gate(request.turns()) {
+            return Err(ReportRefusal::HumanReplyMissing {
+                stage: slug.clone(),
+                verdict: Verdict::Forward,
+            });
+        }
+        Ok(())
     }
 
     /// forward 表の `[x]` の行 (ピン `:5828-5861`)。
@@ -4222,7 +4282,7 @@ mod tests {
     }
 
     fn request(verdict: Verdict) -> ReportRequest {
-        ReportRequest::new(verdict, None, Some("A".to_string()), None, true)
+        ReportRequest::new(verdict, None, Some("Approve".to_string()), None, true)
     }
 
     fn steps_of(decision: &ReportDecision) -> Vec<&'static str> {
@@ -4361,8 +4421,13 @@ mod tests {
             Verdict::Rejected,
             Verdict::Revised,
         ] {
-            let named =
-                ReportRequest::new(verdict, Some(slug(0)), Some("A".to_string()), None, true);
+            let named = ReportRequest::new(
+                verdict,
+                Some(slug(0)),
+                Some("Approve".to_string()),
+                None,
+                true,
+            );
             assert!(
                 matches!(
                     run.report_dispatch(&named),
@@ -4381,7 +4446,7 @@ mod tests {
         let named = ReportRequest::new(
             Verdict::Forward,
             Some(StageSlug::parse("not-in-the-plan").unwrap()),
-            Some("A".to_string()),
+            Some("Approve".to_string()),
             None,
             true,
         );
@@ -4410,7 +4475,7 @@ mod tests {
         let named = ReportRequest::new(
             Verdict::Forward,
             Some(slug(1)),
-            Some("A".to_string()),
+            Some("Approve".to_string()),
             None,
             true,
         );
@@ -4452,7 +4517,7 @@ mod tests {
         let named = ReportRequest::new(
             Verdict::Forward,
             Some(slug(1)),
-            Some("A".to_string()),
+            Some("Approve".to_string()),
             None,
             true,
         );
@@ -4476,7 +4541,7 @@ mod tests {
         let named = ReportRequest::new(
             Verdict::Forward,
             Some(slug(1)),
-            Some("A".to_string()),
+            Some("Approve".to_string()),
             None,
             true,
         );
@@ -5930,9 +5995,10 @@ mod tests {
         );
     }
 
-    /// 解決との前後は秒精度で決まり、**同秒は fail-closed** である。
+    /// 解決との前後は秒精度で決まり、同秒は台帳の並びで決まる (2.8.2 の同一シャード内の
+    /// 位置によるタイ破り)。
     #[test]
-    fn the_comparison_is_by_second_and_a_tie_fails_closed() {
+    fn the_comparison_is_by_second_and_a_tie_is_broken_by_ledger_order() {
         let mut w = all_exec(3);
         w.approve_gate(None, occurred()).unwrap();
         assert_eq!(w.execution.last_gate_resolution_at(), Some(occurred()));
@@ -5948,9 +6014,18 @@ mod tests {
             "解決より前の turn は通らない"
         );
         assert!(
-            !w.execution
-                .human_acted_since_gate(&turns(&[(AT_TEXT, "HUMAN_TURN")])),
-            "同秒は『後だ』と証明できないので拒否側へ倒す"
+            w.execution.human_acted_since_gate(&turns(&[
+                (AT_TEXT, "GATE_APPROVED"),
+                (AT_TEXT, "HUMAN_TURN"),
+            ])),
+            "同秒でも、台帳で解決の後に並ぶ turn は通る"
+        );
+        assert!(
+            !w.execution.human_acted_since_gate(&turns(&[
+                (AT_TEXT, "HUMAN_TURN"),
+                (AT_TEXT, "QUESTION_ANSWERED"),
+            ])),
+            "同秒で、台帳で解決の前に並ぶ turn は消費済みである"
         );
     }
 
