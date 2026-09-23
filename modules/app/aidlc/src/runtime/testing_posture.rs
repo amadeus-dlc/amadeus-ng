@@ -160,11 +160,77 @@ async fn fingerprint(layout: &Layout, args: &[String]) -> Result<String, String>
 /// 指紋を計算し直す。こちらは評価に使った [`PlanSource`] の読取り結果をそのまま渡すので、
 /// その窓がそもそも開かない。
 async fn brief(layout: &Layout, args: &[String]) -> Result<String, String> {
+    let target = target(args, "brief")?;
+    let approval = approval(layout, &target).await?;
+    if !approval.ok {
+        return Err(crate::wording::worker_brief_refused(
+            approval.unit.as_deref(),
+            &approval.reason,
+        ));
+    }
+    let contract_hash = approval
+        .contract_hash
+        .as_deref()
+        .ok_or_else(|| "Projected Code Generation approval is incomplete".to_string())?;
+    let assembled = crate::wording::worker_brief(
+        approval.unit.as_deref(),
+        contract_hash,
+        &approval.plan,
+        &approval.instructions,
+    );
+    // 末尾改行は `main.rs` の `writeln!` が付す（upstream は改行を足さずに書く）。
+    Ok(assembled
+        .strip_suffix('\n')
+        .unwrap_or(&assembled)
+        .to_string())
+}
+
+/// ある承認対象の、いまの計画承認の評価（`brief` と plan-approval-guard が共有する）。
+pub(super) struct PlanApprovalState {
+    /// 承認が現在のものか。
+    ok: bool,
+    /// 現在でない理由（`ok` なら `approved`）。
+    reason: String,
+    /// 承認された Testing Contract の指紋。
+    contract_hash: Option<String>,
+    /// 対象の Unit（段階全体なら `None`）。
+    unit: Option<String>,
+    /// 作業者へ渡す計画（承認の指紋が束ねた形 — 付録を落とし、進捗の印を戻したもの）。
+    plan: String,
+    /// 作業者へ渡すテスト指示（承認の指紋が束ねた形）。
+    instructions: String,
+}
+
+impl PlanApprovalState {
+    /// 承認が現在のものか。
+    pub(super) const fn is_current(&self) -> bool {
+        self.ok
+    }
+
+    /// 現在の承認が、依頼文の名乗る Testing Contract の指紋を承認しているか。
+    pub(super) fn approves_contract(&self, contract: &str) -> bool {
+        self.ok && self.contract_hash.as_deref() == Some(contract)
+    }
+
+    /// 現在でない理由（拒否文の detail）。現在の承認と、理由の空な評価は `None`。
+    pub(super) fn refusal_reason(&self) -> Option<&str> {
+        (!self.ok && !self.reason.is_empty()).then_some(self.reason.as_str())
+    }
+}
+
+/// 承認対象の計画承認を評価する（**読取専用** — 共有承認ストアを作らない）。
+///
+/// # Errors
+///
+/// 記録・実行カーソル・ストアが読めない、または投影が失敗した場合。
+pub(super) async fn approval(
+    layout: &Layout,
+    target: &core_command_domain::orchestration::PlanTarget,
+) -> Result<PlanApprovalState, String> {
     use core_command_domain::orchestration::PlanReceipts;
     use core_command_domain::workspace::StorePath;
     use core_query_use_case::orchestration::FindCodeGenerationApprovalUseCase;
     use core_read_model_updater::orchestration::{PlanApprovalJournalReaderImpl, PlanSource};
-    let target = target(args, "brief")?;
     let record = layout.record_dir().ok_or_else(|| {
         "Code Generation approval authority requires an active workflow state".to_string()
     })?;
@@ -204,34 +270,35 @@ async fn brief(layout: &Layout, args: &[String]) -> Result<String, String> {
         .execute(cursor.execution_id().as_str(), &target.id())
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "Projected Code Generation approval is missing".to_string())?;
-    if !view.ok() {
-        return Err(crate::wording::worker_brief_refused(
-            view.unit(),
-            view.reason(),
-        ));
-    }
-    let contract_hash = view
-        .contract_hash()
-        .ok_or_else(|| "Projected Code Generation approval is incomplete".to_string())?;
-    let assembled = crate::wording::worker_brief(
-        view.unit(),
-        contract_hash,
-        &input.documents().approved_plan(),
-        &input.documents().approved_instructions(),
-    );
-    // 末尾改行は `main.rs` の `writeln!` が付す（upstream は改行を足さずに書く）。
-    Ok(assembled
-        .strip_suffix('\n')
-        .unwrap_or(&assembled)
-        .to_string())
+    Ok(PlanApprovalState {
+        ok: view.ok(),
+        reason: view.reason().to_string(),
+        contract_hash: view.contract_hash().map(str::to_string),
+        unit: view.unit().map(str::to_string),
+        plan: input.documents().approved_plan(),
+        instructions: input.documents().approved_instructions(),
+    })
 }
 
 async fn begin(layout: &Layout, args: &[String]) -> Result<String, String> {
+    let target = target(args, "begin")?;
+    begin_generation(layout, target).await
+}
+
+/// 承認済みの計画から生成を始めたことを受領に記録する（`begin` と plan-approval-guard が
+/// 共有する — 2.8.2 `beginCodeGeneration`）。何度呼んでも同じ受領のままである。
+///
+/// # Errors
+///
+/// 承認が現在でない、またはストアが読めない場合。
+pub(super) async fn begin_generation(
+    layout: &Layout,
+    target: core_command_domain::orchestration::PlanTarget,
+) -> Result<String, String> {
     use core_command_domain::orchestration::PlanApprovalOperationId;
     use core_command_domain::workspace::StorePath;
     use core_query_use_case::orchestration::PlanGenerationUseCase;
     use core_read_model_updater::orchestration::PlanSource;
-    let target = target(args, "begin")?;
     let record = layout
         .record_dir()
         .ok_or("Code Generation approval authority requires an active workflow state")?;

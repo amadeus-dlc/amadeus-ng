@@ -34,6 +34,7 @@ mod learnings;
 mod log_failure;
 mod pipeline_link;
 mod plan_approval;
+mod plan_approval_guard;
 mod reuse_artifact;
 mod review_brief;
 mod review_documents;
@@ -1265,7 +1266,7 @@ fn gate_precondition(verdict: Verdict, stage: &str, state: &str) -> String {
 /// 人間応答フックは配布の明示契約どおり、記録失敗でも人間の入力を止めない。
 /// `aidlc hook <name>` が受けるフック名 — この build のフック面の配線表 (doctor D1.b / D2.e も
 /// 同じ表を見る)。
-pub(crate) const NATIVE_HOOKS: [&str; 14] = [
+pub(crate) const NATIVE_HOOKS: [&str; 15] = [
     "record-human-turn",
     "state-transition-guard",
     "write-audit-log",
@@ -1280,6 +1281,7 @@ pub(crate) const NATIVE_HOOKS: [&str; 14] = [
     "reviewer-scope",
     "deliver-stage-rules",
     "fold-usage",
+    "plan-approval-guard",
 ];
 
 async fn run_hook(layout: &Layout, name: &str) -> Completion {
@@ -1310,6 +1312,9 @@ async fn run_hook(layout: &Layout, name: &str) -> Completion {
     }
     if name == "review-freeze" {
         return review_guards::freeze(layout, &input).await;
+    }
+    if name == "plan-approval-guard" {
+        return plan_approval_guard::run(layout, &input).await;
     }
     if name == "reviewer-scope" {
         return review_guards::reviewer_scope(layout, &input).await;

@@ -75,7 +75,7 @@
     },
     {
       "step": 4,
-      "action": ".claude/settings.json のフック登録を scripts/aidlc-selfhost/hook-binding.json の native 側へ向ける。配布のまま残す 2 本は登録を変えない。",
+      "action": ".claude/settings.json のフック登録を scripts/aidlc-selfhost/hook-binding.json の native 側へ向ける。配布のまま残す 1 本 (run-sensors) は登録を変えない。",
       "command": "",
       "undo": "git checkout -- .claude/settings.json で配布 TypeScript の登録へ戻す。"
     },

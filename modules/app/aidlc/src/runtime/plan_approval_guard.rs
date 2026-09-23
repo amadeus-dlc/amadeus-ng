@@ -1,0 +1,420 @@
+//! plan-approval-guard — code-generation で、計画承認より前の生成を止める PreToolUse フック。
+//!
+//! 2.8.2 `hooks/aidlc-plan-approval-guard.ts` の native 版である。配布の TypeScript 版は
+//! 自分の状態ファイル・受領の置き場を読むので、native の承認記録（イベントストア）を
+//! 読めず、承認の後でも code-generation の書込と開発者の派遣を全部止める。
+//!
+//! 止めるのは 2 つだけである。
+//!
+//! - **開発者エージェントの派遣**（`Task` / `Agent` の `aidlc-developer-agent`）— 依頼文が
+//!   承認対象の印（`AIDLC-STAGE: code-generation` または `AIDLC-UNIT: <unit>`）をちょうど
+//!   1 つと、承認された `AIDLC-TESTING-CONTRACT: <hash>` を持ち、その対象の計画承認が現在の
+//!   ものでなければ止める
+//! - **ワークスペースの書換え**（`Write` / `Edit` / `MultiEdit` / `NotebookEdit` と、書込先を
+//!   持つ `Bash`）— code-generation の記録ディレクトリの外へ書くのに、計画承認が現在の
+//!   ものでなければ止める。記録ディレクトリの中（計画・テスト指示・質問・日誌）は承認を
+//!   得るための作業なので通す
+//!
+//! 通すときは承認の受領を「生成開始」へ進める（2.8.2 `beginCodeGeneration`）。これで以降の
+//! 書込でソースが変わっても承認は失効しない。
+//!
+//! code-generation の外、状態ファイルが無い、入力が読めない、読取専用の工具は、いずれも
+//! 通す（fail-open）。`AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` で判定そのものを止める。
+//!
+//! # 2.8.2 との差（この build の範囲）
+//!
+//! - 書換えの承認対象は段階全体（zero-Unit）だけを見る。Unit ごとの書換えは Unit の
+//!   計画承認を引かない（bugfix など Unit を切らない scope が対象）
+//! - 書込先を特定できないシェル（`eval` など）と未知の工具は通す（2.8.2 は止める）。
+//!   ただし変更系コマンドやリダイレクトの書込み位置が展開・グロブで確定しないときは
+//!   止める（2.8.2 と同じ）
+//! - 拒否の監査行 `PLAN_APPROVAL_BLOCKED` と無効化の `GUARD_DISABLED` は書かない
+use super::testing_posture::{approval, begin_generation};
+use super::{Completion, Layout};
+use core_command_domain::orchestration::PlanTarget;
+use serde_json::Value;
+use std::path::{Path, PathBuf};
+
+/// 稼働記録・drop の名前（フック名と同じ）。
+const NAME: &str = "plan-approval-guard";
+/// 守るステージ。
+const GUARDED_STAGE: &str = "code-generation";
+/// 守る派遣先。
+const GUARDED_AGENT: &str = "aidlc-developer-agent";
+/// 派遣の工具（2.8.2 `DISPATCH_TOOLS`）。
+const DISPATCH_TOOLS: [&str; 2] = ["Task", "Agent"];
+/// ファイルを直接書き換える工具（2.8.2 `WRITE_TOOLS`）。
+const WRITE_TOOLS: [&str; 4] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+
+pub(super) async fn run(layout: &Layout, input: &str) -> Completion {
+    if std::env::var("AIDLC_DISABLE_PLAN_APPROVAL_GUARD").as_deref() == Ok("1") {
+        return Completion::silent();
+    }
+    // 稼働記録は判断より先で、失敗しても判断を変えない。
+    let _ = super::observe_hook_health(layout, NAME).await;
+    let Ok(value) = serde_json::from_str::<Value>(input) else {
+        return Completion::silent();
+    };
+    let tool = value
+        .get("tool_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let tool_input = value.get("tool_input").cloned().unwrap_or(Value::Null);
+    let dispatch = DISPATCH_TOOLS.contains(&tool)
+        && tool_input.get("subagent_type").and_then(Value::as_str) == Some(GUARDED_AGENT);
+    let writes = tool == "Bash" || WRITE_TOOLS.contains(&tool);
+    if !dispatch && !writes {
+        return Completion::silent();
+    }
+    let Some(state) = layout
+        .state_file()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+    else {
+        return Completion::silent();
+    };
+    let prompt = ["prompt", "description"]
+        .iter()
+        .filter_map(|key| tool_input.get(*key).and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let markers = Markers::find(&prompt);
+    let current = super::session_hooks::field(&state, "Current Stage")
+        .map(|stage| normalize(&stage))
+        .unwrap_or_default();
+    if current != GUARDED_STAGE && !(dispatch && markers.any()) {
+        return Completion::silent();
+    }
+    if dispatch {
+        return guard_dispatch(layout, &markers).await;
+    }
+    let command = tool_input
+        .get("command")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    guard_write(layout, input, command).await
+}
+
+/// 開発者エージェントの派遣を、依頼文の印と承認で判定する（2.8.2
+/// `evaluatePlanApprovalDispatch`）。
+async fn guard_dispatch(layout: &Layout, markers: &Markers) -> Completion {
+    let mentioned = markers.mentioned();
+    let target = match (markers.units.as_slice(), markers.stages.as_slice()) {
+        ([unit], []) => PlanTarget::for_unit(unit).ok(),
+        ([], [stage]) if stage == GUARDED_STAGE => Some(PlanTarget::stage_level()),
+        _ => None,
+    };
+    let Some(target) = target else {
+        return Completion::hook_denied(crate::wording::plan_dispatch_blocked(&mentioned, None));
+    };
+    let state = match approval(layout, &target).await {
+        Ok(state) => state,
+        Err(error) => return fail_closed(layout, &error).await,
+    };
+    let admitted = match markers.contracts.as_slice() {
+        [contract] => state.approves_contract(contract),
+        _ => false,
+    };
+    if !admitted {
+        return Completion::hook_denied(crate::wording::plan_dispatch_blocked(
+            &mentioned,
+            state.refusal_reason(),
+        ));
+    }
+    begin(layout, target).await
+}
+
+/// ワークスペースの書換えを、記録ディレクトリの内外と承認で判定する。
+///
+/// 変更系のシェルの書込み位置が展開・グロブで確定しないとき（`sed -i .. src/*.rs`、
+/// `echo x > $F`）は、宛先を名指せないので外への書込みとして扱う（2.8.2 は
+/// `TRACKED_SHELL_MUTATORS` と `shellUsesDynamicEvaluation` で止める）。
+async fn guard_write(layout: &Layout, input: &str, command: &str) -> Completion {
+    let envelope = harness_claude::WriteToolEnvelope::parse(input, layout.project_dir());
+    let Some(record) = layout.record_dir() else {
+        return Completion::silent();
+    };
+    let approval_dir = record.join("construction").join(GUARDED_STAGE);
+    let outside = envelope.targets().fold_left(None, |found, target| {
+        found.or_else(|| {
+            let path = PathBuf::from(target.as_str());
+            (!within(layout.project_dir(), &path, &approval_dir))
+                .then(|| target.as_str().to_string())
+        })
+    });
+    let blocked = match outside {
+        Some(path) => Blocked::Path(path),
+        None if envelope.has_unresolved_target() => Blocked::Shell(command.to_string()),
+        None => return Completion::silent(),
+    };
+    let target = PlanTarget::stage_level();
+    let state = match approval(layout, &target).await {
+        Ok(state) => state,
+        Err(error) => return fail_closed(layout, &error).await,
+    };
+    if !state.is_current() {
+        return Completion::hook_denied(match blocked {
+            Blocked::Path(path) => {
+                crate::wording::plan_mutation_blocked(&path, state.refusal_reason())
+            }
+            Blocked::Shell(command) => {
+                crate::wording::plan_shell_mutation_blocked(&command, state.refusal_reason())
+            }
+        });
+    }
+    begin(layout, target).await
+}
+
+/// 承認が無ければ止める書換え。拒否文の言い方が分かれる。
+enum Blocked {
+    /// 承認ディレクトリの外の宛先（最初の 1 つ）。
+    Path(String),
+    /// 書込み位置を確定できない変更系のシェル（コマンド全文）。
+    Shell(String),
+}
+
+/// 通すと決めた呼出しで、承認の受領を生成開始へ進める。進められなければ止める。
+async fn begin(layout: &Layout, target: PlanTarget) -> Completion {
+    match begin_generation(layout, target).await {
+        Ok(_) => Completion::silent(),
+        Err(error) => Completion::hook_denied(crate::wording::plan_generation_unstartable(&error)),
+    }
+}
+
+/// 評価そのものが失敗したら止める（2.8.2 も `failed closed`）。
+async fn fail_closed(layout: &Layout, error: &str) -> Completion {
+    let _ = super::record_hook_drop(layout, NAME, error).await;
+    Completion::hook_denied(crate::wording::plan_authority_unavailable(error))
+}
+
+/// 宛先 `target` が承認ディレクトリ `dir` の中か（2.8.2 `isTrustedRecordTarget`）。
+///
+/// 綴りは字句で解決する（`..` を畳む。2.8.2 の `resolve` と同じ）。そのうえでプロジェクトから
+/// 承認ディレクトリまで、およびプロジェクトから宛先までの経路に symlink が 1 つでもあれば外と
+/// みなす（2.8.2 `assertNoSymlinkInChainOrThrow`）— リンクの先はプロジェクトの外かもしれず、
+/// 綴りの上で中に見えても OS は別の場所へ書くからである。プロジェクトの外の宛先も外である。
+///
+/// プロジェクト自身は実体パスへ揃えてから歩く。macOS の `/var` → `/private/var` のように、
+/// プロジェクトと宛先が別の綴りで渡されても取り違えない（綴りの違いはプロジェクトより上に
+/// だけ許す）。
+fn within(project: &Path, target: &Path, dir: &Path) -> bool {
+    let lexical = crate::lexical_path::normalize(project);
+    let Ok(real) = std::fs::canonicalize(&lexical) else {
+        return false;
+    };
+    // プロジェクトに当たる祖先は、綴りが一致するか、実体がプロジェクトの実体と同じもの。
+    // 根に最も近いものを選ぶ（プロジェクトより下のリンクは辿らない）。
+    let relative = |path: &Path| {
+        let path = crate::lexical_path::normalize(path);
+        let project = path.ancestors().filter(|ancestor| {
+            *ancestor == lexical
+                || *ancestor == real
+                || std::fs::canonicalize(ancestor).is_ok_and(|resolved| resolved == real)
+        });
+        project
+            .last()
+            .and_then(|ancestor| path.strip_prefix(ancestor).ok())
+            .map(Path::to_path_buf)
+    };
+    let (Some(record), Some(target)) = (relative(dir), relative(target)) else {
+        return false;
+    };
+    free_of_symlinks(&real, &record)
+        && free_of_symlinks(&real, &target)
+        && target.starts_with(&record)
+}
+
+/// `anchor` から `relative` を 1 成分ずつ辿り、symlink が 1 つも無いか。まだ無い成分は
+/// リンクになりようがないので無いものとして進む。
+fn free_of_symlinks(anchor: &Path, relative: &Path) -> bool {
+    let mut current = anchor.to_path_buf();
+    relative.components().all(|part| {
+        current.push(part);
+        !std::fs::symlink_metadata(&current).is_ok_and(|meta| meta.file_type().is_symlink())
+    })
+}
+
+/// ステージ名の比較形（2.8.2 `normalizeStageName`）。
+fn normalize(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+/// 契約の指紋の形か（2.8.2 `CONTRACT_MARKER_RE` の `sha256:[0-9a-f]{64}`）。この形でない値
+/// （`<contract hash>` のような例示）は印に数えない。
+fn is_contract_hash(value: &str) -> bool {
+    value.strip_prefix("sha256:").is_some_and(|hex| {
+        hex.len() == 64
+            && hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+/// 依頼文の印（2.8.2 `promptUnitMarkers` / `promptStageMarkers` /
+/// `promptTestingContractMarkers`）。同じ値の繰返しは 1 つに数える。
+struct Markers {
+    units: Vec<String>,
+    stages: Vec<String>,
+    contracts: Vec<String>,
+}
+
+impl Markers {
+    fn find(text: &str) -> Markers {
+        let mut markers = Markers {
+            units: Vec::new(),
+            stages: Vec::new(),
+            contracts: Vec::new(),
+        };
+        for line in text.lines() {
+            let Some((name, value)) = line.trim().split_once(':') else {
+                continue;
+            };
+            let value = value.trim();
+            if value.is_empty() {
+                continue;
+            }
+            let (list, value) = match name.trim() {
+                "AIDLC-UNIT" => (&mut markers.units, value.to_string()),
+                "AIDLC-STAGE" => (&mut markers.stages, normalize(value)),
+                "AIDLC-TESTING-CONTRACT" if is_contract_hash(value) => {
+                    (&mut markers.contracts, value.to_string())
+                }
+                _ => continue,
+            };
+            if !list.contains(&value) {
+                list.push(value);
+            }
+        }
+        markers
+    }
+
+    const fn any(&self) -> bool {
+        !(self.units.is_empty() && self.stages.is_empty() && self.contracts.is_empty())
+    }
+
+    /// 拒否文が名指す対象（Unit 名、または `stage:<slug>`）。
+    fn mentioned(&self) -> Vec<String> {
+        self.units
+            .iter()
+            .cloned()
+            .chain(self.stages.iter().map(|stage| format!("stage:{stage}")))
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HASH: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn markers_are_read_per_line_and_deduplicated() {
+        let markers = Markers::find(&format!(
+            "AIDLC-STAGE: Code Generation\nAIDLC-TESTING-CONTRACT: {HASH}\n  AIDLC-STAGE: code-generation\nAIDLC-UNIT:\nnoise"
+        ));
+        assert_eq!(markers.stages, vec!["code-generation"]);
+        assert_eq!(markers.contracts, vec![HASH]);
+        assert!(markers.units.is_empty(), "空の値は印ではない");
+        assert!(markers.any());
+        assert_eq!(markers.mentioned(), vec!["stage:code-generation"]);
+        assert!(!Markers::find("plain prompt").any());
+    }
+
+    /// 契約の印は `sha256:` と 16 進 64 桁だけ（2.8.2 `CONTRACT_MARKER_RE`）。例示の行や
+    /// 形の崩れた値は印に数えないので、本物の指紋と並んでも「複数の契約」にならない。
+    #[test]
+    fn only_a_sha256_hex_digest_counts_as_a_contract_marker() {
+        for example in [
+            "AIDLC-TESTING-CONTRACT: <contract hash>",
+            "AIDLC-TESTING-CONTRACT: sha256:abc",
+            "AIDLC-TESTING-CONTRACT: sha256:0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef",
+            "AIDLC-TESTING-CONTRACT: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        ] {
+            assert!(!Markers::find(example).any(), "{example}");
+        }
+        let markers = Markers::find(&format!(
+            "AIDLC-TESTING-CONTRACT: <contract hash>\nAIDLC-TESTING-CONTRACT: {HASH}"
+        ));
+        assert_eq!(markers.contracts, vec![HASH]);
+    }
+
+    /// 実在の一時ディレクトリの上で、承認ディレクトリの内外を確かめる。
+    fn scratch_project() -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("aidlc/r/construction/code-generation");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(root.path().join("src/sub")).unwrap();
+        (root, dir)
+    }
+
+    #[test]
+    fn only_paths_under_the_record_directory_are_inside() {
+        let (root, dir) = scratch_project();
+        let project = root.path();
+        assert!(within(project, &dir.join("plan.md"), &dir));
+        assert!(within(project, &dir.join("new/deeper/plan.md"), &dir));
+        assert!(within(project, &dir, &dir), "承認ディレクトリそのもの");
+        assert!(!within(project, &project.join("src/main.rs"), &dir));
+        assert!(!within(project, Path::new("/etc/passwd"), &dir));
+        // `..` は字句で畳む（2.8.2 の `resolve` と同じ）。
+        assert!(within(project, &dir.join("new/../plan.md"), &dir));
+        assert!(!within(project, &dir.join("../../../../src/main.rs"), &dir));
+        // 実体パスの綴りで渡されても同じ場所として扱う（macOS の `/var` → `/private/var`）。
+        let real = std::fs::canonicalize(&dir).unwrap();
+        assert!(within(project, &real.join("plan.md"), &dir));
+        let real_project = std::fs::canonicalize(project).unwrap();
+        let real_dir = real_project.join("aidlc/r/construction/code-generation");
+        assert!(within(&real_project, &dir.join("plan.md"), &real_dir));
+        assert!(!within(
+            &real_project,
+            &project.join("src/main.rs"),
+            &real_dir
+        ));
+    }
+
+    /// 経路に symlink があれば外（2.8.2 `assertNoSymlinkInChainOrThrow`）。承認ディレクトリの
+    /// 中に置いたリンクも、承認ディレクトリやその祖先がリンクの場合も、リンクの先へは書かせない。
+    #[test]
+    fn a_symlink_on_the_path_puts_the_target_outside() {
+        let (root, dir) = scratch_project();
+        let project = root.path();
+        std::os::unix::fs::symlink(project.join("src/sub"), dir.join("link")).unwrap();
+        assert!(!within(project, &dir.join("link/main.rs"), &dir));
+        assert!(!within(project, &dir.join("link"), &dir), "リンクそのもの");
+
+        let outside = tempfile::tempdir().unwrap();
+        let (linked_root, linked_dir) = scratch_project();
+        let linked_project = linked_root.path();
+        std::fs::remove_dir(&linked_dir).unwrap();
+        std::os::unix::fs::symlink(outside.path(), &linked_dir).unwrap();
+        assert!(
+            !within(linked_project, &linked_dir.join("plan.md"), &linked_dir),
+            "承認ディレクトリがリンクなら中は無い"
+        );
+        let (ancestor_root, ancestor_dir) = scratch_project();
+        let ancestor_project = ancestor_root.path();
+        let construction = ancestor_project.join("aidlc/r/construction");
+        std::fs::remove_dir_all(&construction).unwrap();
+        std::fs::create_dir_all(outside.path().join("code-generation")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), &construction).unwrap();
+        assert!(
+            !within(
+                ancestor_project,
+                &ancestor_dir.join("plan.md"),
+                &ancestor_dir
+            ),
+            "祖先がリンクでも中は無い"
+        );
+    }
+
+    #[test]
+    fn stage_names_compare_in_slug_form() {
+        assert_eq!(normalize(" Code Generation "), "code-generation");
+        assert_eq!(normalize("code-generation"), "code-generation");
+    }
+}

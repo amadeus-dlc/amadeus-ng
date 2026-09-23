@@ -323,7 +323,7 @@ fn an_unknown_hook_name_is_refused_through_the_same_registration_form() {
     );
 }
 
-/// 配布のまま残す 2 本は、native のフック名としては受け付けない。
+/// 配布のまま残すフック（run-sensors の 1 本）は、native のフック名としては受け付けない。
 #[test]
 fn the_hooks_kept_distributed_are_not_accepted_as_native_names() {
     let definition = binding_definition();
@@ -427,13 +427,13 @@ fn the_self_diagnosis_verdict_of_each_binding_layout_is_measured_not_assumed() {
         // --- 接続定義が無い作業ツリー (配布そのまま) ---
         // 配布 16 本のまま。native 面はどの登録からも起動しない。
         ("distributed", false, "✓  Native hook bindings", 0),
-        // native 14 本 + 配布 2 本。照合する宣言が無いので、混在そのものは失敗にしない。
+        // native 15 本 + 配布 1 本。照合する宣言が無いので、混在そのものは失敗にしない。
         ("mixed", false, "✓  Native hook bindings", 0),
-        // 16 本すべて native 形 — 2 本はこの build のフック面に無い。
+        // 16 本すべて native 形 — run-sensors はこの build のフック面に無い。
         (
             "all-native",
             false,
-            "✗  Native hook bindings — .claude/settings.json: binding mismatch (unknown native hook plan-approval-guard)",
+            "✗  Native hook bindings — .claude/settings.json: binding mismatch (unknown native hook run-sensors)",
             1,
         ),
         // --- 接続定義がある作業ツリー (本リポジトリの姿) ---
@@ -444,16 +444,16 @@ fn the_self_diagnosis_verdict_of_each_binding_layout_is_measured_not_assumed() {
             "✗  Native hook bindings — .claude/settings.json: binding mismatch (declared native, registered distributed: fold-usage)",
             1,
         ),
-        // 宣言どおりの接続 — native 14 本 + 配布 2 本。これが切替後の姿である。
+        // 宣言どおりの接続 — native 15 本 + 配布 1 本。これが切替後の姿である。
         ("mixed", true, "✓  Native hook bindings", 0),
         // 宣言に無い名前を native 形で書いた登録は、宣言の照合より先に落ちる。
         (
             "all-native",
             true,
-            "✗  Native hook bindings — .claude/settings.json: binding mismatch (unknown native hook plan-approval-guard)",
+            "✗  Native hook bindings — .claude/settings.json: binding mismatch (unknown native hook run-sensors)",
             1,
         ),
-        // 宣言が配布のままと言った 2 本を登録ごと落とした形。登録が無いことは食い違いではない。
+        // 宣言が配布のままと言った 1 本を登録ごと落とした形。登録が無いことは食い違いではない。
         ("native-only", true, "✓  Native hook bindings", 0),
     ];
     for (layout, declare, expected_binding_row, expected_exit) in expectations {
@@ -478,9 +478,9 @@ fn the_self_diagnosis_verdict_of_each_binding_layout_is_measured_not_assumed() {
 }
 
 /// 配布シェルの `statusLine` を本リポジトリ現物 (`statusline-combined.sh`) に揃えると、
-/// native 14 本だけの形は D2.a (`aidlc-*.ts` を 1 本も登録していない) で落ちる。
+/// native 15 本だけの形は D2.a (`aidlc-*.ts` を 1 本も登録していない) で落ちる。
 ///
-/// 配布 2 本の登録を残すのはこの D2.a のためでもある。D2.e の追従はこの行を変えない。
+/// 配布 1 本 (run-sensors) の登録を残すのはこの D2.a のためでもある。D2.e の追従はこの行を変えない。
 #[test]
 fn a_native_only_layout_without_any_distributed_reference_fails_the_upstream_hook_contract_row() {
     let definition = binding_definition();

@@ -838,6 +838,64 @@ pub fn human_presence_required(result: &str, stage: &str) -> String {
     )
 }
 
+/// 計画承認の無い開発者の派遣を止める（2.8.2 plan-approval-guard `blockReason` 逐語）。
+#[must_use]
+pub fn plan_dispatch_blocked(mentioned: &[String], detail: Option<&str>) -> String {
+    let scope = match mentioned {
+        [one] if one == "stage:code-generation" => {
+            "the zero-Unit stage-level implementation".to_string()
+        }
+        [one] => format!("unit {one}"),
+        [] => "one target, but the brief does not name it".to_string(),
+        many => format!(
+            "one target, but the brief names several ({})",
+            many.join(", ")
+        ),
+    };
+    let reason = detail.map_or_else(String::new, |detail| format!(" Reason: {detail}."));
+    format!(
+        "Code generation cannot start for {scope} because its plan and test instructions are not currently approved.{reason} Finish Steps 2-3 in code-generation: update code-generation-plan.md and unit-test-instructions.md, refresh the Testing Contract and approval fingerprint, present Plan Approval, end the turn, and wait for the human's \"Approve Plan\" answer. Then retry the developer handoff with \"AIDLC-UNIT: <unit>\" or \"AIDLC-STAGE: code-generation\", followed by \"AIDLC-TESTING-CONTRACT: <contract hash>\"."
+    )
+}
+
+/// 計画承認の無いワークスペースの書換えを止める（2.8.2 `mutationBlockReason` 逐語）。
+#[must_use]
+pub fn plan_mutation_blocked(target: &str, detail: Option<&str>) -> String {
+    mutation_blocked(&format!("modify workspace path \"{target}\""), detail)
+}
+
+/// 書込み位置を確定できない変更系のシェルを、計画承認が無いので止める（2.8.2
+/// `mutationBlockReason` の `opaqueShell` 逐語。コマンドは前後の空白を除いて 160 文字まで）。
+#[must_use]
+pub fn plan_shell_mutation_blocked(command: &str, detail: Option<&str>) -> String {
+    let shown = command.trim().chars().take(160).collect::<String>();
+    mutation_blocked(
+        &format!("run mutation-capable shell command: {shown}"),
+        detail,
+    )
+}
+
+fn mutation_blocked(action: &str, detail: Option<&str>) -> String {
+    let reason = detail.map_or_else(String::new, |detail| format!(" Reason: {detail}."));
+    format!(
+        "Code generation cannot {action} for the zero-Unit stage-level implementation because the plan, unit-test instructions, and current Testing Contract do not have a current matching approval.{reason} Writes inside the selected code-generation record directory remain available for Steps 2-3. Record the human's explicit \"Approve Plan\" answer before beginning Step 4 generation."
+    )
+}
+
+/// 承認の受領から生成を始められない（2.8.2 plan-approval-guard の同じ場面）。
+#[must_use]
+pub fn plan_generation_unstartable(error: &str) -> String {
+    format!("Code Generation could not start from its protected approval receipt: {error}")
+}
+
+/// 承認の評価そのものができない（2.8.2 `authorityBlockReason` 逐語）。
+#[must_use]
+pub fn plan_authority_unavailable(error: &str) -> String {
+    format!(
+        "Code generation cannot start because its Plan Approval authority is ambiguous or stale. Plan Approval authority evaluation failed closed: {error}. Run a fresh `aidlc engine orchestrate next` and use that exact directive; no stage-level fallback is permitted."
+    )
+}
+
 /// 承認の返答が提示した選択肢と一致しない (2.8.2 `aidlc-state.ts` `approvalPreconditions` 逐語)。
 #[must_use]
 pub fn approval_choice_unmatched(stage: &str, reply: &str) -> String {

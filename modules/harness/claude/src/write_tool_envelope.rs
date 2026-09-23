@@ -18,15 +18,24 @@ const WRITE_TOOLS: [&str; 4] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
 ///
 /// 相対綴りの基点は封筒の `cwd`、無ければ呼出側が渡す作業ディレクトリである
 /// (upstream `parsed.cwd ?? projectDir`)。
+///
+/// シェルの書込み位置が展開・グロブで確定しないときは、その綴りを書込み先に入れず
+/// [`WriteToolEnvelope::has_unresolved_target`] で知らせる (upstream の凍結判定は読まない)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteToolEnvelope {
     tool: String,
     targets: WriteTargets,
+    unresolved: bool,
 }
 impl WriteToolEnvelope {
-    /// 工具名と書込み先を同時に構築する (**この型の唯一の構築経路**)。
-    const fn new(tool: String, targets: WriteTargets) -> Self {
-        Self { tool, targets }
+    /// 工具名・書込み先・確定しなかった宛先の有無を同時に構築する
+    /// (**この型の唯一の構築経路**)。
+    const fn new(tool: String, targets: WriteTargets, unresolved: bool) -> Self {
+        Self {
+            tool,
+            targets,
+            unresolved,
+        }
     }
     /// PreToolUse の JSON を読む。オブジェクトでない入力は工具名なしとして扱う。
     ///
@@ -39,6 +48,7 @@ impl WriteToolEnvelope {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
+        let mut unresolved = false;
         let targets = if tool == "Bash" {
             let cwd = value
                 .get("cwd")
@@ -49,15 +59,16 @@ impl WriteToolEnvelope {
                 .and_then(|input| input.get("command"))
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            WriteTargets::new(ShellWriteTargets::parse(command, &cwd).fold_left(
-                Vec::new(),
-                |mut acc: Vec<WriteTarget>, target| {
+            let shell = ShellWriteTargets::parse(command, &cwd);
+            unresolved = shell.has_unresolved_target();
+            WriteTargets::new(
+                shell.fold_left(Vec::new(), |mut acc: Vec<WriteTarget>, target| {
                     if let Ok(target) = WriteTarget::parse(target) {
                         acc.push(target);
                     }
                     acc
-                },
-            ))
+                }),
+            )
         } else if WRITE_TOOLS.contains(&tool.as_str()) {
             let input = value.get("tool_input");
             let named = ["file_path", "notebook_path", "path"]
@@ -78,7 +89,7 @@ impl WriteToolEnvelope {
         } else {
             WriteTargets::empty()
         };
-        WriteToolEnvelope::new(tool, targets)
+        WriteToolEnvelope::new(tool, targets, unresolved)
     }
     /// 呼び出された工具名 (未知・欠落は空文字)。
     #[must_use]
@@ -89,6 +100,13 @@ impl WriteToolEnvelope {
     #[must_use]
     pub const fn targets(&self) -> &WriteTargets {
         &self.targets
+    }
+    /// シェルの書込み位置に、展開・グロブで確定しない綴りがあったか。
+    ///
+    /// 真のとき、[`WriteToolEnvelope::targets`] の外にも書込み先がありうる。
+    #[must_use]
+    pub const fn has_unresolved_target(&self) -> bool {
+        self.unresolved
     }
 }
 
@@ -180,6 +198,21 @@ mod tests {
         assert_eq!(targets(&with_cwd), ["/other/a.md"]);
         let without_cwd = parse(r#"{"tool_name":"Bash","tool_input":{"command":"rm a.md"}}"#);
         assert_eq!(targets(&without_cwd), ["/w/a.md"]);
+    }
+
+    #[test]
+    fn a_shell_write_to_an_expanded_spelling_is_reported_as_unresolved() {
+        let envelope =
+            parse(r#"{"tool_name":"Bash","tool_input":{"command":"sed -i 's/a/b/' src/*.rs"}}"#);
+        assert!(envelope.targets().is_empty());
+        assert!(envelope.has_unresolved_target());
+        let concrete = parse(r#"{"tool_name":"Bash","tool_input":{"command":"echo x > a.md"}}"#);
+        assert!(!concrete.has_unresolved_target());
+        let tool = parse(r#"{"tool_name":"Write","tool_input":{"file_path":"/w/$F"}}"#);
+        assert!(
+            !tool.has_unresolved_target(),
+            "書込み工具の綴りは展開されない"
+        );
     }
 
     #[test]
