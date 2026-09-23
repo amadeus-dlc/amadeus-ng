@@ -1065,7 +1065,7 @@
     },
     {
       "name": "plan-approval-guard",
-      "status": "distributed-only"
+      "status": "native-available"
     },
     {
       "name": "rebuild-stage-graph",

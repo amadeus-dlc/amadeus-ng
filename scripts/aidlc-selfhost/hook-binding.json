@@ -168,19 +168,16 @@
     "review-freeze",
     "reviewer-scope",
     "deliver-stage-rules",
-    "fold-usage"
+    "fold-usage",
+    "plan-approval-guard"
   ],
   "distributed_hooks": [
-    {
-      "name": "plan-approval-guard",
-      "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-plan-approval-guard.ts\"",
-      "reason": "この build のフック面 (NATIVE_HOOKS 14 本) に無い。承認保護を外さないため配布 TypeScript の登録を残す。native 名としては受け付けない。"
-    },
     {
       "name": "run-sensors",
       "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-run-sensors.ts\"",
       "reason": "センサーは本 intent のスコープ外 (project.md Forbidden)。この build のフック面に無く、native 名としては受け付けない。"
     }
   ],
-  "split_note": "native_hooks / distributed_hooks の分割は 2.7.1 基準の宣言をそのまま引き継いでいる。2.8.2 は 16 名すべてを同じ二段形 aidlc engine hook <name> で登録するため、設定本文からは native と配布の別が読めない。分割をどこで表現するかはオーナー裁定 D13 (WT-1) で決着しており、所属はこの資料の native_hooks が正本である。観測側の判定は modules/core/query/interface-adapter/src/doctor_observation_dao_impl/settings.rs の classify が担い、二段形の <name> が native_hooks にあれば Native、無ければ Distributed とする (一段形と配布 .ts の判定規則は変えない)。"
+  "split_note": "native_hooks / distributed_hooks の分割は 2.7.1 基準の宣言をそのまま引き継いでいる。2.8.2 は 16 名すべてを同じ二段形 aidlc engine hook <name> で登録するため、設定本文からは native と配布の別が読めない。分割をどこで表現するかはオーナー裁定 D13 (WT-1) で決着しており、所属はこの資料の native_hooks が正本である。観測側の判定は modules/core/query/interface-adapter/src/doctor_observation_dao_impl/settings.rs の classify が担い、二段形の <name> が native_hooks にあれば Native、無ければ Distributed とする (一段形と配布 .ts の判定規則は変えない)。",
+  "plan_approval_guard_note": "plan-approval-guard は native へ移した (2026-09-23)。配布 TypeScript 版は自分の状態ファイルと受領の置き場を読むため native の承認記録 (イベントストア) を読めず、計画承認の後でも code-generation の書込と開発者の派遣を全部止めた (再生ハーネスで実測)。native 版は `aidlc engine hook plan-approval-guard` で、承認前の生成を止め、通すときに受領を生成開始へ進める。"
 }

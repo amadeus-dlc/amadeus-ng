@@ -5137,6 +5137,136 @@ fn a_worker_brief_never_delivers_a_review_appendix_or_progress_marks_added_after
     }
 }
 
+/// plan-approval-guard を PreToolUse の封筒で起動する（終了コード 2 が拒否）。
+fn plan_guard(
+    workspace: &Workspace,
+    tool: &str,
+    tool_input: &serde_json::Value,
+) -> std::process::Output {
+    use std::io::Write as _;
+    let mut input = serde_json::Map::new();
+    input.insert("session_id".into(), "guard".into());
+    input.insert("hook_event_name".into(), "PreToolUse".into());
+    input.insert(
+        "cwd".into(),
+        workspace.path().to_string_lossy().into_owned().into(),
+    );
+    input.insert("tool_name".into(), tool.into());
+    input.insert("tool_input".into(), tool_input.clone());
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aidlc"))
+        .args(["engine", "hook", "plan-approval-guard"])
+        .current_dir(workspace.path())
+        .env_clear()
+        .envs(coverage_profile_env())
+        .env("HOME", workspace.path().join("aidlc/.capture-home"))
+        .env("PATH", "/usr/bin:/bin")
+        .env("CLAUDE_PROJECT_DIR", workspace.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(serde_json::Value::Object(input).to_string().as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+/// 計画承認の後、承認済みの指示書での開発者派遣とソース書込は通り、生成開始の後は
+/// ソースが変わっても承認が失効しない。対象の印の無い派遣は止める。
+#[test]
+fn the_plan_approval_guard_admits_generation_only_after_approval() {
+    let workspace = workspace_with_approved_plan();
+    let brief = String::from_utf8(worker_brief(&workspace).stdout).unwrap();
+    let source = workspace.path().join("src.rs");
+    let task = |prompt: &str| {
+        serde_json::Value::Object(serde_json::Map::from_iter([
+            ("subagent_type".to_string(), "aidlc-developer-agent".into()),
+            ("description".to_string(), "generate".into()),
+            ("prompt".to_string(), prompt.into()),
+        ]))
+    };
+    let write = serde_json::Value::Object(serde_json::Map::from_iter([
+        (
+            "file_path".to_string(),
+            source.to_string_lossy().into_owned().into(),
+        ),
+        ("content".to_string(), "fn main() {}".into()),
+    ]));
+    let unmarked = plan_guard(&workspace, "Task", &task("implement it"));
+    assert_eq!(unmarked.status.code(), Some(2), "{unmarked:?}");
+    assert!(
+        String::from_utf8_lossy(&unmarked.stderr).contains("the brief does not name it"),
+        "{unmarked:?}"
+    );
+    let dispatched = plan_guard(&workspace, "Task", &task(&brief));
+    assert_eq!(dispatched.status.code(), Some(0), "{dispatched:?}");
+    let written = plan_guard(&workspace, "Write", &write);
+    assert_eq!(written.status.code(), Some(0), "{written:?}");
+    fs::write(&source, "fn main() {}\n").unwrap();
+    let rewritten = plan_guard(&workspace, "Write", &write);
+    assert_eq!(
+        rewritten.status.code(),
+        Some(0),
+        "生成開始の後はソースの変化で失効しない: {rewritten:?}"
+    );
+}
+
+/// 計画承認の前は、記録ディレクトリの外への書込と開発者派遣を止め、記録の中は通す。
+#[test]
+fn the_plan_approval_guard_blocks_generation_before_approval() {
+    let workspace = workspace_at_code_generation();
+    let issued = Command::new(env!("CARGO_BIN_EXE_aidlc"))
+        .arg("next")
+        .current_dir(workspace.path())
+        .env_clear()
+        .envs(coverage_profile_env())
+        .env("HOME", workspace.path().join("aidlc/.capture-home"))
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    assert!(issued.status.success(), "{issued:?}");
+    let write = |path: std::path::PathBuf| {
+        serde_json::Value::Object(serde_json::Map::from_iter([
+            (
+                "file_path".to_string(),
+                path.to_string_lossy().into_owned().into(),
+            ),
+            ("content".to_string(), "x".into()),
+        ]))
+    };
+    let outside = plan_guard(&workspace, "Write", &write(workspace.path().join("src.rs")));
+    assert_eq!(outside.status.code(), Some(2), "{outside:?}");
+    assert!(
+        String::from_utf8_lossy(&outside.stderr).contains("cannot modify workspace path"),
+        "{outside:?}"
+    );
+    let plan = workspace
+        .path()
+        .join("aidlc/spaces/default/intents")
+        .join(
+            fs::read_to_string(
+                workspace
+                    .path()
+                    .join("aidlc/spaces/default/intents/active-intent"),
+            )
+            .unwrap()
+            .trim(),
+        )
+        .join("construction/code-generation/code-generation-plan.md");
+    let inside = plan_guard(&workspace, "Write", &write(plan));
+    assert_eq!(inside.status.code(), Some(0), "{inside:?}");
+    let shell = serde_json::Value::Object(serde_json::Map::from_iter([(
+        "command".to_string(),
+        "cargo test".into(),
+    )]));
+    let read_only = plan_guard(&workspace, "Bash", &shell);
+    assert_eq!(read_only.status.code(), Some(0), "{read_only:?}");
+}
+
 /// 計画が未承認なら、ブリーフはドメインの理由を名指して拒否される。
 ///
 /// 承認の判断そのものへ到達していることを観測する — 権限の解決で止まる形とは別である。

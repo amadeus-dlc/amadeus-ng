@@ -98,6 +98,22 @@ hook_post_bash() {
     | aidlc engine hook rebuild-stage-graph >/dev/null 2>&1
 }
 
+# guard <ok|refuse> <説明> <PreToolUse の tool_name> <tool_input JSON>
+# PreToolUse の plan-approval-guard を発火させる。終了コード 2 が拒否（Claude Code の契約）。
+guard() {
+  local expect="$1" desc="$2" tool="$3" input="$4" rc verdict
+  STEPS=$((STEPS + 1))
+  jq -nc --arg cwd "$PWD" --arg s "$SESSION" --arg t "$tool" --argjson i "$input" \
+    '{session_id:$s,transcript_path:"/dev/null",cwd:$cwd,hook_event_name:"PreToolUse",tool_name:$t,tool_input:$i}' \
+    | aidlc engine hook plan-approval-guard > "$LAST" 2>&1; rc=$?
+  if [ "$rc" -eq 2 ]; then verdict=refuse; else verdict=ok; fi
+  if [ "$verdict" = "$expect" ]; then log "PASS [$expect] $desc :: guard $tool"; else
+    FAILED=$((FAILED + 1)); log "FAIL [expected $expect, got $verdict (exit $rc)] $desc :: guard $tool"
+    echo "FAIL [expected $expect, got $verdict] $desc" >&2
+  fi
+  head -c 600 "$LAST" >> "$LOG"; echo >> "$LOG"
+}
+
 # human <text> — 人間の発話。UserPromptSubmit の record-human-turn を発火させる。
 human() {
   jq -nc --arg p "$1" --arg cwd "$PWD" --arg s "$SESSION" \
@@ -270,6 +286,10 @@ check "$st: gate が決定済み（bugfix は skeleton なし）" "[ \"\$(cur .g
   printf '\n## Steps\n\n- [ ] Step 1: statusline を直す\n- [ ] Step 2: 回帰テストを書いて走らせる\n'; } > "$D/code-generation-plan.md"
 wrote "$D/code-generation-plan.md"
 printf '# Unit Test Instructions\n\n`cargo test -p aidlc --test statusline_contract`\n' | write "$D/unit-test-instructions.md"
+SRC=modules/app/aidlc/src/wording.rs
+guard refuse "$st: 計画承認の前のソース書込は拒否" Write "$(jq -nc --arg f "$PWD/$SRC" '{file_path:$f,content:"x"}')"
+guard ok "$st: 記録ディレクトリ内の書込は承認前でも通す" Write "$(jq -nc --arg f "$PWD/$D/code-generation-plan.md" '{file_path:$f,content:"x"}')"
+guard refuse "$st: 計画承認の前の開発者派遣は拒否" Task "$(jq -nc '{subagent_type:"aidlc-developer-agent",description:"gen",prompt:"AIDLC-STAGE: code-generation"}')"
 step ok "$st: 承認指紋を出す" -- engine testing-posture fingerprint --stage-level
 FP="$(cat "$LAST")"
 # 形式の版（2.8.2 は `sha256:v3:`）は実体ごとの束縛の違いなので照合しない。指揮役は
@@ -285,8 +305,12 @@ perl -pi -e 's/^\[Answer\]:$/[Answer]: Approve Plan/' "$Q"; wrote "$Q"
 step ok "$st: 計画承認の返答を記録" -- engine log answer --stage $st --checkpoint plan-approval --session "$SESSION" \
   --questions-file "$Q" --details "Approve Plan" --stage-level
 step ok "$st: 開発者への指示書" -- engine testing-posture brief --stage-level
-SRC=modules/app/aidlc/src/wording.rs
+BRIEF="$(cat "$LAST")"
+guard refuse "$st: 対象の印の無い派遣は拒否" Task "$(jq -nc '{subagent_type:"aidlc-developer-agent",description:"gen",prompt:"implement it"}')"
+guard ok "$st: 承認済みの指示書での開発者派遣は通す" Task "$(jq -nc --arg p "$BRIEF" '{subagent_type:"aidlc-developer-agent",description:"gen",prompt:$p}')"
+guard ok "$st: 承認後のソース書込は通す" Write "$(jq -nc --arg f "$PWD/$SRC" '{file_path:$f,content:"x"}')"
 printf '\n// statusline fix (replay)\n' >> "$SRC"; wrote "$SRC"
+guard ok "$st: ソースが変わった後の書込も通す（生成開始で承認が失効しない）" Edit "$(jq -nc --arg f "$PWD/$SRC" '{file_path:$f,old_string:"a",new_string:"b"}')"
 perl -pi -e 's/- \[ \] Step/- [x] Step/' "$D/code-generation-plan.md"; wrote "$D/code-generation-plan.md"
 printf '# Code Summary\n\n- %s を変更\n' "$SRC" | write "$D/code-summary.md"
 printf '{"stage":"code-generation","unit":null,"version":1,"writes":[{"path":"%s"}]}\n' "$SRC" | write "$D/source-manifest.json"
