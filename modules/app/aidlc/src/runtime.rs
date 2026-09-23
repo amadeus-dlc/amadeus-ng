@@ -343,10 +343,14 @@ fn bootstrap_stage_diary(layout: &Layout, memory_path: &str) {
     let Ok(body) = std::fs::read(&template) else {
         return;
     };
-    // 既存を上書きしない（2.8.2 は `COPYFILE_EXCL`）。
+    // 既存を上書きしない（2.8.2 は `COPYFILE_EXCL`）。書き切れなければ消す — 途中までの
+    // ファイルが残ると、次の発行は「在る」と見て二度と雛形から作り直さない。
     if let Ok(mut file) = core_infrastructure::atomic::create_new_file(&target) {
         use std::io::Write as _;
-        let _ = file.write_all(&body);
+        if file.write_all(&body).is_err() {
+            drop(file);
+            let _ = std::fs::remove_file(&target);
+        }
     }
 }
 
