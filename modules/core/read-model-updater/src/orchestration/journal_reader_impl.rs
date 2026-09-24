@@ -1101,8 +1101,13 @@ impl JournalReader for JournalReaderImpl {
         &mut self,
         tables: &crate::read_tables::PipelineTables,
     ) -> Result<(), JournalReadError> {
-        let path = &self.path;
-        let transaction = self.connection.transaction().at_store(path.as_path())?;
+        let path = self.path.clone();
+        // 読み取ってから書くので `BEGIN IMMEDIATE` で書込ロックを最初に取る。DEFERRED から
+        // 書込へ昇格すると busy timeout を待たずに即 `SQLITE_BUSY` になる (Issue #134)。
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .at_store(path.as_path())?;
         let prior:Option<(String,i64)>=transaction.query_row("SELECT source_digest,event_position FROM read_pipeline_progress WHERE execution_id=?1 LIMIT 1",[tables.execution_id()],|row|Ok((row.get(0)?,row.get(1)?))).optional().at_store(path.as_path())?;
         if let Some(first) = tables.rows().first()
             && prior.as_ref().is_some_and(|(digest, position)| {
@@ -1999,6 +2004,65 @@ pub(super) mod tests {
                 path: Some(path.as_path().to_path_buf()),
             }
         );
+    }
+
+    #[tokio::test]
+    async fn replace_pipeline_waits_for_a_write_lock_held_by_another_connection() {
+        // Issue #134 の再現。`replace_pipeline` は読んでから書く。DEFERRED で始めると、別の
+        // 接続が書込ロックを握っている間の書込昇格は busy timeout を待たずに即
+        // `SQLITE_BUSY` (= `WouldBlock`) になる。IMMEDIATE なら最初の書込ロックを待てる。
+        // ホルダが握る時間 (HOLD = 200ms) は busy timeout (2000ms) より十分短いので、修正後は
+        // 解放を待って成功する。修正前の失敗は待ちに入らず即時に起きるので HOLD に依存しない。
+        const BUSY_TIMEOUT: Duration = Duration::from_millis(2000);
+        const HOLD: Duration = Duration::from_millis(200);
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let (_store, path) = opened_store(&dir);
+        let mut journal_reader =
+            JournalReaderImpl::open_with_busy_timeout(&path, BUSY_TIMEOUT).expect("開ける");
+        // 前回の投影が残した行。置き換えで消えることを、書込まで届いた証拠にする。
+        raw(&path)
+            .execute(
+                "INSERT INTO read_pipeline_progress(id,execution_id,stage,single,completed,source_digest,event_position) VALUES('stale',?1,'ci-pipeline',0,'[]','stale-digest',1)",
+                [execution_id().as_str()],
+            )
+            .expect("古い行を置く");
+        let tables = crate::read_tables::PipelineTables::project(
+            &JournalBatch::empty(),
+            &execution_id(),
+            None,
+        )
+        .expect("空の履歴も投影できる");
+
+        let (locked_sender, locked_receiver) = std::sync::mpsc::channel::<()>();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
+        let holder_path = path.clone();
+        let holder = std::thread::spawn(move || {
+            let connection = raw(&holder_path);
+            connection
+                .execute_batch("BEGIN IMMEDIATE")
+                .expect("書込ロックを握る");
+            locked_sender.send(()).expect("握ったことを知らせる");
+            // HOLD だけ握る。送信側が落ちたら (主スレッドが先に終わったら) すぐ解放する。
+            let _ = release_receiver.recv_timeout(HOLD);
+            connection
+                .execute_batch("COMMIT")
+                .expect("書込ロックを放す");
+        });
+        locked_receiver.recv().expect("ホルダが書込ロックを握った");
+
+        let result = journal_reader.replace_pipeline(&tables).await;
+        drop(release_sender);
+        holder.join().expect("ホルダのスレッドは終わる");
+
+        assert_eq!(result, Ok(()), "書込ロックの解放を待って置き換える");
+        let remaining: i64 = raw(&path)
+            .query_row(
+                "SELECT count(*) FROM read_pipeline_progress WHERE execution_id=?1",
+                [execution_id().as_str()],
+                |row| row.get(0),
+            )
+            .expect("行を数える");
+        assert_eq!(remaining, 0, "空の表で置き換えたので古い行は残らない");
     }
 
     /// 失敗経路の試験が使う投影名。
