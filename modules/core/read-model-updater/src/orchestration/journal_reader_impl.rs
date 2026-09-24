@@ -2013,8 +2013,20 @@ pub(super) mod tests {
         // `SQLITE_BUSY` (= `WouldBlock`) になる。IMMEDIATE なら最初の書込ロックを待てる。
         // ホルダが握る時間 (HOLD = 200ms) は busy timeout (2000ms) より十分短いので、修正後は
         // 解放を待って成功する。修正前の失敗は待ちに入らず即時に起きるので HOLD に依存しない。
+        //
+        // ホルダは HOLD を「主スレッドが `replace_pipeline` を呼ぶ直前」の合図 (合図 2) から
+        // 数える。書込ロックを握った合図 (合図 1) から数えると、呼び出しより先にホルダが放して
+        // しまったとき、修正前の DEFERRED でも通ってしまい、テストが修正の効果を見分けられない。
+        //
+        // そのうえで、呼び出しがロック待ちを実際に観測したことを所要時間で確かめる。下限は
+        // HOLD の半分 (100ms)。修正後の待ちはほぼ HOLD いっぱいになるので下限には余裕があり、
+        // 呼び出しより先にホルダが放していれば待ちは生じないので下限を割って赤になる。ロックの
+        // 取得の試行を直接知らせる口 (busy handler など) は本番の `JournalReaderImpl` に無く、
+        // テストのためだけに足すと表現を公開することになる (`abstract-data-type.md`)。そのため
+        // 所要時間で観測する。
         const BUSY_TIMEOUT: Duration = Duration::from_millis(2000);
         const HOLD: Duration = Duration::from_millis(200);
+        const MIN_OBSERVED_WAIT: Duration = Duration::from_millis(100);
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
         let mut journal_reader =
@@ -2034,27 +2046,44 @@ pub(super) mod tests {
         .expect("空の履歴も投影できる");
 
         let (locked_sender, locked_receiver) = std::sync::mpsc::channel::<()>();
-        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
+        let (calling_sender, calling_receiver) = std::sync::mpsc::channel::<()>();
         let holder_path = path.clone();
         let holder = std::thread::spawn(move || {
             let connection = raw(&holder_path);
             connection
                 .execute_batch("BEGIN IMMEDIATE")
                 .expect("書込ロックを握る");
-            locked_sender.send(()).expect("握ったことを知らせる");
-            // HOLD だけ握る。送信側が落ちたら (主スレッドが先に終わったら) すぐ解放する。
-            let _ = release_receiver.recv_timeout(HOLD);
+            locked_sender
+                .send(())
+                .expect("握ったことを知らせる (合図 1)");
+            // 合図 2 を受けてから HOLD だけ握る。合図 2 の送信側が落ちたら (主スレッドが呼ぶ前に
+            // 終わったら) 待たずにすぐ解放し、スレッドを取り残さない。
+            if calling_receiver.recv().is_ok() {
+                std::thread::sleep(HOLD);
+            }
             connection
                 .execute_batch("COMMIT")
                 .expect("書込ロックを放す");
         });
-        locked_receiver.recv().expect("ホルダが書込ロックを握った");
+        locked_receiver
+            .recv()
+            .expect("ホルダが書込ロックを握った (合図 1)");
 
+        // 合図 2 から呼び出しまでの間には、所要時間の計測開始のほかに処理を挟まない。
+        calling_sender
+            .send(())
+            .expect("これから replace_pipeline を呼ぶと知らせる (合図 2)");
+        let started = std::time::Instant::now();
         let result = journal_reader.replace_pipeline(&tables).await;
-        drop(release_sender);
+        let waited = started.elapsed();
+        drop(calling_sender);
         holder.join().expect("ホルダのスレッドは終わる");
 
         assert_eq!(result, Ok(()), "書込ロックの解放を待って置き換える");
+        assert!(
+            waited >= MIN_OBSERVED_WAIT,
+            "ロック待ちを観測していない (所要 {waited:?})。ホルダが呼び出しより先に放した"
+        );
         let remaining: i64 = raw(&path)
             .query_row(
                 "SELECT count(*) FROM read_pipeline_progress WHERE execution_id=?1",
