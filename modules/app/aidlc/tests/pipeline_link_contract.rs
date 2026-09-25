@@ -423,6 +423,15 @@ fn concurrent_duplicate_completions_persist_only_one_receipt() {
         1,
         "{results:?}"
     );
+    let rejected = results
+        .iter()
+        .find(|output| !output.status.success())
+        .expect("one of the two concurrent completions is rejected");
+    assert_eq!(rejected.status.code(), Some(1), "{rejected:?}");
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr).contains("already completed this attempt"),
+        "{rejected:?}"
+    );
     assert_eq!(
         workspace
             .audit()
