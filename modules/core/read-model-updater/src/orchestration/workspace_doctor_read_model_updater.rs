@@ -1,101 +1,95 @@
-//! 自己診断 (`WorkspaceDoctor`) 専用のジャーナル読取・投影。他の履歴を解釈しない。
+//! 自己診断 (`WorkspaceDoctor`) のリードモデル更新器。
 //!
-//! 二層構造は他の面と同じである — 取得ループ (manifest で自分の行だけを引き、集約を
-//! `replay` で起こす) と、集約のクエリ (`passed` / `failed` / `exit_code` / 表示順の行) の
-//! **写し**を行にする投影だけを持つ。判断はここに 1 つも無い
-//! (`coding-rules/cqrs-boundaries.md` 規則 3 の 2026-09-02 追記)。
+//! 形は「ジャーナルを読む → 投影 (純粋な変換) → DAO でリードモデルを更新する」だけである
+//! (オーナー裁定 2026-09-26 — `coding-rules/read-model-updater-structure.md`)。
+//!
+//! ```text
+//! 更新器 ── BEGIN IMMEDIATE ─────────────────────────────────────────── COMMIT
+//!   │  checkpoint DAO.find      → 処理したシーケンス番号 (after)
+//!   │  JournalReader.events_after(after)   → 新しい事実 (無ければ何も書かない)
+//!   │  JournalReader.events_through(last)  → 触れた集約の全履歴
+//!   │  投影: 集約を replay で起こし、クエリの答えを行へ写す (判断は無い)
+//!   │  report DAO.save / check DAO.replace_for_report   (表ごとに 1 本)
+//!   └─ checkpoint DAO.save(last)
+//! ```
 //!
 //! 行の値はクエリ側がそのまま表示する — 数える・並べ替える・文言を組むことをクエリ側に
-//! させないため、集計と終了コードまで焼き込む (規則 6)。
+//! させないため、集計と終了コードまで焼き込む (`coding-rules/cqrs-boundaries.md` 規則 6)。
+//!
+//! # トランザクションの渡し方 (PR1 で採った形)
+//!
+//! 更新器が接続を 1 本所有し、`BEGIN IMMEDIATE` でトランザクションを開く。表の DAO は接続を
+//! 持たず、書込メソッドがそのトランザクションを `&mut` で受け取る。読取 (チェックポイント・
+//! ジャーナル) も同じトランザクションの上で行う。確定と取り消しは更新器が決める — 途中で
+//! 失敗すればトランザクションは確定されずに捨てられ、2 表と処理したシーケンス番号のどれも
+//! 動かない。IMMEDIATE で開くのは、読んでから書くトランザクションを DEFERRED で始めると、
+//! 別の書き手がいるときの書込昇格が busy timeout を待たずに即失敗するからである (#134)。
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use core_command_domain::workspace::WorkspaceDoctor;
+use core_infrastructure::collections::FirstClassCollection as _;
+use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
 use super::journal_reader_impl::corrupt_error;
-use super::{CorruptCause, JournalReadError, ReadModelUpdater};
-use crate::read_tables::doctor_check;
-use chrono::{DateTime, Utc};
-use core_command_domain::workspace::{
-    DoctorCheck, DoctorCheckId, DoctorChecks, HookHealthTarget, WorkspaceDoctor,
-    WorkspaceDoctorEvent, WorkspaceDoctorEventId, WorkspaceDoctorId,
+use super::store_failure::SqliteResultExt;
+use super::{
+    CorruptCause, DoctorCheckDao, DoctorCheckDaoImpl, DoctorCheckRow, DoctorReportDao,
+    DoctorReportDaoImpl, DoctorReportRow, JournalReadError, ProjectionName, ReadModelUpdater,
+    WorkspaceDoctorJournalEntry, WorkspaceDoctorJournalReader, WorkspaceDoctorJournalReaderImpl,
+    WorkspaceDoctorProjectionCheckpointDao, WorkspaceDoctorProjectionCheckpointDaoImpl,
 };
-use core_infrastructure::collections::FirstClassCollection as _;
-use rusqlite::{Connection, OpenFlags, params};
-use serde::Deserialize;
 
-/// 読む行の型判別子 — 書く側 (`core-command-interface-adapter`) と対になる。
-const MANIFEST: &str = "workspace-doctor-event/1";
 /// この面のチェックポイント名。
 const PROJECTION: &str = "workspace-doctor";
-/// 自分の行だけを全履歴から引く。
-const SELECT_EVENTS: &str =
-    "SELECT aid, seq_nr, occurred_at, payload FROM journal WHERE manifest=?1 ORDER BY rowid";
-/// 表の DDL (この面が所有する 2 表とチェックポイント)。
-const CREATE_TABLES: &str = "\
-CREATE TABLE IF NOT EXISTS read_doctor_report (
-  id        TEXT    PRIMARY KEY,
-  target    TEXT    NOT NULL,
-  passed    INTEGER NOT NULL,
-  failed    INTEGER NOT NULL,
-  exit_code INTEGER NOT NULL,
-  seq_nr    INTEGER NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS read_doctor_report_target_idx ON read_doctor_report (target);
-CREATE TABLE IF NOT EXISTS read_doctor_check (
-  id        TEXT    PRIMARY KEY,
-  report_id TEXT    NOT NULL,
-  position  INTEGER NOT NULL,
-  check_id  TEXT    NOT NULL,
-  passed    INTEGER NOT NULL,
-  label     TEXT    NOT NULL,
-  fix       TEXT
-);
-CREATE INDEX IF NOT EXISTS read_doctor_check_report_idx ON read_doctor_check (report_id);
-CREATE UNIQUE INDEX IF NOT EXISTS read_doctor_check_order_idx
-  ON read_doctor_check (report_id, position);
-CREATE TABLE IF NOT EXISTS workspace_doctor_projection_checkpoint (
-  projection TEXT    PRIMARY KEY,
-  last_seq   INTEGER NOT NULL
-);";
 
-/// ジャーナル行の payload — **読む側の DTO** (書く側の DTO とは別に持つ)。
-#[derive(Debug, Clone, Deserialize)]
-struct EventWire {
-    id: String,
-    aggregate_id: String,
-    target: String,
-    checks: Vec<CheckWire>,
-}
+/// 書込ロックを待つ上限 (他の更新器と同じ既定)。
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(5000);
 
-/// 1 行ぶんの payload。
-#[derive(Debug, Clone, Deserialize)]
-struct CheckWire {
-    check_id: String,
-    passed: bool,
-    label: String,
-    fix: Option<String>,
-}
-
-/// 自己診断の共有 DB 投影器。
+/// 自己診断のリードモデル更新器。
+///
+/// 型引数はジャーナルの読み手と、書く表ごとの DAO である (スタティックディスパッチ)。
+/// 実物の組は [`WorkspaceDoctorReadModelUpdater::open`] が作る。
 #[derive(Debug)]
-pub struct WorkspaceDoctorReadModelUpdater {
+pub struct WorkspaceDoctorReadModelUpdater<J, R, C, K> {
     connection: Connection,
+    path: std::path::PathBuf,
+    journal: J,
+    reports: R,
+    checks: C,
+    checkpoints: K,
 }
 
-impl ReadModelUpdater for WorkspaceDoctorReadModelUpdater {
+impl<J, R, C, K> ReadModelUpdater for WorkspaceDoctorReadModelUpdater<J, R, C, K>
+where
+    J: WorkspaceDoctorJournalReader,
+    R: DoctorReportDao,
+    C: DoctorCheckDao,
+    K: WorkspaceDoctorProjectionCheckpointDao,
+{
     type Error = JournalReadError;
 
-    /// 自分の manifest だけを全履歴から再投影する。
+    /// 処理したシーケンス番号より後の事実を読み、触れた集約の行を差し替え、処理した番号を
+    /// 保存する。2 表と番号は 1 つのトランザクションで確定する。
     ///
     /// 内部は同期 I/O だけである。非同期なのは共通契約の境界だけ。
     ///
     /// # Errors
     ///
-    /// 履歴の復号・再生・書込に失敗した場合。
+    /// 履歴の読取・復号・再生、表の書込、トランザクションの確定に失敗した場合。
     async fn update_read_models(&mut self) -> Result<(), JournalReadError> {
-        let replayed = self.replay_all()?;
-        self.write(&replayed)
+        self.update()
     }
 }
 
-impl WorkspaceDoctorReadModelUpdater {
+impl
+    WorkspaceDoctorReadModelUpdater<
+        WorkspaceDoctorJournalReaderImpl,
+        DoctorReportDaoImpl,
+        DoctorCheckDaoImpl,
+        WorkspaceDoctorProjectionCheckpointDaoImpl,
+    >
+{
     /// 既存の共有 DB へ接続する。DB 自体は作らない。
     ///
     /// 一時ストア (`file:...?mode=memory&cache=shared`) も同じ口で開けるよう URI を許す —
@@ -112,170 +106,130 @@ impl WorkspaceDoctorReadModelUpdater {
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
-        Ok(Self { connection })
-    }
-
-    /// 集約 ID ごとに履歴を束ねて再生する (集約 ID の辞書順)。
-    fn replay_all(&self) -> Result<Vec<WorkspaceDoctor>, JournalReadError> {
-        let mut statement = self
-            .connection
-            .prepare(SELECT_EVENTS)
-            .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
-        let rows = statement
-            .query_map([MANIFEST], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, Vec<u8>>(3)?,
-                ))
-            })
-            .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
-        let mut streams: std::collections::BTreeMap<
-            String,
-            Vec<(WorkspaceDoctorEvent, usize, DateTime<Utc>)>,
-        > = std::collections::BTreeMap::new();
-        for row in rows {
-            let (aid, seq_nr, occurred_at, payload) =
-                row.map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::UndecodablePayload))?;
-            let wire: EventWire = serde_json::from_slice(&payload)
-                .map_err(|_| corrupt_error(&aid, None, CorruptCause::UndecodablePayload))?;
-            let event = decode(&wire)?;
-            let seq = usize::try_from(seq_nr)
-                .map_err(|_| corrupt_error(&aid, None, CorruptCause::InvariantViolation))?;
-            streams.entry(aid).or_default().push((
-                event,
-                seq,
-                DateTime::from_timestamp_nanos(occurred_at),
-            ));
-        }
-        let mut replayed = Vec::with_capacity(streams.len());
-        for (aid, mut events) in streams {
-            events.sort_by_key(|(_, seq, _)| *seq);
-            let (genesis, genesis_seq, genesis_at) = events
-                .first()
-                .cloned()
-                .ok_or_else(|| corrupt_error(&aid, None, CorruptCause::InvariantViolation))?;
-            if genesis_seq != 1 || genesis.aggregate_id().as_str() != aid {
-                return Err(corrupt_error(
-                    &aid,
-                    Some(genesis_seq),
-                    CorruptCause::InvariantViolation,
-                ));
-            }
-            let snapshot = WorkspaceDoctor::new(
-                genesis.aggregate_id().clone(),
-                genesis.target().clone(),
-                genesis.checks().clone(),
-                genesis_seq,
-                0,
-                genesis_at,
-            )
-            .map_err(|_| {
-                corrupt_error(&aid, Some(genesis_seq), CorruptCause::InvariantViolation)
-            })?;
-            replayed.push(WorkspaceDoctor::replay(
-                snapshot,
-                events.into_iter().skip(1),
-            ));
-        }
-        Ok(replayed)
-    }
-
-    /// 全行を差し替え、チェックポイントを 1 トランザクションで進める。
-    fn write(&mut self, replayed: &[WorkspaceDoctor]) -> Result<(), JournalReadError> {
-        let transaction = self
-            .connection
-            .transaction()
-            .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
-        transaction
-            .execute_batch(CREATE_TABLES)
-            .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
-        for table in ["read_doctor_check", "read_doctor_report"] {
-            transaction
-                .execute(&format!("DELETE FROM {table}"), [])
-                .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
-        }
-        let mut last_seq = 0_i64;
-        for doctor in replayed {
-            let id = doctor.id().as_str();
-            let seq_nr = i64::try_from(doctor.seq_nr())
-                .map_err(|_| corrupt_error(id, None, CorruptCause::InvariantViolation))?;
-            last_seq = last_seq.max(seq_nr);
-            transaction
-                .execute(
-                    "INSERT INTO read_doctor_report VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![
-                        id,
-                        doctor.target().relative_directory(),
-                        i64::try_from(doctor.checks().passed()).map_err(|_| corrupt_error(
-                            id,
-                            None,
-                            CorruptCause::InvariantViolation
-                        ))?,
-                        i64::try_from(doctor.checks().failed()).map_err(|_| corrupt_error(
-                            id,
-                            None,
-                            CorruptCause::InvariantViolation
-                        ))?,
-                        i64::from(doctor.checks().exit_code()),
-                        seq_nr,
-                    ],
-                )
-                .map_err(|_| corrupt_error(id, None, CorruptCause::InvariantViolation))?;
-            let rows = doctor.checks().fold_left(Vec::new(), |mut rows, check| {
-                rows.push(check.clone());
-                rows
-            });
-            for (position, check) in rows.iter().enumerate() {
-                transaction
-                    .execute(
-                        "INSERT INTO read_doctor_check VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                        params![
-                            doctor_check(id, position),
-                            id,
-                            i64::try_from(position).map_err(|_| corrupt_error(
-                                id,
-                                None,
-                                CorruptCause::InvariantViolation
-                            ))?,
-                            check.id().as_str(),
-                            i64::from(check.is_passed()),
-                            check.label(),
-                            check.fix(),
-                        ],
-                    )
-                    .map_err(|_| corrupt_error(id, None, CorruptCause::InvariantViolation))?;
-            }
-        }
-        transaction
-            .execute(
-                "INSERT INTO workspace_doctor_projection_checkpoint VALUES (?1, ?2)
-                 ON CONFLICT(projection) DO UPDATE SET last_seq = excluded.last_seq",
-                params![PROJECTION, last_seq],
-            )
-            .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
-        transaction
-            .commit()
-            .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))
+        connection.busy_timeout(BUSY_TIMEOUT).at_store(path)?;
+        Ok(Self {
+            connection,
+            path: path.to_path_buf(),
+            journal: WorkspaceDoctorJournalReaderImpl,
+            reports: DoctorReportDaoImpl,
+            checks: DoctorCheckDaoImpl,
+            checkpoints: WorkspaceDoctorProjectionCheckpointDaoImpl,
+        })
     }
 }
 
-/// 読取 DTO をドメインイベントへ写す (検査付き — 迂回する構築口は無い)。
-fn decode(wire: &EventWire) -> Result<WorkspaceDoctorEvent, JournalReadError> {
-    let undecodable = || corrupt_error(&wire.aggregate_id, None, CorruptCause::UndecodablePayload);
-    let id = WorkspaceDoctorEventId::parse(&wire.id).map_err(|_| undecodable())?;
-    let aggregate_id = WorkspaceDoctorId::parse(&wire.aggregate_id).map_err(|_| undecodable())?;
-    let target = HookHealthTarget::parse(&wire.target).map_err(|_| undecodable())?;
-    let mut checks = Vec::with_capacity(wire.checks.len());
-    for row in &wire.checks {
-        checks.push(DoctorCheck::new(
-            DoctorCheckId::parse(&row.check_id).map_err(|_| undecodable())?,
-            row.passed,
-            row.label.clone(),
-            row.fix.clone(),
+impl<J, R, C, K> WorkspaceDoctorReadModelUpdater<J, R, C, K>
+where
+    J: WorkspaceDoctorJournalReader,
+    R: DoctorReportDao,
+    C: DoctorCheckDao,
+    K: WorkspaceDoctorProjectionCheckpointDao,
+{
+    /// [`ReadModelUpdater::update_read_models`] の本体。
+    fn update(&mut self) -> Result<(), JournalReadError> {
+        let projection = ProjectionName::parse(PROJECTION)
+            .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
+        let mut transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .at_store(&self.path)?;
+        self.checkpoints.create_table(&mut transaction)?;
+        self.reports.create_table(&mut transaction)?;
+        self.checks.create_table(&mut transaction)?;
+
+        let after = self.checkpoints.find(&transaction, &projection)?;
+        let latest = self.journal.events_after(&transaction, after)?;
+        if let Some(last) = latest.last().map(WorkspaceDoctorJournalEntry::position) {
+            let touched: BTreeSet<&str> = latest
+                .iter()
+                .map(|entry| entry.event().aggregate_id().as_str())
+                .collect();
+            let history = self.journal.events_through(&transaction, last)?;
+            for doctor in replay(&history, &touched)? {
+                let (report, checks) = project(&doctor);
+                self.reports.save(&mut transaction, &report)?;
+                self.checks
+                    .replace_for_report(&mut transaction, report.id(), &checks)?;
+            }
+            self.checkpoints.save(&mut transaction, &projection, last)?;
+        }
+        transaction.commit().at_store(&self.path)
+    }
+}
+
+/// `touched` の集約を、履歴から `replay` で起こす (集約 ID の辞書順)。
+fn replay(
+    history: &[WorkspaceDoctorJournalEntry],
+    touched: &BTreeSet<&str>,
+) -> Result<Vec<WorkspaceDoctor>, JournalReadError> {
+    let mut streams: BTreeMap<&str, Vec<&WorkspaceDoctorJournalEntry>> = BTreeMap::new();
+    for entry in history {
+        let aid = entry.event().aggregate_id().as_str();
+        if touched.contains(aid) {
+            streams.entry(aid).or_default().push(entry);
+        }
+    }
+    let mut replayed = Vec::with_capacity(streams.len());
+    for (aid, mut entries) in streams {
+        entries.sort_by_key(|entry| entry.seq_nr());
+        let genesis = entries
+            .first()
+            .ok_or_else(|| corrupt_error(aid, None, CorruptCause::InvariantViolation))?;
+        if genesis.seq_nr() != 1 {
+            return Err(corrupt_error(
+                aid,
+                Some(genesis.seq_nr()),
+                CorruptCause::InvariantViolation,
+            ));
+        }
+        let snapshot = WorkspaceDoctor::new(
+            genesis.event().aggregate_id().clone(),
+            genesis.event().target().clone(),
+            genesis.event().checks().clone(),
+            genesis.seq_nr(),
+            0,
+            genesis.occurred_at(),
+        )
+        .map_err(|_| {
+            corrupt_error(
+                aid,
+                Some(genesis.seq_nr()),
+                CorruptCause::InvariantViolation,
+            )
+        })?;
+        replayed.push(WorkspaceDoctor::replay(
+            snapshot,
+            entries
+                .into_iter()
+                .skip(1)
+                .map(|entry| (entry.event().clone(), entry.seq_nr(), entry.occurred_at())),
         ));
     }
-    WorkspaceDoctorEvent::new(id, aggregate_id, target, DoctorChecks::new(checks))
-        .map_err(|_| undecodable())
+    Ok(replayed)
+}
+
+/// 集約のクエリの答えを 2 表の行へ写す (純粋な変換 — 判断は集約の側にある)。
+fn project(doctor: &WorkspaceDoctor) -> (DoctorReportRow, Vec<DoctorCheckRow>) {
+    let id = doctor.id().as_str();
+    let report = DoctorReportRow::new(
+        id.to_string(),
+        doctor.target().relative_directory(),
+        doctor.checks().passed(),
+        doctor.checks().failed(),
+        doctor.checks().exit_code(),
+        doctor.seq_nr(),
+    );
+    let checks = doctor.checks().fold_left(Vec::new(), |mut rows, check| {
+        let position = rows.len();
+        rows.push(DoctorCheckRow::new(
+            id.to_string(),
+            position,
+            check.id().as_str().to_string(),
+            check.is_passed(),
+            check.label().to_string(),
+            check.fix().map(str::to_string),
+        ));
+        rows
+    });
+    (report, checks)
 }

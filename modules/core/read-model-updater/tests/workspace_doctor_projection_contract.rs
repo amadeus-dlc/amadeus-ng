@@ -172,12 +172,15 @@ impl Projected {
     }
 }
 
-async fn project(
+/// 診断の履歴を本家のストアへ書く (更新器は走らせない)。
+///
+/// `aggregates` は試験装置が握る集約の状態で、呼び出しをまたいで続きから書ける。
+async fn record(
     path: &std::path::Path,
+    aggregates: &mut Vec<WorkspaceDoctor>,
     history: &[(HookHealthTarget, bool)],
-) -> (Projected, Vec<WorkspaceDoctor>) {
+) {
     let mut store = Store::new(path).unwrap();
-    let mut aggregates: Vec<WorkspaceDoctor> = Vec::new();
     for (index, (target, bun_found)) in history.iter().enumerate() {
         let moment = at() + chrono::Duration::seconds(index as i64);
         match aggregates
@@ -199,11 +202,24 @@ async fn project(
             }
         }
     }
+}
+
+/// 更新器を開き直して 1 回走らせる (再起動と同じ — 前回の状態はリードモデルにしか無い)。
+async fn update(path: &std::path::Path) {
     WorkspaceDoctorReadModelUpdater::open(path)
         .unwrap()
         .update_read_models()
         .await
         .unwrap();
+}
+
+async fn project(
+    path: &std::path::Path,
+    history: &[(HookHealthTarget, bool)],
+) -> (Projected, Vec<WorkspaceDoctor>) {
+    let mut aggregates: Vec<WorkspaceDoctor> = Vec::new();
+    record(path, &mut aggregates, history).await;
+    update(path).await;
     (
         Projected {
             connection: rusqlite::Connection::open(path).unwrap(),
@@ -332,7 +348,7 @@ async fn two_targets_get_two_reports_that_do_not_share_check_rows() {
 }
 
 #[tokio::test]
-async fn the_projection_is_a_full_recomputation_so_running_it_twice_is_the_same() {
+async fn running_the_update_twice_leaves_the_same_rows() {
     let temp = tempfile::tempdir().unwrap();
     let path = StorePath::for_runtime(temp.path());
     let (projected, aggregates) = project(path.as_path(), &[(target("default"), true)]).await;
@@ -371,7 +387,13 @@ async fn the_checkpoint_names_the_latest_projected_sequence() {
 async fn a_row_whose_payload_is_not_ours_is_corrupt_rather_than_skipped() {
     let temp = tempfile::tempdir().unwrap();
     let path = StorePath::for_runtime(temp.path());
-    let (_, aggregates) = project(path.as_path(), &[(target("default"), true)]).await;
+    // 処理したシーケンス番号より後の行だけが読まれるので、まだ処理していない行を壊す。
+    record(
+        path.as_path(),
+        &mut Vec::new(),
+        &[(target("default"), true)],
+    )
+    .await;
     let connection = rusqlite::Connection::open(path.as_path()).unwrap();
     connection
         .execute(
@@ -389,5 +411,234 @@ async fn a_row_whose_payload_is_not_ours_is_corrupt_rather_than_skipped() {
         format!("{error}").contains("undecodable payload"),
         "実際: {error}"
     );
-    let _ = aggregates;
+}
+
+/// 保存された処理済みシーケンス番号 (ジャーナル上の位置)。
+fn saved_checkpoint(connection: &rusqlite::Connection) -> i64 {
+    connection
+        .query_row(
+            "SELECT last_seq FROM workspace_doctor_projection_checkpoint WHERE projection='workspace-doctor'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+/// 行が書き直されたかを見分けるための印を、報告の行に直接置く。
+fn mark(connection: &rusqlite::Connection, id: &str) {
+    connection
+        .execute(
+            "UPDATE read_doctor_report SET exit_code = 99 WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+}
+
+#[tokio::test]
+async fn the_checkpoint_is_the_journal_position_rather_than_the_aggregate_sequence() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = StorePath::for_runtime(temp.path());
+    // 2 つの対象がそれぞれ 1 件ずつ — 集約内の通番はどちらも 1、ジャーナル上の位置は 1 と 2。
+    let (projected, _) = project(
+        path.as_path(),
+        &[(target("default"), true), (target("team-a"), true)],
+    )
+    .await;
+    assert_eq!(saved_checkpoint(&projected.connection), 2);
+}
+
+#[tokio::test]
+async fn a_restarted_updater_starts_after_the_saved_sequence_and_touches_only_new_facts() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = StorePath::for_runtime(temp.path());
+    let mut aggregates = Vec::new();
+    record(
+        path.as_path(),
+        &mut aggregates,
+        &[(target("default"), true)],
+    )
+    .await;
+    update(path.as_path()).await;
+    let connection = rusqlite::Connection::open(path.as_path()).unwrap();
+    assert_eq!(saved_checkpoint(&connection), 1);
+    let default_id = aggregates[0].id().as_str().to_string();
+    mark(&connection, &default_id);
+
+    // 再起動 (更新器を開き直す) までの間に、別の対象の診断が 1 件増える。
+    record(
+        path.as_path(),
+        &mut aggregates,
+        &[(target("team-a"), false)],
+    )
+    .await;
+    update(path.as_path()).await;
+
+    let projected = Projected { connection };
+    assert_eq!(
+        saved_checkpoint(&projected.connection),
+        2,
+        "次の番号まで進む"
+    );
+    assert_eq!(
+        projected.report(&default_id).3,
+        99,
+        "処理済みの事実しか持たない集約の行は書き直さない"
+    );
+    let team_a = aggregates[1].id().as_str();
+    assert_eq!(
+        projected.report(team_a).2,
+        i64::try_from(aggregates[1].checks().failed()).unwrap(),
+        "新しい事実は投影される"
+    );
+    assert_eq!(projected.checks(team_a).len(), aggregates[1].checks().len());
+}
+
+#[tokio::test]
+async fn a_new_fact_for_a_known_target_is_replayed_from_its_whole_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = StorePath::for_runtime(temp.path());
+    let mut aggregates = Vec::new();
+    record(
+        path.as_path(),
+        &mut aggregates,
+        &[(target("default"), false)],
+    )
+    .await;
+    update(path.as_path()).await;
+    record(
+        path.as_path(),
+        &mut aggregates,
+        &[(target("default"), true)],
+    )
+    .await;
+    update(path.as_path()).await;
+    let projected = Projected {
+        connection: rusqlite::Connection::open(path.as_path()).unwrap(),
+    };
+    let id = aggregates[0].id().as_str();
+    let (_, _, failed, exit_code, seq_nr) = projected.report(id);
+    assert_eq!(seq_nr, 2, "集約は誕生から起こし直されて通番 2 になる");
+    assert_eq!(
+        failed,
+        i64::try_from(aggregates[0].checks().failed()).unwrap()
+    );
+    assert_eq!(exit_code, i64::from(aggregates[0].checks().exit_code()));
+    assert_eq!(saved_checkpoint(&projected.connection), 2);
+    assert_eq!(projected.count("read_doctor_report"), 1);
+}
+
+#[tokio::test]
+async fn an_update_without_new_facts_writes_nothing() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = StorePath::for_runtime(temp.path());
+    let (projected, aggregates) = project(path.as_path(), &[(target("default"), true)]).await;
+    let id = aggregates[0].id().as_str();
+    mark(&projected.connection, id);
+    update(path.as_path()).await;
+    update(path.as_path()).await;
+    assert_eq!(projected.report(id).3, 99, "冪等 — 同じ事実を二度書かない");
+    assert_eq!(saved_checkpoint(&projected.connection), 1);
+}
+
+#[tokio::test]
+async fn a_batch_that_fails_midway_moves_neither_table_nor_the_checkpoint() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = StorePath::for_runtime(temp.path());
+    let (projected, mut aggregates) = project(path.as_path(), &[(target("default"), false)]).await;
+    let id = aggregates[0].id().as_str().to_string();
+    let before = projected.report(&id);
+    let checks_before = projected.checks(&id);
+    // 報告の行を書いた後、診断行の書込で落ちるようにする (トランザクションの途中の失敗)。
+    projected
+        .connection
+        .execute_batch(
+            "CREATE TRIGGER refuse_checks BEFORE INSERT ON read_doctor_check
+             BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+        )
+        .unwrap();
+    record(
+        path.as_path(),
+        &mut aggregates,
+        &[(target("default"), true)],
+    )
+    .await;
+    let error = WorkspaceDoctorReadModelUpdater::open(path.as_path())
+        .unwrap()
+        .update_read_models()
+        .await
+        .unwrap_err();
+    assert!(format!("{error}").starts_with("io:"), "実際: {error}");
+    assert_eq!(projected.report(&id), before, "報告の行は確定されていない");
+    assert_eq!(projected.checks(&id), checks_before, "診断行も元のまま");
+    assert_eq!(saved_checkpoint(&projected.connection), 1, "番号も進まない");
+
+    // 原因を取り除けば、同じ事実を次の実行で処理する (取りこぼさない)。
+    projected
+        .connection
+        .execute_batch("DROP TRIGGER refuse_checks")
+        .unwrap();
+    update(path.as_path()).await;
+    assert_eq!(projected.report(&id).4, 2);
+    assert_eq!(saved_checkpoint(&projected.connection), 2);
+}
+
+#[tokio::test]
+async fn the_update_waits_for_a_write_lock_held_by_another_connection() {
+    // #134 の教訓の回帰。更新器は処理したシーケンス番号とジャーナルを読んでから書く。
+    // DEFERRED で始めると、別の接続が書込ロックを握っている間は、読んだ後の書込昇格が
+    // busy timeout を待たずに即 `SQLITE_BUSY` になる。IMMEDIATE なら最初に書込ロックを
+    // 待ち、解放後に書く。
+    //
+    // ホルダは HOLD を「主スレッドが更新を呼ぶ直前」の合図 (合図 2) から数え、呼び出しが
+    // ロック待ちを実際に観測したことを所要時間 (下限 = HOLD の半分) で確かめる
+    // (`JournalReaderImpl` の `replace_pipeline_waits_for_a_write_lock_held_by_another_connection`
+    // と同じ立て付け)。
+    const HOLD: std::time::Duration = std::time::Duration::from_millis(200);
+    const MIN_OBSERVED_WAIT: std::time::Duration = std::time::Duration::from_millis(100);
+    let temp = tempfile::tempdir().unwrap();
+    let path = StorePath::for_runtime(temp.path());
+    let mut aggregates = Vec::new();
+    record(
+        path.as_path(),
+        &mut aggregates,
+        &[(target("default"), true)],
+    )
+    .await;
+    // 表を先に作っておく。表が無いと最初の文 (`CREATE TABLE`) が読むより先に書込ロックを
+    // 取りに行くので、DEFERRED でも待ててしまい、IMMEDIATE の効果を見分けられない。
+    update(path.as_path()).await;
+    record(path.as_path(), &mut aggregates, &[(target("team-a"), true)]).await;
+    let mut updater = WorkspaceDoctorReadModelUpdater::open(path.as_path()).unwrap();
+
+    let (locked_sender, locked_receiver) = std::sync::mpsc::channel::<()>();
+    let (calling_sender, calling_receiver) = std::sync::mpsc::channel::<()>();
+    let holder_path = path.as_path().to_path_buf();
+    let holder = std::thread::spawn(move || {
+        let connection = rusqlite::Connection::open(&holder_path).unwrap();
+        connection.execute_batch("BEGIN IMMEDIATE").unwrap();
+        locked_sender.send(()).unwrap();
+        if calling_receiver.recv().is_ok() {
+            std::thread::sleep(HOLD);
+        }
+        connection.execute_batch("END").unwrap();
+    });
+    locked_receiver.recv().unwrap();
+
+    calling_sender.send(()).unwrap();
+    let started = std::time::Instant::now();
+    let result = updater.update_read_models().await;
+    let waited = started.elapsed();
+    drop(calling_sender);
+    holder.join().unwrap();
+
+    assert_eq!(result, Ok(()), "書込ロックの解放を待って書く");
+    assert!(
+        waited >= MIN_OBSERVED_WAIT,
+        "ロック待ちを観測していない (所要 {waited:?})"
+    );
+    let projected = Projected {
+        connection: rusqlite::Connection::open(path.as_path()).unwrap(),
+    };
+    assert_eq!(projected.count("read_doctor_report"), 2);
+    assert_eq!(saved_checkpoint(&projected.connection), 2);
 }

@@ -11,11 +11,11 @@
 //! 自分で開くからである。
 
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::JournalReadError;
 
-use rusqlite::ErrorCode;
+use rusqlite::{Connection, ErrorCode};
 
 /// SQLiteの操作結果を、対象ストアの場所を伴うRMUの失敗契約へ変換する。
 ///
@@ -23,6 +23,13 @@ use rusqlite::ErrorCode;
 /// 成功値と操作順序には触れず、呼出元は失敗の分類やパス付与を繰り返さない。
 pub(super) trait SqliteResultExt<T> {
     fn at_store(self, path: &Path) -> Result<T, JournalReadError>;
+
+    /// 接続が開いているストアの場所を添えて変換する。
+    ///
+    /// 表の DAO は接続を持たず、更新器から受け取った接続・トランザクションの上で動く。
+    /// 場所を別に運ばずに済むよう、接続自身が知っている場所を使う (一時ストアのように
+    /// 場所を持たない接続では `None`)。
+    fn at_connection(self, connection: &Connection) -> Result<T, JournalReadError>;
 }
 
 impl<T> SqliteResultExt<T> for rusqlite::Result<T> {
@@ -30,6 +37,16 @@ impl<T> SqliteResultExt<T> for rusqlite::Result<T> {
         self.map_err(|error| JournalReadError::Io {
             kind: io_kind(&error),
             path: Some(path.to_path_buf()),
+        })
+    }
+
+    fn at_connection(self, connection: &Connection) -> Result<T, JournalReadError> {
+        self.map_err(|error| JournalReadError::Io {
+            kind: io_kind(&error),
+            path: connection
+                .path()
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from),
         })
     }
 }

@@ -122,5 +122,23 @@ mod session_event_dto;
 
 pub use dto::SingleStageRunStartedDto;
 
+// 更新器の構造 — ジャーナルを読む → 投影 → 表の DAO で更新する
+// (`coding-rules/read-model-updater-structure.md`)。ポート (trait と、それが運ぶ値) は
+// `port/`、実装は `…Impl` としてこの階層に置く。移行済みは自己診断だけ (Issue #153 の PR1)。
+mod port;
+pub use port::{
+    DoctorCheckDao, DoctorCheckRow, DoctorReportDao, DoctorReportRow, WorkspaceDoctorJournalEntry,
+    WorkspaceDoctorJournalReader, WorkspaceDoctorProjectionCheckpointDao,
+};
+
+mod doctor_check_dao_impl;
+mod doctor_report_dao_impl;
+mod workspace_doctor_journal_reader_impl;
+mod workspace_doctor_projection_checkpoint_dao_impl;
+pub use doctor_check_dao_impl::DoctorCheckDaoImpl;
+pub use doctor_report_dao_impl::DoctorReportDaoImpl;
+pub use workspace_doctor_journal_reader_impl::WorkspaceDoctorJournalReaderImpl;
+pub use workspace_doctor_projection_checkpoint_dao_impl::WorkspaceDoctorProjectionCheckpointDaoImpl;
+
 mod workspace_doctor_read_model_updater;
 pub use workspace_doctor_read_model_updater::WorkspaceDoctorReadModelUpdater;
