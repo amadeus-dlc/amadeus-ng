@@ -79,7 +79,7 @@ pub use port::{IntentExecutionRepository, IntentRepository, WorkflowDefinitionRe
 pub use port::CompiledDefinitionRepository;
 
 // ユースケース。入力は正規化済みの型で受け、成功では何も返さない (CQS の Command —
-// 「何が起きたか」は合成ルートが catch_up 後のリードモデルから導く)。逐語文言も出す側の
+// 「何が起きたか」は合成ルートが update_read_models 後のリードモデルから導く)。逐語文言も出す側の
 // 持ち物である。型名は upstream の CLI 動詞ではなく更新の意図から取る
 // (オーナー裁定 2026-08-29 — 動詞 report は「レポート」と誤読される)。
 //

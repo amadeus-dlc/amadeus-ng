@@ -1,5 +1,5 @@
 //! 計画承認の参照文書を読む境界。
-use super::{CatchUpError, SteeringSource};
+use super::{ReadModelUpdateError, SteeringSource};
 use core_command_domain::orchestration::{PlanApprovalDocuments, PlanApprovalInput, PlanTarget};
 use core_infrastructure::hash::sha256_hex;
 use std::{fs, io, path::PathBuf};
@@ -30,18 +30,21 @@ impl PlanSource {
     /// 現在の原文と状態本文を読む。ソース走査結果は入力境界が渡す。
     /// # Errors
     /// 存在する入力を読めない場合。
-    pub fn read(&self, source_sha256: Option<String>) -> Result<PlanApprovalInput, CatchUpError> {
+    pub fn read(
+        &self,
+        source_sha256: Option<String>,
+    ) -> Result<PlanApprovalInput, ReadModelUpdateError> {
         let mut directory = self.record.join("construction");
         if let Some(unit) = self.target.unit() {
             directory.push(unit);
         }
         directory.push("code-generation");
-        let read = |name: &str| -> Result<String, CatchUpError> {
+        let read = |name: &str| -> Result<String, ReadModelUpdateError> {
             let path = directory.join(name);
             match fs::read_to_string(&path) {
                 Ok(text) => Ok(text),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
-                Err(error) => Err(CatchUpError::SteeringRead {
+                Err(error) => Err(ReadModelUpdateError::SteeringRead {
                     path: path.display().to_string(),
                     kind: error.kind(),
                 }),
@@ -52,7 +55,7 @@ impl PlanSource {
             Ok(body) => Some(sha256_hex(&body)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => {
-                return Err(CatchUpError::SteeringRead {
+                return Err(ReadModelUpdateError::SteeringRead {
                     path: state.display().to_string(),
                     kind: error.kind(),
                 });
@@ -63,7 +66,7 @@ impl PlanSource {
             .strip_prefix(&self.project)
             .ok()
             .and_then(|path| path.to_str())
-            .ok_or_else(|| CatchUpError::SteeringRead {
+            .ok_or_else(|| ReadModelUpdateError::SteeringRead {
                 path: questions.display().to_string(),
                 kind: io::ErrorKind::InvalidData,
             })?

@@ -165,7 +165,7 @@ impl Layout {
     /// 「実在する」は upstream どおり `aidlc-state.md` の有無で判定する
     /// (`existsSync(join(dir, raw, "aidlc-state.md"))`、裁定 F-H1 = B)。状態ファイルを失った
     /// 記録はカーソルが名指していても選ばれず、唯一記録の数にも入らない (`listIntentDirs`)。
-    /// したがって `runtime::catch_up` の `restore_missing_files` が `next` から届くのは、
+    /// したがって `runtime::update_read_models` の `restore_missing_files` が `next` から届くのは、
     /// 記録が (状態ファイルを持って) 解決できたうえで監査シャードや memory の投影だけが
     /// 失われている場合に限られる。
     pub(crate) fn shared(project_dir: &Path) -> Self {

@@ -3,7 +3,10 @@ use super::{Completion, Layout, active_execution, store_path};
 use core_infrastructure::canon_json::{JsonValue, ObjectMembers, SerializationProfile, serialize};
 use core_query_interface_adapter::ReadModelDaos;
 use core_query_use_case::orchestration::{FindTestingContractUseCase, TestingContractView};
-use core_read_model_updater::orchestration::{JournalReaderImpl, ReadModelUpdater, SteeringSource};
+use core_read_model_updater::orchestration::{
+    CodeGenerationApprovalReadModelUpdater, JournalReaderImpl, PlanFingerprintReadModelUpdater,
+    ReadModelUpdater, SteeringSource, TestingReadModelUpdater,
+};
 
 pub(super) async fn run(layout: &Layout, args: &[String]) -> Completion {
     let command = args
@@ -45,7 +48,9 @@ pub(super) async fn run(layout: &Layout, args: &[String]) -> Completion {
 pub(super) async fn load(layout: &Layout) -> Result<TestingContractView, String> {
     let store = store_path(layout)?;
     let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
-    ReadModelUpdater::catch_up_testing(&mut reader, &SteeringSource::new(layout.memory_dir()))
+    let source = SteeringSource::new(layout.memory_dir());
+    TestingReadModelUpdater::new(&mut reader, &source)
+        .update_read_models()
         .await
         .map_err(|error| error.to_string())?;
     let cursor = active_execution(layout).map_err(|error| error.to_string())?;
@@ -117,7 +122,8 @@ async fn fingerprint(layout: &Layout, args: &[String]) -> Result<String, String>
     .map_err(|error| error.to_string())?;
     let store = store_path(layout)?;
     let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
-    ReadModelUpdater::catch_up_plan_fingerprint(&mut reader, cursor.execution_id(), &input)
+    PlanFingerprintReadModelUpdater::new(&mut reader, cursor.execution_id(), &input)
+        .update_read_models()
         .await
         .map_err(|error| error.to_string())?;
     let daos = ReadModelDaos::open(store.as_path()).map_err(|error| error.to_string())?;
@@ -257,12 +263,13 @@ pub(super) async fn approval(
     };
     let store = store_path(layout)?;
     let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
-    ReadModelUpdater::catch_up_code_generation_approval(
+    CodeGenerationApprovalReadModelUpdater::new(
         &mut reader,
         cursor.execution_id(),
         &input,
         &receipts,
     )
+    .update_read_models()
     .await
     .map_err(|error| error.to_string())?;
     let daos = ReadModelDaos::open(store.as_path()).map_err(|error| error.to_string())?;

@@ -16,7 +16,7 @@ use core_infrastructure::ExclusiveFileLock;
 use core_query_interface_adapter::ReadModelDaos;
 use core_query_use_case::orchestration::PlanApprovalOperationUseCase;
 use core_read_model_updater::orchestration::{
-    PlanApprovalJournalReaderImpl, PlanApprovalReadModelUpdater,
+    PlanApprovalJournalReaderImpl, PlanApprovalReadModelUpdater, ReadModelUpdater,
 };
 use std::path::PathBuf;
 /// 排他を保持し、先行操作を回復してから新しい承認更新を行う。
@@ -70,15 +70,16 @@ impl PlanApprovalAccess {
         PlanApprovalRuntimeRepositoryImpl::open(&StorePath::for_runtime(&self.root))
             .map_err(|error| error.to_string())
     }
-    fn project(&mut self) -> Result<(), String> {
+    async fn project(&mut self) -> Result<(), String> {
         let reader = PlanApprovalJournalReaderImpl::open(&StorePath::for_runtime(&self.root))
             .map_err(|error| error.to_string())?;
         PlanApprovalReadModelUpdater::new(reader)
-            .catch_up()
+            .update_read_models()
+            .await
             .map_err(|error| error.to_string())
     }
     async fn recover(&mut self) -> Result<(), String> {
-        self.project()?;
+        self.project().await?;
         let daos = ReadModelDaos::open(StorePath::for_runtime(&self.root).as_path())
             .map_err(|error| error.to_string())?;
         let pending = PlanApprovalOperationUseCase::new(daos.plan_approval_operation())
@@ -111,7 +112,7 @@ impl PlanApprovalAccess {
                 kind => return Err(format!("Unknown pending approval operation kind: {kind}")),
             }
         }
-        self.project()
+        self.project().await
     }
     async fn recover_generation(
         &mut self,
@@ -198,7 +199,7 @@ impl PlanApprovalAccess {
         execution: &IntentExecutionId,
     ) -> Result<(), String> {
         let layout = self.origin_layout(space, execution)?;
-        super::catch_up(&layout).await
+        super::update_read_models(&layout).await
     }
     async fn recover_response(
         &mut self,
@@ -260,7 +261,7 @@ impl PlanApprovalAccess {
             )
             .await;
         if let Err(error) = delivered {
-            self.project()?;
+            self.project().await?;
             return Err(error.to_string());
         }
         self.project_origin(space, execution).await?;
@@ -286,7 +287,7 @@ impl PlanApprovalAccess {
             .execute(request, Utc::now())
             .await
             .map_err(|error| error.to_string())?;
-        self.project()?;
+        self.project().await?;
         let delivered = self
             .recover_answer(
                 request.operation_id(),
@@ -294,7 +295,7 @@ impl PlanApprovalAccess {
                 request.origin().execution_id(),
             )
             .await;
-        let projection = self.project();
+        let projection = self.project().await;
         delivered?;
         projection
     }
@@ -324,7 +325,7 @@ impl PlanApprovalAccess {
         match preparation {
             Ok(()) => {
                 let delivered = self.recover_response(&operation, &space, execution).await;
-                let shared_projection = self.project();
+                let shared_projection = self.project().await;
                 delivered?;
                 shared_projection
             }
@@ -338,7 +339,7 @@ impl PlanApprovalAccess {
                     .execute(execution, session.raw(), response, false, Utc::now())
                     .await
                     .map_err(|error| error.to_string())?;
-                super::catch_up(layout).await?;
+                super::update_read_models(layout).await?;
                 if matches!(
                     error,
                     PlanApprovalCommandError::Domain(PlanRuntimeError::NoPendingChallenge)
@@ -371,10 +372,10 @@ impl PlanApprovalAccess {
         .await
         .map_err(|error| error.to_string());
         // 本家と同じく、選択肢数などの後段で失敗しても保存済みの監査事実は投影する。
-        let projection = super::catch_up(layout).await;
+        let projection = super::update_read_models(layout).await;
         result?;
         projection?;
-        self.project()
+        self.project().await
     }
     async fn resolve(
         &mut self,
@@ -418,7 +419,7 @@ impl PlanApprovalAccess {
             .await
             .map_err(|error| error.to_string())?;
         self.resolve(&operation, &space, execution).await?;
-        self.project()
+        self.project().await
     }
 }
 
@@ -666,6 +667,6 @@ pub(super) async fn invalidate_context(
         .execute(execution, &space, &operation, &request, Utc::now())
         .await
         .map_err(|error| error.to_string())?;
-    super::catch_up(layout).await?;
-    approval.project()
+    super::update_read_models(layout).await?;
+    approval.project().await
 }

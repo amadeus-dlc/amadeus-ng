@@ -259,7 +259,7 @@ impl JournalReaderImpl {
     ///
     /// # Errors
     /// 履歴欠落・破損、投影不能、DB更新の失敗。
-    pub fn rebuild_read_model(&mut self) -> Result<GlobalSeqNr, super::CatchUpError> {
+    pub fn rebuild_read_model(&mut self) -> Result<GlobalSeqNr, super::ReadModelUpdateError> {
         let path = self.path.clone();
         let transaction = self
             .connection
@@ -300,7 +300,7 @@ impl JournalReaderImpl {
         &mut self,
         projection: &ProjectionName,
         targets: &super::ProjectionTargets,
-    ) -> Result<bool, super::CatchUpError> {
+    ) -> Result<bool, super::ReadModelUpdateError> {
         if super::publication_store::pending(&self.connection, self.path.as_path(), projection)?
             .is_some()
         {
@@ -317,7 +317,7 @@ impl JournalReaderImpl {
             return Ok(false);
         };
         if !previous.matches_targets(targets) || !previous.uses_current_transform() {
-            return Err(super::CatchUpError::PublicationConflict {
+            return Err(super::ReadModelUpdateError::PublicationConflict {
                 path: self.path.as_path().to_path_buf(),
             });
         }
@@ -328,7 +328,7 @@ impl JournalReaderImpl {
                 if targets.owns_source_baseline(file.path(), file.after())
                     && restored.after() != file.after()
                 {
-                    return Err(super::CatchUpError::PublicationConflict {
+                    return Err(super::ReadModelUpdateError::PublicationConflict {
                         path: file.path().to_path_buf(),
                     });
                 }
@@ -341,7 +341,7 @@ impl JournalReaderImpl {
         }
         let checkpoint = Self::read_checkpoint(&self.connection, projection, self.path.as_path())?;
         if checkpoint < previous.to() {
-            return Err(super::CatchUpError::PublicationConflict {
+            return Err(super::ReadModelUpdateError::PublicationConflict {
                 path: self.path.as_path().to_path_buf(),
             });
         }
@@ -375,14 +375,14 @@ impl JournalReaderImpl {
         &mut self,
         projection: &ProjectionName,
         targets: &super::ProjectionTargets,
-    ) -> Result<bool, super::CatchUpError> {
+    ) -> Result<bool, super::ReadModelUpdateError> {
         let Some(previous) =
             super::publication_store::pending(&self.connection, self.path.as_path(), projection)?
         else {
             return Ok(false);
         };
         if !previous.matches_targets(targets) {
-            return Err(super::CatchUpError::PublicationConflict {
+            return Err(super::ReadModelUpdateError::PublicationConflict {
                 path: targets.state_file().to_path_buf(),
             });
         }
@@ -394,7 +394,7 @@ impl JournalReaderImpl {
                 if targets.owns_source_baseline(file.path(), file.after())
                     && rebased.after() != file.after()
                 {
-                    return Err(super::CatchUpError::PublicationConflict {
+                    return Err(super::ReadModelUpdateError::PublicationConflict {
                         path: file.path().to_path_buf(),
                     });
                 }
@@ -438,15 +438,15 @@ impl JournalReaderImpl {
     ///
     /// チェックポイントは Markdown 面 (状態ファイル・監査シャード) と**共有**である。
     /// 戻すと未投影区間が全履歴になり、監査シャードに同じブロックがもう一度並ぶ
-    /// ([`crate::orchestration::ReadModelUpdater::catch_up`] の「書いてから進める」)。
+    /// ([`crate::orchestration::OrchestrationReadModelUpdater`] の「書いてから進める」)。
     /// 読み面だけを作り直したいので、ここで全履歴を引いて `replace_all` し、
     /// チェックポイントには触れない。参照入力由来の 2 表 (`read_steering_*`) は空のまま
-    /// 戻るが、次の `catch_up` が保存済み `source_digest` を `None` と見て描き直す。
+    /// 戻るが、次の更新 (`update_read_models`) が保存済み `source_digest` を `None` と見て描き直す。
     ///
     /// # 描き直すのは「投影済みのストア」だけ
     ///
     /// チェックポイントがまだ 1 つも進んでいないストア (鋳造直後・未投影) には作り直す
-    /// 中身が無く、次の `catch_up` が全履歴から普通に描く。開く段で毎回ジャーナル全体を
+    /// 中身が無く、次の更新 (`update_read_models`) が全履歴から普通に描く。開く段で毎回ジャーナル全体を
     /// 復号すると、読むだけの動詞まで復号の失敗で倒れるようになるので、**進んだ
     /// チェックポイントが在るときだけ**その場の描き直しに入る。
     fn ensure_read_schema(
@@ -994,7 +994,7 @@ const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
 }
 
 impl JournalReader for JournalReaderImpl {
-    fn prepare_read_model(&mut self) -> Result<(), super::CatchUpError> {
+    fn prepare_read_model(&mut self) -> Result<(), super::ReadModelUpdateError> {
         let needs_rebuild =
             match super::shared_projection::read(&self.connection, self.path.as_path())? {
                 None => true,
@@ -1034,7 +1034,7 @@ impl JournalReader for JournalReaderImpl {
         projection: &ProjectionName,
         batch: &super::PublicationBatch,
         tables: &ReadTables,
-    ) -> Result<(), super::CatchUpError> {
+    ) -> Result<(), super::ReadModelUpdateError> {
         super::publication_store::publish(
             &mut self.connection,
             self.path.as_path(),

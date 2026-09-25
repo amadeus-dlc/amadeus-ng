@@ -23,7 +23,7 @@ use super::switch_autonomy_error::SwitchAutonomyError;
 /// - **材料の読取**。監査台帳を読んで [`HumanTurns`] を組むのも、env
 ///   `AIDLC_SKIP_HUMAN_PRESENCE_GUARD` を見るのも合成ルートである。
 /// - **文言**。`Refusing to switch Construction to autonomous: …` の逐語は合成ルートが組む。
-/// - **リードモデルの更新**。`catch_up` を起動するのは合成ルートである。
+/// - **リードモデルの更新**。`update_read_models` を起動するのは合成ルートである。
 ///
 /// # 成功は `Ok(())` である（CQS）
 ///

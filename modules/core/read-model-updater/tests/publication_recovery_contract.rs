@@ -9,8 +9,8 @@ use std::path::PathBuf;
 
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
-    CatchUpError, GlobalSeqNr, JournalBatch, JournalReadError, JournalReader, JournalReaderImpl,
-    ProjectionName, ProjectionTargets, PublicationBatch, PublicationFile,
+    GlobalSeqNr, JournalBatch, JournalReadError, JournalReader, JournalReaderImpl, ProjectionName,
+    ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdateError,
 };
 use core_read_model_updater::read_tables::ReadTables;
 use rusqlite::Connection;
@@ -238,7 +238,7 @@ async fn unrelated_candidates_cannot_replace_an_unfinished_plan() {
             reader
                 .publish(&projection(), &candidate, &empty_tables())
                 .await,
-            Err(CatchUpError::PublicationConflict { .. })
+            Err(ReadModelUpdateError::PublicationConflict { .. })
         ));
         assert_eq!(
             reader.pending_publication(&projection()).await.unwrap(),
@@ -360,7 +360,7 @@ async fn ambiguous_edits_and_deleted_outputs_remain_pending_without_overwrite() 
 
         assert!(
             matches!(reader.resolve_publication(&projection(), &fixture.targets()),
-            Err(CatchUpError::PublicationConflict { path }) if path == fixture.state)
+            Err(ReadModelUpdateError::PublicationConflict { path }) if path == fixture.state)
         );
         assert!(
             !reader
@@ -397,7 +397,7 @@ async fn recovery_rejects_targets_that_do_not_own_the_saved_files() {
 
     assert!(matches!(
         reader.resolve_publication(&projection(), &other),
-        Err(CatchUpError::PublicationConflict { .. })
+        Err(ReadModelUpdateError::PublicationConflict { .. })
     ));
     assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "after\n");
     assert!(
@@ -517,7 +517,7 @@ async fn a_committed_generation_cannot_be_submitted_to_another_projection() {
 
     assert!(matches!(
         reader.publish(&other, &accepted, &empty_tables()).await,
-        Err(CatchUpError::PublicationConflict { .. })
+        Err(ReadModelUpdateError::PublicationConflict { .. })
     ));
     assert!(reader.pending_publication(&other).await.unwrap().is_none());
     assert_eq!(
@@ -581,7 +581,7 @@ async fn failures_while_preparing_a_plan_roll_back_without_publishing() {
 
         assert_eq!(
             error,
-            CatchUpError::Read(JournalReadError::Io {
+            ReadModelUpdateError::Read(JournalReadError::Io {
                 kind: ErrorKind::Other,
                 path: Some(fixture.store.as_path().to_path_buf()),
             })
@@ -621,7 +621,7 @@ async fn failures_after_file_publication_keep_a_resumable_plan() {
 
         assert_eq!(
             reader.publish(&projection(), &batch, &empty_tables()).await,
-            Err(CatchUpError::Read(JournalReadError::Io {
+            Err(ReadModelUpdateError::Read(JournalReadError::Io {
                 kind: ErrorKind::Other,
                 path: Some(fixture.store.as_path().to_path_buf()),
             }))
@@ -672,7 +672,7 @@ async fn a_busy_store_reports_contention_before_saving_or_writing_files() {
         .unwrap_err();
 
     assert!(
-        matches!(error, CatchUpError::Read(JournalReadError::Io { kind: ErrorKind::WouldBlock, path: Some(path) }) if path == fixture.store.as_path())
+        matches!(error, ReadModelUpdateError::Read(JournalReadError::Io { kind: ErrorKind::WouldBlock, path: Some(path) }) if path == fixture.store.as_path())
     );
     assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "before\n");
     assert!(
@@ -706,7 +706,7 @@ async fn a_shared_head_cannot_claim_missing_history_or_overflow_its_generation()
 
         assert!(matches!(
             error,
-            CatchUpError::Read(JournalReadError::Corrupt { .. })
+            ReadModelUpdateError::Read(JournalReadError::Corrupt { .. })
         ));
         assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "before\n");
         assert!(!fixture.audit.exists());
@@ -747,7 +747,15 @@ async fn an_old_transform_is_rebuilt_at_the_write_boundary() {
         .unwrap();
     assert_eq!(untouched, 0, "openだけでは全履歴を投影しない");
     assert_eq!(reopened.checkpoint(&projection()).await.unwrap(), last);
-    core_read_model_updater::orchestration::ReadModelUpdater::<JournalReaderImpl>::catch_up_structured(&mut reopened, &projection()).await.unwrap();
+    {
+        use core_read_model_updater::orchestration::{
+            ReadModelUpdater, StructuredReadModelUpdater,
+        };
+        StructuredReadModelUpdater::new(&mut reopened, &projection())
+            .update_read_models()
+            .await
+            .unwrap();
+    }
 
     // 同位置の正しい断面を再提示できることが、再生成された内容一致の検収。
     reopened
@@ -801,7 +809,7 @@ async fn a_legacy_unverified_head_must_match_its_reconstructed_rows() {
 
     assert!(matches!(
         error,
-        CatchUpError::Read(JournalReadError::Corrupt { .. })
+        ReadModelUpdateError::Read(JournalReadError::Corrupt { .. })
     ));
     assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "before\n");
     assert!(
@@ -837,11 +845,11 @@ async fn preparing_an_old_transform_preserves_history_failure_classification() {
         if corrupt_payload {
             assert!(matches!(
                 failure,
-                CatchUpError::Read(JournalReadError::Corrupt { .. })
+                ReadModelUpdateError::Read(JournalReadError::Corrupt { .. })
             ));
         } else {
             assert!(
-                matches!(failure, CatchUpError::ReadTables(_)),
+                matches!(failure, ReadModelUpdateError::ReadTables(_)),
                 "{failure:?}"
             );
         }
@@ -877,15 +885,17 @@ async fn restoration_refuses_a_checkpoint_behind_its_saved_snapshot() {
 
     assert!(matches!(
         reader.restore_missing_files(&projection(), &fixture.targets()),
-        Err(CatchUpError::PublicationConflict { .. })
+        Err(ReadModelUpdateError::PublicationConflict { .. })
     ));
 
     assert!(!fixture.state.exists());
 }
 
 #[tokio::test]
-async fn catch_up_refuses_a_saved_plan_for_different_targets_before_publication() {
-    use core_read_model_updater::orchestration::{ReadModelUpdater, SteeringSource};
+async fn update_refuses_a_saved_plan_for_different_targets_before_publication() {
+    use core_read_model_updater::orchestration::{
+        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringSource,
+    };
     let fixture = Fixture::new();
     let mut reader = fixture.reader();
     fixture.block_checkpoint();
@@ -903,7 +913,7 @@ async fn catch_up_refuses_a_saved_plan_for_different_targets_before_publication(
         &fixture.audit,
         fixture.root.path().join("memory"),
     );
-    let mut updater = ReadModelUpdater::new(
+    let mut updater = OrchestrationReadModelUpdater::new(
         reader,
         projection(),
         targets,
@@ -911,8 +921,8 @@ async fn catch_up_refuses_a_saved_plan_for_different_targets_before_publication(
     );
 
     assert_eq!(
-        updater.catch_up().await,
-        Err(CatchUpError::PublicationConflict {
+        updater.update_read_models().await,
+        Err(ReadModelUpdateError::PublicationConflict {
             path: other_state.clone()
         })
     );
@@ -925,8 +935,10 @@ async fn catch_up_refuses_a_saved_plan_for_different_targets_before_publication(
 }
 
 #[tokio::test]
-async fn catch_up_refuses_a_saved_cut_that_has_disappeared_from_history() {
-    use core_read_model_updater::orchestration::{ReadModelUpdater, SteeringSource};
+async fn update_refuses_a_saved_cut_that_has_disappeared_from_history() {
+    use core_read_model_updater::orchestration::{
+        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringSource,
+    };
     let fixture = Fixture::new();
     let mut reader = fixture.reader();
     let batch = PublicationBatch::new(
@@ -951,14 +963,17 @@ async fn catch_up_refuses_a_saved_cut_that_has_disappeared_from_history() {
         .await
         .unwrap()
         .unwrap();
-    let mut updater = ReadModelUpdater::new(
+    let mut updater = OrchestrationReadModelUpdater::new(
         reader,
         projection(),
         fixture.targets(),
         SteeringSource::new(fixture.root.path().join("memory")),
     );
 
-    assert_eq!(updater.catch_up().await, Err(CatchUpError::PlanUnavailable));
+    assert_eq!(
+        updater.update_read_models().await,
+        Err(ReadModelUpdateError::PlanUnavailable)
+    );
 
     assert_eq!(
         fixture
@@ -1040,7 +1055,7 @@ async fn typed_shared_row_corruption_blocks_old_and_same_position_publications_u
                 reader
                     .publish(&projection(), &batch, &candidate_tables)
                     .await,
-                Err(CatchUpError::Read(JournalReadError::Corrupt { .. }))
+                Err(ReadModelUpdateError::Read(JournalReadError::Corrupt { .. }))
             ));
 
             assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "before\n");
@@ -1156,7 +1171,7 @@ async fn losing_the_shared_head_during_checkpoint_write_rolls_back_and_keeps_the
 
     assert_eq!(
         reader.publish(&projection(), &batch, &empty_tables()).await,
-        Err(CatchUpError::PublicationConflict {
+        Err(ReadModelUpdateError::PublicationConflict {
             path: fixture.store.as_path().to_path_buf()
         })
     );
@@ -1228,7 +1243,7 @@ async fn rebuilding_without_a_head_preserves_the_known_published_cut() {
         .unwrap();
     assert!(matches!(
         reader.rebuild_read_model(),
-        Err(CatchUpError::Read(JournalReadError::Corrupt {
+        Err(ReadModelUpdateError::Read(JournalReadError::Corrupt {
             cause: core_read_model_updater::orchestration::CorruptCause::CheckpointAnchorMismatch,
             ..
         }))
@@ -1260,7 +1275,7 @@ async fn an_interrupted_restoration_keeps_a_resumable_plan() {
         .unwrap_err();
     assert!(matches!(
         error,
-        CatchUpError::Read(JournalReadError::Io {
+        ReadModelUpdateError::Read(JournalReadError::Io {
             kind: ErrorKind::Other,
             ..
         })
@@ -1314,7 +1329,7 @@ async fn an_interrupted_resolution_keeps_user_text_and_a_resumable_generation() 
     fs::write(&fixture.state, "after\nuser addition\n").unwrap();
     assert!(matches!(
         reader.resolve_publication(&projection(), &fixture.targets()),
-        Err(CatchUpError::Read(JournalReadError::Io {
+        Err(ReadModelUpdateError::Read(JournalReadError::Io {
             kind: ErrorKind::Other,
             ..
         }))
@@ -1387,7 +1402,7 @@ async fn resolution_refuses_corrupt_history_before_replacing_the_saved_plan() {
         .unwrap();
     assert!(matches!(
         reader.resolve_publication(&projection(), &fixture.targets()),
-        Err(CatchUpError::Read(JournalReadError::Corrupt { .. }))
+        Err(ReadModelUpdateError::Read(JournalReadError::Corrupt { .. }))
     ));
     assert_eq!(
         reader.pending_publication(&projection()).await.unwrap(),
@@ -1401,8 +1416,10 @@ async fn resolution_refuses_corrupt_history_before_replacing_the_saved_plan() {
 }
 
 #[tokio::test]
-async fn catch_up_repairs_a_lost_head_without_new_events_even_after_reopening() {
-    use core_read_model_updater::orchestration::{ReadModelUpdater, SteeringSource};
+async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
+    use core_read_model_updater::orchestration::{
+        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringSource, StructuredReadModelUpdater,
+    };
     for reopen in [false, true] {
         for structured in [false, true] {
             let fixture = Fixture::new();
@@ -1422,23 +1439,20 @@ async fn catch_up_repairs_a_lost_head_without_new_events_even_after_reopening() 
                 reader = fixture.reader();
             }
             if structured {
-                assert_eq!(
-                    ReadModelUpdater::<JournalReaderImpl>::catch_up_structured(
-                        &mut reader,
-                        &projection()
-                    )
+                StructuredReadModelUpdater::new(&mut reader, &projection())
+                    .update_read_models()
                     .await
-                    .unwrap(),
-                    last
-                );
+                    .unwrap();
+                assert_eq!(reader.checkpoint(&projection()).await.unwrap(), last);
             } else {
-                let mut updater = ReadModelUpdater::new(
+                let mut updater = OrchestrationReadModelUpdater::new(
                     reader,
                     projection(),
                     fixture.targets(),
                     SteeringSource::new(fixture.root.path().join("memory")),
                 );
-                assert_eq!(updater.catch_up().await.unwrap(), last);
+                updater.update_read_models().await.unwrap();
+                assert_eq!(updater.checkpoint().await.unwrap(), last);
             }
             assert_eq!(fixture.shared_head().0, 1);
             assert!(fixture.shared_head().4);
@@ -1457,7 +1471,9 @@ async fn catch_up_repairs_a_lost_head_without_new_events_even_after_reopening() 
 
 #[tokio::test]
 async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
-    use core_read_model_updater::orchestration::{ReadModelUpdater, SteeringSource};
+    use core_read_model_updater::orchestration::{
+        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringSource,
+    };
     for with_state in [false, true] {
         let fixture = Fixture::new();
         let mut reader = fixture.reader();
@@ -1497,15 +1513,15 @@ async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
             !saved.matches_targets(&targets),
             "部分一致を所有の一致としない"
         );
-        let mut updater = ReadModelUpdater::new(
+        let mut updater = OrchestrationReadModelUpdater::new(
             reader,
             projection(),
             targets,
             SteeringSource::new(fixture.root.path().join("other-memory")),
         );
         assert!(matches!(
-            updater.catch_up().await,
-            Err(CatchUpError::PublicationConflict { .. })
+            updater.update_read_models().await,
+            Err(ReadModelUpdateError::PublicationConflict { .. })
         ));
         let reader = fixture.reader();
         assert_eq!(
@@ -1560,7 +1576,7 @@ async fn damaged_shared_head_fields_refuse_publication_until_explicit_rebuild() 
                 reader
                     .publish(&projection(), &candidate, &empty_tables())
                     .await,
-                Err(CatchUpError::Read(JournalReadError::Corrupt { .. }))
+                Err(ReadModelUpdateError::Read(JournalReadError::Corrupt { .. }))
             ),
             "{corruption}"
         );
@@ -1614,7 +1630,7 @@ async fn restoration_refuses_a_saved_snapshot_that_does_not_own_its_files() {
     fs::remove_file(&foreign).unwrap();
     assert!(matches!(
         reader.restore_missing_files(&projection(), &fixture.targets()),
-        Err(CatchUpError::PublicationConflict { .. })
+        Err(ReadModelUpdateError::PublicationConflict { .. })
     ));
     assert!(!foreign.exists(), "所有外のファイルを復活させない");
     assert_eq!(fs::read_to_string(&fixture.state).unwrap(), "before\n");

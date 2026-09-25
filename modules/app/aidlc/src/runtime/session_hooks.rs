@@ -85,7 +85,7 @@ pub(super) async fn record(
         .execute(&observation, Utc::now())
         .await
         .map_err(|error| error.to_string())?;
-    super::catch_up(layout).await?;
+    super::update_read_models(layout).await?;
     let daos = core_query_interface_adapter::ReadModelDaos::open(store.as_path())
         .map_err(|error| error.to_string())?;
     core_query_use_case::orchestration::SessionAuditUseCase::new(daos.session_audit())

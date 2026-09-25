@@ -22,7 +22,7 @@ use super::port::RepositoryError;
 /// - **park した位置**。[`ParkUseCase::execute`] は成功しても値を返さない（下記 CQS）。
 ///   位置は投影後のリードモデル（`read_execution.parked_at_slug`）から読む — upstream の
 ///   `handlePark` も mutation 後に状態ファイルの `Parked At Stage` を読み直す。
-/// - **リードモデルの更新**。`catch_up` を起動するのは合成ルートである。
+/// - **リードモデルの更新**。`update_read_models` を起動するのは合成ルートである。
 ///
 /// # 束縛はスタティック
 ///
@@ -71,7 +71,7 @@ impl<E: IntentExecutionRepository, I: IntentRepository> ParkUseCase<E, I> {
     ///
     /// 状態を変えるので Command であり、CQS が定める Command の形（`&mut self` +
     /// `Result<(), E>`）をそのまま採る（`coding-rules/command-query-separation.md`）。
-    /// park した位置は、合成ルートが `catch_up` 後のリードモデルから引く。
+    /// park した位置は、合成ルートが `update_read_models` 後のリードモデルから引く。
     ///
     /// # `Conflict` は 1 回だけ再試行する
     ///

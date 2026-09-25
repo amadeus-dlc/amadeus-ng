@@ -10,7 +10,7 @@
 //! - **書込動詞（`report` / `intent-create`）の後**: 書いた事実を投影して
 //!   `aidlc-state.md` と監査シャードへ落とす（U7 の責務「コマンド末尾の RMU 起動」）。
 //!
-//! **駆動ループはここに無い** — 回すのは `catch_up` の呼出 1 行だけで、バッチ・チェック
+//! **駆動ループはここに無い** — 回すのは `update_read_models` の呼出 1 行だけで、バッチ・チェック
 //! ポイント・エラー処理は RMU の中にある（`coding-rules/cqrs-boundaries.md` 禁止パターン
 //! 「駆動ループを合成ルートに置く」）。
 //!
@@ -89,8 +89,8 @@ use core_query_use_case::orchestration::{
     StageSlugView, dispatcher_invocation,
 };
 use core_read_model_updater::orchestration::{
-    HookHealthReadModelUpdater, JournalReaderImpl, ProjectionName, ProjectionTargets,
-    ReadModelUpdater, SteeringSource,
+    HookHealthReadModelUpdater, JournalReaderImpl, OrchestrationReadModelUpdater, ProjectionName,
+    ProjectionTargets, ReadModelUpdater, SteeringSource, StructuredReadModelUpdater,
 };
 
 use crate::cli::{EngineRoute, Face, IntentCreateArgs, Invocation, Request, parse};
@@ -402,10 +402,10 @@ async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u
     if layout.record_dir().is_none() {
         prepare_definition_for_first_read(layout).await?;
     }
-    catch_up_before_reading(layout).await?;
+    update_read_models_before_reading(layout).await?;
     let mut directive = bind_state_text(layout, turn::next(layout, &input))?;
     if pipeline_link::begin_single(layout, &directive).await? {
-        catch_up(layout).await?;
+        update_read_models(layout).await?;
         directive = bind_state_text(layout, turn::next(layout, &input))?;
     }
     publish_directive(layout, &directive, &bytes).await?;
@@ -414,7 +414,7 @@ async fn next(layout: &Layout, input: NextTurnInput) -> Result<(Directive, Vec<u
 
 /// `continue` — 鍵は**読むだけ**。無ければ・壊れていれば fail-closed（I12）。
 async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), String> {
-    catch_up_before_reading(layout).await?;
+    update_read_models_before_reading(layout).await?;
     let key = SteeringKey::resolve(layout.project_dir(), layout.record_dir());
     let bytes = match key.read_for_continue() {
         Ok(Some(bytes)) => bytes,
@@ -452,7 +452,7 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
     let snapshot = continuation_cursor::Snapshot::capture(layout);
     let mut directive = bind_state_text(layout, turn::resume(layout, verified.as_ref()))?;
     if pipeline_link::begin_single(layout, &directive).await? {
-        catch_up(layout).await?;
+        update_read_models(layout).await?;
         directive = bind_state_text(layout, turn::resume(layout, verified.as_ref()))?;
     }
     // カーソル照合 — 組み立て済みの結果を出す前に、提示トークンが現行か確かめる。
@@ -488,10 +488,10 @@ async fn resume(layout: &Layout, token: &str) -> Result<(Directive, Vec<u8>), St
 /// | 12 practices 受領証 | — | ○（`approve_gate` の段 12 — b49） |
 async fn report(layout: &Layout, args: &crate::cli::ReportArgs) -> Completion {
     // 読む面（状態ファイル・実行行）が最新でないと段 1 と段 4 が古い値で判断する。
-    // 書いた事実を落とすのはコミットの後（末尾の `catch_up`）である。
+    // 書いた事実を落とすのはコミットの後（末尾の `update_read_models`）である。
     // カーソル破損時は投影対象を推測しない。各report経路が下で既定の順序・文言で拒否する。
     if active_execution(layout).is_ok()
-        && let Err(message) = catch_up_before_reading(layout).await
+        && let Err(message) = update_read_models_before_reading(layout).await
     {
         return Completion::refused(message);
     }
@@ -1391,7 +1391,7 @@ async fn audit_artifact_after_write(layout: &Layout, input: &str) -> Result<(), 
             ArtifactAuditCommandError::Domain(error) => error.to_string(),
             ArtifactAuditCommandError::Repository(error) => error.to_string(),
         })?;
-    catch_up(&layout).await
+    update_read_models(&layout).await
 }
 
 /// state ファイルがまだ無い TypeScript 由来の record でも、Artifact-only の投影先を解決する。
@@ -1430,7 +1430,10 @@ async fn record_hook_drop(layout: &Layout, name: &str, reason: &str) -> Result<(
         .map_err(|error| error.to_string())?;
     let mut updater =
         HookHealthReadModelUpdater::open(path.as_path()).map_err(|error| error.to_string())?;
-    updater.catch_up().map_err(|error| error.to_string())
+    updater
+        .update_read_models()
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// write-audit-logの稼働事実を承認ストリームと分離して保存する。
@@ -1476,7 +1479,7 @@ async fn observe_hook_health(layout: &Layout, name: &str) -> Completion {
     match result {
         Ok((event, health)) => match repository.store(&event, &health).await {
             Ok(()) => match HookHealthReadModelUpdater::open(path.as_path()) {
-                Ok(mut updater) => match updater.catch_up() {
+                Ok(mut updater) => match updater.update_read_models().await {
                     Ok(()) => Completion::silent(),
                     Err(error) => Completion::refused(wording::hook_heartbeat_failure(
                         &error,
@@ -1538,7 +1541,7 @@ async fn observe_human_prompt(layout: &Layout, input: &str) -> Result<(), String
         )
         .await
         .map_err(|error| error.to_string())?;
-    catch_up(layout).await?;
+    update_read_models(layout).await?;
     shared_failure.map_or(Ok(()), Err)
 }
 
@@ -2196,7 +2199,7 @@ async fn practices_promote(layout: &Layout, args: &crate::cli::PromoteArgs) -> C
         }
     };
     // 定義の面（practices ステージの宣言と support agents）を読む前に投影を追いつかせる。
-    if let Err(message) = catch_up_before_reading(layout).await {
+    if let Err(message) = update_read_models_before_reading(layout).await {
         return Completion::refused(message);
     }
     let support_agents = match practices_support_agents(layout, &store) {
@@ -2455,7 +2458,7 @@ async fn set_autonomy(layout: &Layout, args: &crate::cli::SetAutonomyArgs) -> Co
         }
     };
     // 状態ファイルの欄を最新の投影で検査するため、読む前に追いつかせる。
-    if let Err(message) = catch_up_before_reading(layout).await {
+    if let Err(message) = update_read_models_before_reading(layout).await {
         return Completion::refused(message);
     }
     // 外部の材料 — `HUMAN_TURN` はフックが監査シャードへ直接書く一次の事実であり、我々の
@@ -2893,7 +2896,7 @@ async fn mint_intent(
             .map_err(|error| fault("cannot resolve the created space", &format!("{error:?}")))?,
         &name,
     );
-    catch_up(&created_layout)
+    update_read_models(&created_layout)
         .await
         .map_err(|error| wording::orchestrate_failure(&error))?;
     let view = core_query_use_case::orchestration::FindInitializationUseCase::new(
@@ -2992,9 +2995,9 @@ async fn prepare_definition_for_first_read(layout: &Layout) -> Result<(), String
         .map_err(|error| format!("projection name: {error:?}"))?;
     let mut journal_reader = JournalReaderImpl::open(&store)
         .map_err(|error| diagnose("cannot open the definition journal", &error))?;
-    ReadModelUpdater::catch_up_structured(&mut journal_reader, &projection)
+    StructuredReadModelUpdater::new(&mut journal_reader, &projection)
+        .update_read_models()
         .await
-        .map(|_| ())
         .map_err(|error| format!("definition projection: {error}"))
 }
 
@@ -3077,13 +3080,13 @@ fn review_class(raw: &str) -> Option<String> {
 ///
 /// record がまだ無い（intent 未鋳造）ときは描く先が無いので何もしない — それは失敗では
 /// なく fresh なワークスペースの正常な姿である。
-async fn catch_up(layout: &Layout) -> Result<(), String> {
-    catch_up_with(layout, true).await
+async fn update_read_models(layout: &Layout) -> Result<(), String> {
+    update_read_models_with(layout, true).await
 }
 
 /// `restore_missing_files` の有無を選べる追いつき — `--doctor` は診断のために失われた
 /// 状態・監査を復元してはならない (C7 `automatic_repair: forbidden`) ので `false` で呼ぶ。
-async fn catch_up_with(layout: &Layout, restore_missing: bool) -> Result<(), String> {
+async fn update_read_models_with(layout: &Layout, restore_missing: bool) -> Result<(), String> {
     let (Some(state_file), Some(audit_dir)) = (layout.state_file(), layout.audit_dir()) else {
         return Ok(());
     };
@@ -3100,7 +3103,7 @@ async fn catch_up_with(layout: &Layout, restore_missing: bool) -> Result<(), Str
     if execution_id.is_some() {
         let legacy = ProjectionName::parse(PROJECTION)
             .map_err(|error| format!("projection name: {error:?}"))?;
-        ReadModelUpdater::require_unpublished(&journal_reader, &legacy)
+        OrchestrationReadModelUpdater::require_unpublished(&journal_reader, &legacy)
             .await
             .map_err(|error| format!("projection: {error}"))?;
     }
@@ -3130,30 +3133,29 @@ async fn catch_up_with(layout: &Layout, restore_missing: bool) -> Result<(), Str
     // 伴わないので、読取先を明示的に渡す。
     let steering =
         SteeringSource::new(layout.memory_dir()).relative_to(layout.project_dir().to_path_buf());
-    let updater = ReadModelUpdater::new(journal_reader, projection, targets, steering)
+    let updater = OrchestrationReadModelUpdater::new(journal_reader, projection, targets, steering)
         .with_pipeline_handoff(pipeline_link::current(layout));
     let mut updater = match execution_id {
         Some(id) => updater.for_execution(id),
         None => updater,
     };
     updater
-        .catch_up()
+        .update_read_models()
         .await
-        .map(|_| ())
         .map_err(|error| format!("projection: {error}"))
 }
 
 /// 更新結果は公開が完了してから作る。すべての更新動詞が同じ失敗境界を通る。
 async fn after_projection(layout: &Layout, published: impl FnOnce() -> Completion) -> Completion {
-    match catch_up(layout).await {
+    match update_read_models(layout).await {
         Ok(()) => published(),
         Err(cause) => Completion::refused(wording::orchestrate_failure(&cause)),
     }
 }
 
 /// 読む前に投影と復旧を完了する。失敗を隠して古い指示を返したり、次の書込へ進めたりしない。
-async fn catch_up_before_reading(layout: &Layout) -> Result<(), String> {
-    catch_up(layout)
+async fn update_read_models_before_reading(layout: &Layout) -> Result<(), String> {
+    update_read_models(layout)
         .await
         .map_err(|cause| wording::orchestrate_failure(&cause))
 }
@@ -3607,7 +3609,7 @@ corrupt review override: Adversarial"
         .await;
         assert_eq!(completion.code(), 0, "{completion:?}");
         let layout = Layout::resolve(root.path());
-        catch_up_before_reading(&layout)
+        update_read_models_before_reading(&layout)
             .await
             .expect("競合前の復旧は成功する");
         layout
@@ -3637,7 +3639,7 @@ corrupt review override: Adversarial"
         )
         .await
         .expect("開始境界");
-        catch_up(layout).await.expect("開始境界の投影");
+        update_read_models(layout).await.expect("開始境界の投影");
     }
 
     fn assert_late_read_error(completion: &Completion, expected: &str) {
@@ -3884,7 +3886,7 @@ corrupt review override: Adversarial"
             concurrent
                 .execute_batch("DROP TRIGGER fail_late_publication")
                 .expect("公開障害を除去");
-            catch_up_before_reading(&layout)
+            update_read_models_before_reading(&layout)
                 .await
                 .expect("保存済みイベントから回復");
             assert_eq!(
@@ -4869,7 +4871,7 @@ corrupt review override: Adversarial"
 
     /// ジャーナルを開けなければ、古い読み面から通常指示を返さない。
     #[tokio::test]
-    async fn a_blocked_store_stops_the_catch_up_before_reading() {
+    async fn a_blocked_store_stops_the_read_model_update_before_reading() {
         let root = minimal_workspace();
         let layout = Layout::resolve(root.path());
         create_intent(

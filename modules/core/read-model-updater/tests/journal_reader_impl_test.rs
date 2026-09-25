@@ -608,7 +608,8 @@ async fn a_rebuild_retains_its_high_watermark_even_when_checkpoints_lag() {
 #[tokio::test]
 async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
     use core_read_model_updater::orchestration::{
-        ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, ProjectionTargets, PublicationBatch, PublicationFile,
+        ReadModelUpdater, SteeringSource,
     };
     let fixture = Fixture::new();
     let _store = fixture.store();
@@ -639,13 +640,14 @@ async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
         .raw()
         .execute_batch("DROP TRIGGER fail_checkpoint")
         .unwrap();
-    let mut updater = ReadModelUpdater::new(
+    let mut updater = OrchestrationReadModelUpdater::new(
         fixture.journal_reader(),
         projection(),
         targets,
         SteeringSource::new(fixture._dir.path().join("memory")),
     );
-    assert_eq!(updater.catch_up().await.unwrap(), GlobalSeqNr::ZERO);
+    updater.update_read_models().await.unwrap();
+    assert_eq!(updater.checkpoint().await.unwrap(), GlobalSeqNr::ZERO);
     assert_eq!(std::fs::read_to_string(&state).unwrap(), "after");
 }
 
@@ -653,7 +655,8 @@ async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
 #[tokio::test]
 async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
     use core_read_model_updater::orchestration::{
-        ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, ProjectionTargets, PublicationBatch, PublicationFile,
+        ReadModelUpdater, SteeringSource,
     };
     for interrupt_tail in [false, true] {
         let fixture = Fixture::new();
@@ -690,7 +693,7 @@ async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
             .execute_batch("DROP TRIGGER fail_checkpoint")
             .unwrap();
         seed_definition(&fixture.path).await;
-        let mut updater = ReadModelUpdater::new(
+        let mut updater = OrchestrationReadModelUpdater::new(
             fixture.journal_reader(),
             projection(),
             targets,
@@ -702,7 +705,7 @@ async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
             fixture.raw().execute_batch(&format!(
                 "CREATE TRIGGER fail_tail BEFORE INSERT ON amadeus_projection_checkpoint WHEN NEW.last_global_seq > {} BEGIN SELECT RAISE(ABORT,'tail failure'); END", cut.to_u64(),
             )).unwrap();
-            assert!(updater.catch_up().await.is_err());
+            assert!(updater.update_read_models().await.is_err());
             assert_eq!(
                 fixture
                     .journal_reader()
@@ -723,7 +726,8 @@ async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
                 .execute_batch("DROP TRIGGER fail_tail")
                 .unwrap();
         }
-        assert_eq!(updater.catch_up().await.unwrap(), latest);
+        updater.update_read_models().await.unwrap();
+        assert_eq!(updater.checkpoint().await.unwrap(), latest);
         let recovered: (i64, String, i64) = fixture.raw().query_row(
             "SELECT target_position,state,served_position FROM amadeus_publication_history WHERE projection=?1 AND request_id=?2",
             rusqlite::params![projection().as_str(), batch.request_id()],
@@ -744,7 +748,8 @@ async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
             .unwrap();
         assert_eq!(served, u64_to_i64(latest.to_u64()));
         assert_eq!(std::fs::read(&audit).unwrap(), written);
-        assert_eq!(updater.catch_up().await.unwrap(), latest);
+        updater.update_read_models().await.unwrap();
+        assert_eq!(updater.checkpoint().await.unwrap(), latest);
         assert_eq!(std::fs::read(&audit).unwrap(), written);
     }
 }

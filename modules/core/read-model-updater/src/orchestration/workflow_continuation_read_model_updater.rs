@@ -1,5 +1,5 @@
 //! 停止制御の履歴から、要求IDの結果と本家互換の反復markerを投影する。
-use super::{JournalReadError, store_failure::SqliteResultExt};
+use super::{JournalReadError, ReadModelUpdater, store_failure::SqliteResultExt};
 use chrono::{DateTime, Utc};
 use core_command_domain::orchestration::{
     ContinuationAttemptId, ContinuationRequest, ContinuationSignature, WorkflowContinuation,
@@ -103,16 +103,25 @@ impl EventDto {
     }
 }
 /// 共有DBで停止制御自身のstreamだけを扱う投影器。
+///
+/// 投影する停止制御のstreamと、反復markerを公開する記録ディレクトリは構築時に束ねる
+/// （[`ReadModelUpdater`] の契約）。同じ更新器を何度呼んでも同じstreamを描き直す。
 #[derive(Debug)]
 pub struct WorkflowContinuationReadModelUpdater {
     connection: Connection,
     path: PathBuf,
+    id: WorkflowContinuationId,
+    record: PathBuf,
 }
 impl WorkflowContinuationReadModelUpdater {
-    /// 既存DBへ接続する。DBや業務streamは作らない。
+    /// 既存DBへ接続し、投影するstreamと公開先の記録ディレクトリを束ねる。DBや業務streamは作らない。
     /// # Errors
     /// 接続またはread表初期化の失敗。
-    pub fn open(path: &Path) -> Result<Self, JournalReadError> {
+    pub fn open(
+        path: &Path,
+        id: WorkflowContinuationId,
+        record: PathBuf,
+    ) -> Result<Self, JournalReadError> {
         let connection = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -125,18 +134,32 @@ impl WorkflowContinuationReadModelUpdater {
         Ok(Self {
             connection,
             path: path.to_path_buf(),
+            id,
+            record,
         })
     }
+}
+
+impl ReadModelUpdater for WorkflowContinuationReadModelUpdater {
+    type Error = JournalReadError;
+
     /// 現在の全履歴から計算し、ファイル公開後に同じDB排他内で結果と位置を確定する。
+    ///
+    /// 内部は同期 I/O だけである。非同期なのは共通契約の境界だけ。
     /// # Errors
     /// 読取・復号・ファイル公開・DB確定の失敗。
     /// # Panics
     /// 保存済み履歴の通番または進捗回数が矛盾する場合。
-    pub fn catch_up(
-        &mut self,
-        id: &WorkflowContinuationId,
-        record: &Path,
-    ) -> Result<(), JournalReadError> {
+    async fn update_read_models(&mut self) -> Result<(), JournalReadError> {
+        self.project()
+    }
+}
+
+impl WorkflowContinuationReadModelUpdater {
+    /// 束ねたstreamの全履歴を投影する（[`ReadModelUpdater::update_read_models`] の本体）。
+    fn project(&mut self) -> Result<(), JournalReadError> {
+        let id = &self.id;
+        let record = self.record.as_path();
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)

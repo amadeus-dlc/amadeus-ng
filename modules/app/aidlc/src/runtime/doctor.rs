@@ -49,11 +49,11 @@ use core_query_use_case::orchestration::{
     DoctorObservationDao as _, DoctorReport, DoctorReportUseCase, StateVersionKindView,
     StateVersionView,
 };
-use core_read_model_updater::orchestration::WorkspaceDoctorReadModelUpdater;
+use core_read_model_updater::orchestration::{ReadModelUpdater, WorkspaceDoctorReadModelUpdater};
 
 mod observation;
 
-use super::{Completion, NATIVE_HOOKS, active_execution, catch_up_with, store_path};
+use super::{Completion, NATIVE_HOOKS, active_execution, store_path, update_read_models_with};
 use crate::cli::{EngineRoute, Face, Request, parse};
 use crate::layout::Layout;
 use crate::wording;
@@ -135,9 +135,13 @@ async fn diagnose(
         .await
         .map_err(|error| wording::orchestrate_failure(&format!("diagnosis: {error}")))?;
 
+    let projection_failure =
+        |error| wording::orchestrate_failure(&format!("diagnosis projection: {error}"));
     WorkspaceDoctorReadModelUpdater::open(&location)
-        .and_then(|mut updater| updater.catch_up())
-        .map_err(|error| wording::orchestrate_failure(&format!("diagnosis projection: {error}")))?;
+        .map_err(projection_failure)?
+        .update_read_models()
+        .await
+        .map_err(projection_failure)?;
 
     let daos = ReadModelDaos::open(&location)
         .map_err(|error| wording::orchestrate_failure(&error.to_string()))?;
@@ -189,7 +193,7 @@ async fn record_health_check(
         )
         .await
         .map_err(|error| wording::orchestrate_failure(&format!("health check record: {error}")))?;
-    catch_up_with(layout, false)
+    update_read_models_with(layout, false)
         .await
         .map_err(|cause| wording::orchestrate_failure(&cause))
 }

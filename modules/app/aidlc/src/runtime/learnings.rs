@@ -86,7 +86,7 @@ pub(super) async fn surface(layout: &Layout, args: &LearningsArgs) -> Completion
         return Completion::refused(no_record_refusal(layout));
     };
     // 状態ファイルは投影の産物である — 読む前に追いつかせる。
-    if let Err(message) = super::catch_up_before_reading(layout).await {
+    if let Err(message) = super::update_read_models_before_reading(layout).await {
         return Completion::refused(message);
     }
     let Some(state_path) = layout.state_file() else {
@@ -268,7 +268,7 @@ pub(super) async fn persist(layout: &Layout, args: &LearningsArgs) -> Completion
         Err(message) => return Completion::refused(wording::learnings_persist_failed(&message)),
     };
     // 実測の前に投影を追いつかせる — 未投影の書込みを「無い」と読むと二重に書く。
-    if let Err(message) = super::catch_up_before_reading(&pinned).await {
+    if let Err(message) = super::update_read_models_before_reading(&pinned).await {
         return Completion::refused(message);
     }
     let observations = match observe(&pinned, &selections) {

@@ -26,7 +26,7 @@ use super::review_log_request::ReviewLogRequest;
 ///   「通し番号が順序どおりか」も、すべて `IntentExecution::request_review` /
 ///   `record_review_verdict` が持つ。
 /// - **文言**。`Refusing REVIEW_REQUESTED for "<slug>": …` のような逐語は合成ルートが組む。
-/// - **リードモデルの更新**。`catch_up` を起動するのは合成ルートである。
+/// - **リードモデルの更新**。`update_read_models` を起動するのは合成ルートである。
 #[derive(Debug)]
 pub struct RecordReviewUseCase<
     E: IntentExecutionRepository,

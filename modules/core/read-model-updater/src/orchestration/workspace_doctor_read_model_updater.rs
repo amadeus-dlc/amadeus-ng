@@ -9,7 +9,7 @@
 //! させないため、集計と終了コードまで焼き込む (規則 6)。
 
 use super::journal_reader_impl::corrupt_error;
-use super::{CorruptCause, JournalReadError};
+use super::{CorruptCause, JournalReadError, ReadModelUpdater};
 use crate::read_tables::doctor_check;
 use chrono::{DateTime, Utc};
 use core_command_domain::workspace::{
@@ -79,6 +79,22 @@ pub struct WorkspaceDoctorReadModelUpdater {
     connection: Connection,
 }
 
+impl ReadModelUpdater for WorkspaceDoctorReadModelUpdater {
+    type Error = JournalReadError;
+
+    /// 自分の manifest だけを全履歴から再投影する。
+    ///
+    /// 内部は同期 I/O だけである。非同期なのは共通契約の境界だけ。
+    ///
+    /// # Errors
+    ///
+    /// 履歴の復号・再生・書込に失敗した場合。
+    async fn update_read_models(&mut self) -> Result<(), JournalReadError> {
+        let replayed = self.replay_all()?;
+        self.write(&replayed)
+    }
+}
+
 impl WorkspaceDoctorReadModelUpdater {
     /// 既存の共有 DB へ接続する。DB 自体は作らない。
     ///
@@ -97,16 +113,6 @@ impl WorkspaceDoctorReadModelUpdater {
         )
         .map_err(|_| corrupt_error(PROJECTION, None, CorruptCause::InvariantViolation))?;
         Ok(Self { connection })
-    }
-
-    /// 自分の manifest だけを全履歴から再投影する。
-    ///
-    /// # Errors
-    ///
-    /// 履歴の復号・再生・書込に失敗した場合。
-    pub fn catch_up(&mut self) -> Result<(), JournalReadError> {
-        let replayed = self.replay_all()?;
-        self.write(&replayed)
     }
 
     /// 集約 ID ごとに履歴を束ねて再生する (集約 ID の辞書順)。

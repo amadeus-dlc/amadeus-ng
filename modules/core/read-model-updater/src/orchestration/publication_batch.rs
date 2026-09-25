@@ -1,6 +1,6 @@
 //! 同じ履歴断面から計算し、耐久的に保存してから適用する公開計画。
 
-use super::{CatchUpError, GlobalSeqNr, PublicationFile};
+use super::{GlobalSeqNr, PublicationFile, ReadModelUpdateError};
 
 /// ファイル公開と確定位置を結ぶ不変な計画。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,7 +74,7 @@ impl PublicationBatch {
     pub fn for_targets(
         mut self,
         targets: &super::ProjectionTargets,
-    ) -> Result<PublicationBatch, CatchUpError> {
+    ) -> Result<PublicationBatch, ReadModelUpdateError> {
         self.target_binding = Some(targets.binding()?);
         Ok(self)
     }
@@ -185,7 +185,7 @@ impl PublicationBatch {
     ///
     /// # Errors
     /// いずれかのファイルの競合またはI/O失敗。
-    pub fn apply(&self) -> Result<(), CatchUpError> {
+    pub fn apply(&self) -> Result<(), ReadModelUpdateError> {
         for file in &self.files {
             file.apply()?;
         }

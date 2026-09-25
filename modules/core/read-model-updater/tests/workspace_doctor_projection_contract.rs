@@ -6,7 +6,7 @@ use core_command_domain::workspace::{
     NativeEntryPoints, SpaceName, StorePath, WorkspaceDoctor, WorkspaceDoctorEvent, WorkspaceShell,
 };
 use core_infrastructure::collections::FirstClassCollection as _;
-use core_read_model_updater::orchestration::WorkspaceDoctorReadModelUpdater;
+use core_read_model_updater::orchestration::{ReadModelUpdater, WorkspaceDoctorReadModelUpdater};
 use event_store_adapter_rs::EventStoreForSqlite;
 use event_store_adapter_rs::event_envelope::EventEnvelope;
 use event_store_adapter_rs::types::{AggregateId, EventStore};
@@ -201,7 +201,8 @@ async fn project(
     }
     WorkspaceDoctorReadModelUpdater::open(path)
         .unwrap()
-        .catch_up()
+        .update_read_models()
+        .await
         .unwrap();
     (
         Projected {
@@ -339,7 +340,8 @@ async fn the_projection_is_a_full_recomputation_so_running_it_twice_is_the_same(
     let rows_before = projected.count("read_doctor_check");
     WorkspaceDoctorReadModelUpdater::open(path.as_path())
         .unwrap()
-        .catch_up()
+        .update_read_models()
+        .await
         .unwrap();
     assert_eq!(projected.checks(aggregates[0].id().as_str()), before);
     assert_eq!(projected.count("read_doctor_check"), rows_before);
@@ -380,7 +382,8 @@ async fn a_row_whose_payload_is_not_ours_is_corrupt_rather_than_skipped() {
     drop(connection);
     let error = WorkspaceDoctorReadModelUpdater::open(path.as_path())
         .unwrap()
-        .catch_up()
+        .update_read_models()
+        .await
         .unwrap_err();
     assert!(
         format!("{error}").contains("undecodable payload"),

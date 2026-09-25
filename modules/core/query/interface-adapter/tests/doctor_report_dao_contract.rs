@@ -12,7 +12,7 @@ use std::path::Path;
 
 use core_query_interface_adapter::ReadModelDaos;
 use core_query_use_case::orchestration::{DoctorCheckDao, DoctorReportDao};
-use core_read_model_updater::orchestration::WorkspaceDoctorReadModelUpdater;
+use core_read_model_updater::orchestration::{ReadModelUpdater, WorkspaceDoctorReadModelUpdater};
 
 const MANIFEST: &str = "workspace-doctor-event/1";
 const TARGET: &str = "spaces/default/intents";
@@ -54,9 +54,13 @@ fn projected(store: &Path) {
         )
         .unwrap();
     drop(connection);
-    WorkspaceDoctorReadModelUpdater::open(store)
+    // 共通契約の境界は非同期だが、この投影器の内部は同期 I/O だけなので、同期の
+    // フィクスチャからは current_thread ランタイムでその場で待つ。
+    let mut updater = WorkspaceDoctorReadModelUpdater::open(store).unwrap();
+    tokio::runtime::Builder::new_current_thread()
+        .build()
         .unwrap()
-        .catch_up()
+        .block_on(updater.update_read_models())
         .unwrap();
 }
 

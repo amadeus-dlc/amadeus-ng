@@ -12,7 +12,7 @@ use core_command_interface_adapter::orchestration::{
 };
 use core_command_use_case::orchestration::{HookHealthRepository, PlanApprovalRuntimeRepository};
 use core_read_model_updater::orchestration::{
-    PlanApprovalJournalReaderImpl, PlanApprovalReadModelUpdater,
+    PlanApprovalJournalReaderImpl, PlanApprovalReadModelUpdater, ReadModelUpdater,
 };
 #[tokio::test]
 async fn persisted_operations_are_projected_by_id_in_the_same_runtime_store() {
@@ -40,7 +40,7 @@ async fn persisted_operations_are_projected_by_id_in_the_same_runtime_store() {
     result.unwrap();
     let reader = PlanApprovalJournalReaderImpl::open(&path).unwrap();
     let mut updater = PlanApprovalReadModelUpdater::new(reader);
-    updater.catch_up().unwrap();
+    updater.update_read_models().await.unwrap();
     let daos = core_query_interface_adapter::ReadModelDaos::open(path.as_path()).unwrap();
     let query = core_query_use_case::orchestration::PlanApprovalOperationUseCase::new(
         daos.plan_approval_operation(),
@@ -110,7 +110,7 @@ async fn plan_reader_ignores_an_interleaved_hook_health_stream() {
     approval_repo.store(&created, &runtime).await.unwrap();
     let reader = PlanApprovalJournalReaderImpl::open(&path).unwrap();
     let mut updater = PlanApprovalReadModelUpdater::new(reader);
-    updater.catch_up().unwrap();
+    updater.update_read_models().await.unwrap();
     let db = rusqlite::Connection::open(path.as_path()).unwrap();
     assert_eq!(
         db.query_row::<i64, _, _>("SELECT count(*) FROM journal", [], |row| row.get(0))
@@ -144,7 +144,7 @@ async fn query_keeps_the_previous_projection_until_recovery_commits_all_rows_and
     repository.store(&event, &runtime).await.unwrap();
     let mut updater =
         PlanApprovalReadModelUpdater::new(PlanApprovalJournalReaderImpl::open(&path).unwrap());
-    updater.catch_up().unwrap();
+    updater.update_read_models().await.unwrap();
     let daos = core_query_interface_adapter::ReadModelDaos::open(path.as_path()).unwrap();
     let query = core_query_use_case::orchestration::PlanApprovalOperationUseCase::new(
         daos.plan_approval_operation(),
@@ -163,7 +163,7 @@ async fn query_keeps_the_previous_projection_until_recovery_commits_all_rows_and
     );
     let db = rusqlite::Connection::open(path.as_path()).unwrap();
     db.execute_batch("CREATE TRIGGER fail_plan_projection BEFORE INSERT ON read_plan_operation BEGIN SELECT RAISE(ABORT, 'injected projection failure'); END;").unwrap();
-    assert!(updater.catch_up().is_err());
+    assert!(updater.update_read_models().await.is_err());
     assert_eq!(query.execute(id.as_str()).unwrap(), Some(prior));
     assert_eq!(db.query_row("SELECT last_seq FROM amadeus_plan_projection_checkpoint WHERE projection='plan-approval'", [], |row| row.get::<_,i64>(0)).unwrap(), 2);
     db.execute_batch("DROP TRIGGER fail_plan_projection")
@@ -171,14 +171,14 @@ async fn query_keeps_the_previous_projection_until_recovery_commits_all_rows_and
     drop(updater);
     let mut recovered =
         PlanApprovalReadModelUpdater::new(PlanApprovalJournalReaderImpl::open(&path).unwrap());
-    recovered.catch_up().unwrap();
+    recovered.update_read_models().await.unwrap();
     let current = query.execute(id.as_str()).unwrap().unwrap();
     assert_eq!(current.id(), id.as_str());
     assert_eq!(current.status(), "applied");
     assert_eq!(current.as_of(), 3);
     assert_eq!(current.space(), None);
     assert!(query.pending().unwrap().is_empty());
-    recovered.catch_up().unwrap();
+    recovered.update_read_models().await.unwrap();
     assert_eq!(query.execute(id.as_str()).unwrap(), Some(current));
     assert_eq!(
         db.query_row("SELECT count(*) FROM journal", [], |row| row
@@ -217,7 +217,7 @@ async fn plan_answer_result_is_read_by_its_id_after_projection_and_recovery() {
     }
     let mut updater =
         PlanApprovalReadModelUpdater::new(PlanApprovalJournalReaderImpl::open(&path).unwrap());
-    updater.catch_up().unwrap();
+    updater.update_read_models().await.unwrap();
     let daos = core_query_interface_adapter::ReadModelDaos::open(path.as_path()).unwrap();
     let query = core_query_use_case::orchestration::PlanAnswerUseCase::new(daos.plan_answer());
     let pending = query
@@ -257,13 +257,13 @@ async fn plan_answer_result_is_read_by_its_id_after_projection_and_recovery() {
     drop(updater);
     let mut recovered =
         PlanApprovalReadModelUpdater::new(PlanApprovalJournalReaderImpl::open(&path).unwrap());
-    recovered.catch_up().unwrap();
+    recovered.update_read_models().await.unwrap();
     let completed = query.execute(id.as_str()).unwrap().unwrap();
     assert_eq!(completed.status(), "recorded");
     assert_eq!(completed.emitted(), Some("PLAN_APPROVAL_RECORDED"));
     assert_eq!(completed.error(), None);
     assert_eq!(completed.as_of(), 5);
-    recovered.catch_up().unwrap();
+    recovered.update_read_models().await.unwrap();
     assert_eq!(query.execute(id.as_str()).unwrap(), Some(completed));
 }
 #[path = "../../../../tests/support/approval_answer.rs"]
@@ -294,7 +294,7 @@ async fn generation_query_observes_publication_then_certification_by_the_same_id
     }
     let mut updater =
         PlanApprovalReadModelUpdater::new(PlanApprovalJournalReaderImpl::open(&path).unwrap());
-    updater.catch_up().unwrap();
+    updater.update_read_models().await.unwrap();
     let daos = core_query_interface_adapter::ReadModelDaos::open(path.as_path()).unwrap();
     let query =
         core_query_use_case::orchestration::PlanGenerationUseCase::new(daos.plan_generation());
@@ -328,7 +328,7 @@ async fn generation_query_observes_publication_then_certification_by_the_same_id
     drop(updater);
     let mut recovered =
         PlanApprovalReadModelUpdater::new(PlanApprovalJournalReaderImpl::open(&path).unwrap());
-    recovered.catch_up().unwrap();
+    recovered.update_read_models().await.unwrap();
     let active = query.execute(id.as_str()).unwrap().unwrap();
     assert_eq!(active.status(), "generation");
     assert_eq!(active.error(), None);

@@ -1,5 +1,5 @@
 //! Createdに記録した公開名を共有登録へ投影する。イベント外の既存行は保持する。
-use super::{CatchUpError, JournalBatch, PublicationFile};
+use super::{JournalBatch, PublicationFile, ReadModelUpdateError};
 use crate::read_tables::ReadTables;
 use core_command_domain::orchestration::IntentExecutionEvent;
 use std::{fs, io, path::Path};
@@ -8,7 +8,7 @@ pub(super) fn publication(
     history: &JournalBatch,
     tables: &ReadTables,
     path: &Path,
-) -> Result<Option<PublicationFile>, CatchUpError> {
+) -> Result<Option<PublicationFile>, ReadModelUpdateError> {
     if !history
         .intents()
         .iter()
@@ -16,7 +16,7 @@ pub(super) fn publication(
     {
         return Ok(None);
     }
-    let failure = |kind| CatchUpError::PublicationIo {
+    let failure = |kind| ReadModelUpdateError::PublicationIo {
         path: path.to_path_buf(),
         kind,
     };
@@ -79,7 +79,7 @@ pub(super) fn publication(
             if existing.get("dirName").and_then(serde_json::Value::as_str)
                 != Some(name.directory().as_str())
             {
-                return Err(CatchUpError::PublicationConflict {
+                return Err(ReadModelUpdateError::PublicationConflict {
                     path: path.to_path_buf(),
                 });
             }
@@ -98,7 +98,7 @@ pub(super) fn publication(
                 row.get("dirName").and_then(serde_json::Value::as_str)
                     == Some(name.directory().as_str())
             }) {
-                return Err(CatchUpError::PublicationConflict {
+                return Err(ReadModelUpdateError::PublicationConflict {
                     path: path.to_path_buf(),
                 });
             }

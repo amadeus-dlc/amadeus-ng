@@ -13,10 +13,10 @@ use super::rule_content::RuleContent;
 /// [`SteeringSource`] が行い、本型はその結果だけを運ぶ。ファイルが**無い**のは正常
 /// (規則未整備・initialization はフェーズ規則を持たない) なので、無いファイルは単に列に
 /// 現れない — 本型に失敗の表現は無い (Always Valid)。「在るのに読めない」は読み手が
-/// [`CatchUpError::SteeringRead`] で止める。
+/// [`ReadModelUpdateError::SteeringRead`] で止める。
 ///
 /// [`SteeringSource`]: crate::orchestration::SteeringSource
-/// [`CatchUpError::SteeringRead`]: crate::orchestration::CatchUpError::SteeringRead
+/// [`ReadModelUpdateError::SteeringRead`]: crate::orchestration::ReadModelUpdateError::SteeringRead
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryRules {
     base: Vec<RuleContent>,

@@ -23,7 +23,7 @@ use super::projection_name::ProjectionName;
 /// **この型は他のエラーを内包しない** — 3 変種の材料 (`kind` / `path` / `aggregate_id` /
 /// `seq_nr` / `cause` / チェックポイントの位置) はすべて自分の `Display` が描く。したがって
 /// `Error::source` の連鎖は無く、既定 (`None`) が正しい。分類を `source` へ隠している封筒
-/// (`CatchUpError` など) とは事情が違うので、常に `None` を返すだけの `source` は書かない。
+/// (`ReadModelUpdateError` など) とは事情が違うので、常に `None` を返すだけの `source` は書かない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JournalReadError {
     /// ストア I/O の失敗。`ErrorKind` を保持する (監査 C24)。書込ロック待ちの超過は

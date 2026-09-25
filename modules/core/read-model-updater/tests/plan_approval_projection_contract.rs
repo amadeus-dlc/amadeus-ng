@@ -21,11 +21,20 @@ use core_command_domain::orchestration::{
 use core_command_domain::workspace::StorePath;
 use core_read_model_updater::orchestration::{
     CorruptCause, JournalReadError, PlanApprovalJournalEntry, PlanApprovalJournalReaderImpl,
-    PlanApprovalReadModelUpdater,
+    PlanApprovalReadModelUpdater, ReadModelUpdater,
 };
 use core_read_model_updater::read_tables::PlanApprovalTables;
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
+
+/// 共通契約の境界は非同期なので、同期のテストは current_thread ランタイムで待つ
+/// (この投影器の内部は同期 I/O だけである)。
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("current_thread ランタイムを組める")
+        .block_on(future)
+}
 
 const EVENT_ID: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff";
 
@@ -64,9 +73,9 @@ impl Fixture {
             payload.to_string().as_bytes(),
         );
     }
-    fn catch_up(&self) -> Result<(), JournalReadError> {
+    fn project(&self) -> Result<(), JournalReadError> {
         let reader = PlanApprovalJournalReaderImpl::open(&self.store)?;
-        PlanApprovalReadModelUpdater::new(reader).catch_up()
+        block_on(PlanApprovalReadModelUpdater::new(reader).update_read_models())
     }
     fn checkpoint(&self) -> Option<(i64, Option<String>)> {
         self.raw()
@@ -162,7 +171,7 @@ fn answer_input_with_session(choice: &str, session: &str) -> Value {
 #[test]
 fn an_empty_store_projects_empty_tables_and_no_directory() {
     let fixture = Fixture::new();
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     assert_eq!(fixture.checkpoint(), Some((0, None)));
     assert!(fixture.operations().is_empty());
     assert!(
@@ -280,7 +289,7 @@ fn a_challenge_with_its_response_and_answers_project_operation_rows_and_files() 
     // 前回の投影で残った古いファイルは掃除される。
     std::fs::create_dir_all(fixture.plan_dir()).unwrap();
     std::fs::write(fixture.plan_dir().join("receipt-stale.json"), "{}").unwrap();
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     assert_eq!(fixture.checkpoint(), Some((12, Some(op(12)))));
     assert!(!fixture.plan_dir().join("receipt-stale.json").exists());
     let db = fixture.raw();
@@ -333,7 +342,7 @@ fn a_challenge_with_its_response_and_answers_project_operation_rows_and_files() 
         .unwrap()
         .modified()
         .unwrap();
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     assert_eq!(
         std::fs::metadata(fixture.plan_dir().join(&files[0]))
             .unwrap()
@@ -348,7 +357,7 @@ fn a_cleared_history_removes_the_projection_directory() {
     let fixture = Fixture::new();
     std::fs::create_dir_all(fixture.plan_dir()).unwrap();
     std::fs::write(fixture.plan_dir().join("receipt-old.json"), "{}").unwrap();
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     assert!(
         !fixture.plan_dir().exists(),
         "公開物が無くなればディレクトリごと消す"
@@ -363,7 +372,7 @@ fn a_projection_target_that_is_not_a_plain_directory_is_refused() {
         "not a dir",
     )
     .unwrap();
-    match sessions_is_file.catch_up().unwrap_err() {
+    match sessions_is_file.project().unwrap_err() {
         JournalReadError::Io { kind, path } => {
             assert_eq!(kind, std::io::ErrorKind::InvalidData);
             assert_eq!(path, Some(sessions_is_file.aidlc().join(".aidlc-sessions")));
@@ -372,7 +381,7 @@ fn a_projection_target_that_is_not_a_plain_directory_is_refused() {
     }
     let nested_dir = Fixture::new();
     std::fs::create_dir_all(nested_dir.plan_dir().join("subdir")).unwrap();
-    match nested_dir.catch_up().unwrap_err() {
+    match nested_dir.project().unwrap_err() {
         JournalReadError::Io { kind, path } => {
             assert_eq!(kind, std::io::ErrorKind::InvalidData);
             assert_eq!(path, Some(nested_dir.plan_dir().join("subdir")));
@@ -485,7 +494,7 @@ fn corrupt_approval_rows_are_refused() {
         for (seq, aid, manifest, payload) in rows {
             fixture.insert(seq, aid, manifest, &payload);
         }
-        let error = fixture.catch_up().unwrap_err();
+        let error = fixture.project().unwrap_err();
         assert_eq!(corrupt(&error), Some(expected), "{label}: {error:?}");
         assert_eq!(
             fixture.checkpoint(),
@@ -508,7 +517,7 @@ fn a_checkpoint_ahead_of_the_journal_or_with_a_foreign_anchor_is_refused() {
         )
         .unwrap();
     assert_eq!(
-        corrupt(&ahead.catch_up().unwrap_err()),
+        corrupt(&ahead.project().unwrap_err()),
         Some(CorruptCause::CheckpointAnchorMismatch)
     );
     let foreign = Fixture::new();
@@ -522,7 +531,7 @@ fn a_checkpoint_ahead_of_the_journal_or_with_a_foreign_anchor_is_refused() {
         )
         .unwrap();
     assert_eq!(
-        corrupt(&foreign.catch_up().unwrap_err()),
+        corrupt(&foreign.project().unwrap_err()),
         Some(CorruptCause::CheckpointAnchorMismatch)
     );
     // 同じアンカーなら進める。
@@ -535,7 +544,7 @@ fn a_checkpoint_ahead_of_the_journal_or_with_a_foreign_anchor_is_refused() {
             [op(1)],
         )
         .unwrap();
-    same.catch_up().unwrap();
+    same.project().unwrap();
     assert_eq!(same.checkpoint(), Some((1, Some(op(1)))));
 }
 
@@ -617,7 +626,7 @@ fn chmod(path: &std::path::Path, mode: u32) {
 /// 受領ファイル 1 つを公開した直後の状態（ファイル名を返す）。
 fn published_receipt(fixture: &Fixture) -> std::path::PathBuf {
     seed_one_approved_answer(fixture);
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     let mut files: Vec<_> = std::fs::read_dir(fixture.plan_dir())
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -637,7 +646,7 @@ fn a_publication_target_the_os_refuses_is_reported_with_its_path() {
         seed_one_approved_answer(&fixture);
         let reader = PlanApprovalJournalReaderImpl::open(&fixture.store).unwrap();
         chmod(&fixture.aidlc(), 0o000);
-        let outcome = PlanApprovalReadModelUpdater::new(reader).catch_up();
+        let outcome = block_on(PlanApprovalReadModelUpdater::new(reader).update_read_models());
         chmod(&fixture.aidlc(), 0o755);
         let (kind, path) = io_of(outcome.unwrap_err());
         assert_eq!(kind, std::io::ErrorKind::PermissionDenied);
@@ -650,7 +659,7 @@ fn a_publication_target_the_os_refuses_is_reported_with_its_path() {
         seed_one_approved_answer(&fixture);
         std::fs::create_dir_all(fixture.plan_dir()).unwrap();
         chmod(&fixture.plan_dir(), 0o000);
-        let outcome = fixture.catch_up();
+        let outcome = fixture.project();
         chmod(&fixture.plan_dir(), 0o755);
         let (kind, path) = io_of(outcome.unwrap_err());
         assert_eq!(kind, std::io::ErrorKind::PermissionDenied);
@@ -664,7 +673,7 @@ fn a_publication_target_the_os_refuses_is_reported_with_its_path() {
         let stale = fixture.plan_dir().join("receipt-stale.json");
         std::fs::write(&stale, "{}").unwrap();
         chmod(&fixture.plan_dir(), 0o555);
-        let outcome = fixture.catch_up();
+        let outcome = fixture.project();
         chmod(&fixture.plan_dir(), 0o755);
         let (kind, path) = io_of(outcome.unwrap_err());
         assert_eq!(kind, std::io::ErrorKind::PermissionDenied);
@@ -678,7 +687,7 @@ fn a_publication_target_the_os_refuses_is_reported_with_its_path() {
         let sessions = fixture.aidlc().join(".aidlc-sessions");
         std::fs::create_dir_all(&sessions).unwrap();
         chmod(&sessions, 0o555);
-        let outcome = fixture.catch_up();
+        let outcome = fixture.project();
         chmod(&sessions, 0o755);
         let (kind, path) = io_of(outcome.unwrap_err());
         assert_eq!(kind, std::io::ErrorKind::PermissionDenied);
@@ -690,7 +699,7 @@ fn a_publication_target_the_os_refuses_is_reported_with_its_path() {
         let sessions = fixture.aidlc().join(".aidlc-sessions");
         std::fs::create_dir_all(fixture.plan_dir()).unwrap();
         chmod(&sessions, 0o555);
-        let outcome = fixture.catch_up();
+        let outcome = fixture.project();
         chmod(&sessions, 0o755);
         let (kind, path) = io_of(outcome.unwrap_err());
         assert_eq!(kind, std::io::ErrorKind::PermissionDenied);
@@ -701,7 +710,7 @@ fn a_publication_target_the_os_refuses_is_reported_with_its_path() {
         let fixture = Fixture::new();
         let receipt = published_receipt(&fixture);
         chmod(&receipt, 0o000);
-        let outcome = fixture.catch_up();
+        let outcome = fixture.project();
         chmod(&receipt, 0o644);
         let (kind, path) = io_of(outcome.unwrap_err());
         assert_eq!(kind, std::io::ErrorKind::PermissionDenied);
@@ -713,7 +722,7 @@ fn a_publication_target_the_os_refuses_is_reported_with_its_path() {
         let receipt = published_receipt(&fixture);
         std::fs::remove_file(&receipt).unwrap();
         chmod(&fixture.plan_dir(), 0o555);
-        let outcome = fixture.catch_up();
+        let outcome = fixture.project();
         chmod(&fixture.plan_dir(), 0o755);
         let (kind, path) = io_of(outcome.unwrap_err());
         assert_eq!(kind, std::io::ErrorKind::PermissionDenied);
@@ -728,7 +737,7 @@ fn a_receipt_whose_bytes_drifted_is_rewritten_from_the_history() {
     let receipt = published_receipt(&fixture);
     let expected = std::fs::read(&receipt).unwrap();
     std::fs::write(&receipt, b"{\"tampered\":true}").unwrap();
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     assert_eq!(std::fs::read(&receipt).unwrap(), expected);
 }
 
@@ -806,7 +815,7 @@ fn corrupt_response_and_invalidation_rows_are_refused_as_undecodable() {
         } else {
             fixture.row(2, &event(2, payload));
         }
-        let error = fixture.catch_up().unwrap_err();
+        let error = fixture.project().unwrap_err();
         assert_eq!(
             corrupt(&error),
             Some(CorruptCause::UndecodablePayload),
@@ -834,6 +843,6 @@ fn corrupt_response_and_invalidation_rows_are_refused_as_undecodable() {
         6,
         &event(6, json!({"type": "InvalidationResolved", "value": {"operation_id": op(0x50), "published": false}})),
     );
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     assert_eq!(fixture.checkpoint(), Some((6, Some(op(6)))));
 }

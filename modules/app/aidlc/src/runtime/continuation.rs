@@ -12,7 +12,9 @@ use core_infrastructure::canon_json::{
     JsonValue, ObjectMembers, SerializationProfile, parse, serialize,
 };
 use core_query_use_case::orchestration::ContinuationResultUseCase;
-use core_read_model_updater::orchestration::WorkflowContinuationReadModelUpdater;
+use core_read_model_updater::orchestration::{
+    ReadModelUpdater, WorkflowContinuationReadModelUpdater,
+};
 
 pub(super) async fn run(layout: &Layout, input: &str) -> Completion {
     let _ = observe_hook_health(layout, "continue-workflow").await;
@@ -428,10 +430,15 @@ async fn recover_publication(
     let record = layout
         .record_dir()
         .ok_or_else(|| "stop request has no record".to_string())?;
-    let mut updater = WorkflowContinuationReadModelUpdater::open(store.as_path())
-        .map_err(|error| error.to_string())?;
+    let mut updater = WorkflowContinuationReadModelUpdater::open(
+        store.as_path(),
+        id.clone(),
+        record.to_path_buf(),
+    )
+    .map_err(|error| error.to_string())?;
     updater
-        .catch_up(id, record)
+        .update_read_models()
+        .await
         .map_err(|error| error.to_string())?;
     let daos = ReadModelDaos::open(store.as_path()).map_err(|error| error.to_string())?;
     let query = ContinuationResultUseCase::new(daos.continuation_result());
@@ -459,7 +466,8 @@ async fn recover_publication(
     .await
     .map_err(|error| error.to_string())?;
     updater
-        .catch_up(id, record)
+        .update_read_models()
+        .await
         .map_err(|error| error.to_string())?;
     let settled = query
         .execute(attempt.as_str())

@@ -1,6 +1,6 @@
 //! HookHealth専用のジャーナル読取・投影。PlanApprovalの履歴を解釈しない。
 use super::journal_reader_impl::corrupt_error;
-use super::{CorruptCause, JournalReadError};
+use super::{CorruptCause, JournalReadError, ReadModelUpdater};
 use chrono::{DateTime, Utc};
 use core_command_domain::workspace::{
     HookAuditDropped, HookDropReason, HookDropSummary, HookFirstDropObserved, HookHealth,
@@ -44,6 +44,19 @@ pub struct HookHealthReadModelUpdater {
     connection: Connection,
     path: std::path::PathBuf,
 }
+impl ReadModelUpdater for HookHealthReadModelUpdater {
+    type Error = JournalReadError;
+
+    /// 自分のmanifestだけを全履歴から再投影する。
+    ///
+    /// 内部は同期 I/O だけである。非同期なのは共通契約の境界だけ。
+    /// # Errors
+    /// 履歴の復号・投影・公開に失敗した場合。
+    async fn update_read_models(&mut self) -> Result<(), JournalReadError> {
+        self.project()
+    }
+}
+
 impl HookHealthReadModelUpdater {
     /// 既存共有DBへ接続する。DB自体は作らない。
     /// # Errors
@@ -59,10 +72,8 @@ impl HookHealthReadModelUpdater {
             path: path.to_path_buf(),
         })
     }
-    /// 自分のmanifestだけを全履歴から再投影する。
-    /// # Errors
-    /// 履歴の復号・投影・公開に失敗した場合。
-    pub fn catch_up(&mut self) -> Result<(), JournalReadError> {
+    /// 自分のmanifestだけを全履歴から再投影する（[`ReadModelUpdater::update_read_models`] の本体）。
+    fn project(&mut self) -> Result<(), JournalReadError> {
         let mut st=self.connection.prepare("SELECT aid,seq_nr,occurred_at,payload,manifest FROM journal WHERE manifest=?1 ORDER BY rowid").map_err(|_|corrupt_error("hook-health",None,CorruptCause::InvariantViolation))?;
         let rows = st
             .query_map(["hook-health-event/1"], |r| {

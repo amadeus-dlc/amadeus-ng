@@ -6,7 +6,7 @@ use super::global_seq_nr::GlobalSeqNr;
 use super::journal_batch::JournalBatch;
 use super::journal_read_error::JournalReadError;
 use super::projection_name::ProjectionName;
-use super::{CatchUpError, PublicationBatch};
+use super::{PublicationBatch, ReadModelUpdateError};
 
 /// 投影 (U4) が使う差分読取とチェックポイント (C3 / C6)。
 ///
@@ -35,7 +35,7 @@ pub trait JournalReader {
     ///
     /// # Errors
     /// 再生成時の履歴・投影・書込失敗を元の分類で返す。
-    fn prepare_read_model(&mut self) -> Result<(), CatchUpError>;
+    fn prepare_read_model(&mut self) -> Result<(), ReadModelUpdateError>;
 
     /// 未完了のファイル公開計画を取得する。
     ///
@@ -61,7 +61,7 @@ pub trait JournalReader {
         projection: &ProjectionName,
         batch: &PublicationBatch,
         tables: &ReadTables,
-    ) -> Result<(), CatchUpError>;
+    ) -> Result<(), ReadModelUpdateError>;
     /// `after` **より大きい** global 通番の行を昇順で走査して返す (全集約横断)。
     ///
     /// 返すのは [`JournalBatch`] — 実行のイベント行 ([`JournalEntry`]) と intent の誕生記録、
@@ -97,7 +97,7 @@ pub trait JournalReader {
     ///
     /// `tables` は指定位置までの全履歴からの再計算の結果であり、更新時は全行を差し替える。それと
     /// チェックポイントの前進が別々にコミットされると、行だけ新しくてチェックポイントが
-    /// 古い (次のキャッチアップで同じ差分をもう一度描く) か、逆に行が古いままチェック
+    /// 古い (次の更新で同じ差分をもう一度描く) か、逆に行が古いままチェック
     /// ポイントだけ進む (読取コマンドが永久に古い答えを見る) かのどちらかになる。
     /// したがって実装は両方を 1 トランザクションに閉じる (裁定 §3)。前進を拒否するときは
     /// 行も変えない。

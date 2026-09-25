@@ -1,13 +1,16 @@
-//! `ReadModelUpdater::catch_up` の失敗。
+//! リードモデル更新（`ReadModelUpdater::update_read_models`）の失敗。
+//!
+//! 取得ループ `OrchestrationReadModelUpdater` と、構造化面・テスト契約・計画指紋・
+//! Code Generation 開始可否・runtime-graph の各更新器が共有する失敗の型である。
 
 use crate::read_tables::{ReadTablesError, UnsplittableSection};
 use crate::workspace::{ProjectionError, StateFileReadError, StateFileWriteError};
 
 use super::journal_read_error::JournalReadError;
 
-/// キャッチアップの失敗。
+/// リードモデル更新の失敗。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CatchUpError {
+pub enum ReadModelUpdateError {
     /// 対象別への移行が必要な旧共有投影が公開済み。
     LegacyProjection {
         /// 旧投影の識別名。
@@ -92,44 +95,46 @@ pub enum CatchUpError {
     SteeringPack(UnsplittableSection),
 }
 
-impl core::fmt::Display for CatchUpError {
+impl core::fmt::Display for ReadModelUpdateError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            CatchUpError::LegacyProjection { projection } => write!(
+            ReadModelUpdateError::LegacyProjection { projection } => write!(
                 f,
                 "legacy shared projection requires migration: {projection}"
             ),
-            CatchUpError::PublicationConflict { path } => {
+            ReadModelUpdateError::PublicationConflict { path } => {
                 write!(f, "publication conflict: {}", path.display())
             }
-            CatchUpError::PublicationIo { path, kind } => {
+            ReadModelUpdateError::PublicationIo { path, kind } => {
                 write!(f, "publication io: {kind:?} at {}", path.display())
             }
-            CatchUpError::Read(inner) => write!(f, "read: {inner}"),
-            CatchUpError::Projection(inner) => write!(f, "projection: {inner}"),
-            CatchUpError::StateFileRead(inner) => {
+            ReadModelUpdateError::Read(inner) => write!(f, "read: {inner}"),
+            ReadModelUpdateError::Projection(inner) => write!(f, "projection: {inner}"),
+            ReadModelUpdateError::StateFileRead(inner) => {
                 write!(f, "state file read: {}", inner.message())
             }
-            CatchUpError::StateFileWrite(inner) => write!(f, "state file write: {inner:?}"),
-            CatchUpError::MemoryFileRead { path, kind } => {
+            ReadModelUpdateError::StateFileWrite(inner) => write!(f, "state file write: {inner:?}"),
+            ReadModelUpdateError::MemoryFileRead { path, kind } => {
                 write!(f, "memory file read: {kind:?} at {path}")
             }
-            CatchUpError::MemoryFileWrite { path, detail } => {
+            ReadModelUpdateError::MemoryFileWrite { path, detail } => {
                 write!(f, "memory file write: {detail} at {path}")
             }
-            CatchUpError::PlanUnavailable => f.write_str("plan unavailable"),
-            CatchUpError::HistoryDisappeared => f.write_str("history disappeared between reads"),
-            CatchUpError::MixedIntents => f.write_str("mixed intents"),
-            CatchUpError::ReadTables(inner) => write!(f, "read tables: {inner}"),
-            CatchUpError::SteeringRead { path, kind } => {
+            ReadModelUpdateError::PlanUnavailable => f.write_str("plan unavailable"),
+            ReadModelUpdateError::HistoryDisappeared => {
+                f.write_str("history disappeared between reads")
+            }
+            ReadModelUpdateError::MixedIntents => f.write_str("mixed intents"),
+            ReadModelUpdateError::ReadTables(inner) => write!(f, "read tables: {inner}"),
+            ReadModelUpdateError::SteeringRead { path, kind } => {
                 write!(f, "steering read: {kind:?} at {path}")
             }
-            CatchUpError::SteeringPack(inner) => write!(f, "steering pack: {inner}"),
+            ReadModelUpdateError::SteeringPack(inner) => write!(f, "steering pack: {inner}"),
         }
     }
 }
 
-impl std::error::Error for CatchUpError {
+impl std::error::Error for ReadModelUpdateError {
     /// 内包した失敗へ連鎖する。
     ///
     /// **封筒は連鎖を切ってはならない** — 内包した失敗が自分の `source` に材料を載せている
@@ -141,46 +146,46 @@ impl std::error::Error for CatchUpError {
     /// 描いている。`PlanUnavailable` / `MixedIntents` はループ自身の拒否で内包物を持たない。
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            CatchUpError::Read(inner) => Some(inner),
-            CatchUpError::Projection(inner) => Some(inner),
-            CatchUpError::ReadTables(inner) => Some(inner),
-            CatchUpError::SteeringPack(inner) => Some(inner),
-            CatchUpError::PublicationConflict { .. }
-            | CatchUpError::LegacyProjection { .. }
-            | CatchUpError::PublicationIo { .. }
-            | CatchUpError::StateFileRead(_)
-            | CatchUpError::StateFileWrite(_)
-            | CatchUpError::PlanUnavailable
-            | CatchUpError::HistoryDisappeared
-            | CatchUpError::MixedIntents
-            | CatchUpError::SteeringRead { .. }
-            | CatchUpError::MemoryFileRead { .. }
-            | CatchUpError::MemoryFileWrite { .. } => None,
+            ReadModelUpdateError::Read(inner) => Some(inner),
+            ReadModelUpdateError::Projection(inner) => Some(inner),
+            ReadModelUpdateError::ReadTables(inner) => Some(inner),
+            ReadModelUpdateError::SteeringPack(inner) => Some(inner),
+            ReadModelUpdateError::PublicationConflict { .. }
+            | ReadModelUpdateError::LegacyProjection { .. }
+            | ReadModelUpdateError::PublicationIo { .. }
+            | ReadModelUpdateError::StateFileRead(_)
+            | ReadModelUpdateError::StateFileWrite(_)
+            | ReadModelUpdateError::PlanUnavailable
+            | ReadModelUpdateError::HistoryDisappeared
+            | ReadModelUpdateError::MixedIntents
+            | ReadModelUpdateError::SteeringRead { .. }
+            | ReadModelUpdateError::MemoryFileRead { .. }
+            | ReadModelUpdateError::MemoryFileWrite { .. } => None,
         }
     }
 }
 
-impl From<JournalReadError> for CatchUpError {
-    fn from(inner: JournalReadError) -> CatchUpError {
-        CatchUpError::Read(inner)
+impl From<JournalReadError> for ReadModelUpdateError {
+    fn from(inner: JournalReadError) -> ReadModelUpdateError {
+        ReadModelUpdateError::Read(inner)
     }
 }
 
-impl From<ProjectionError> for CatchUpError {
-    fn from(inner: ProjectionError) -> CatchUpError {
-        CatchUpError::Projection(inner)
+impl From<ProjectionError> for ReadModelUpdateError {
+    fn from(inner: ProjectionError) -> ReadModelUpdateError {
+        ReadModelUpdateError::Projection(inner)
     }
 }
 
-impl From<ReadTablesError> for CatchUpError {
-    fn from(inner: ReadTablesError) -> CatchUpError {
-        CatchUpError::ReadTables(inner)
+impl From<ReadTablesError> for ReadModelUpdateError {
+    fn from(inner: ReadTablesError) -> ReadModelUpdateError {
+        ReadModelUpdateError::ReadTables(inner)
     }
 }
 
-impl From<UnsplittableSection> for CatchUpError {
-    fn from(inner: UnsplittableSection) -> CatchUpError {
-        CatchUpError::SteeringPack(inner)
+impl From<UnsplittableSection> for ReadModelUpdateError {
+    fn from(inner: UnsplittableSection) -> ReadModelUpdateError {
+        ReadModelUpdateError::SteeringPack(inner)
     }
 }
 
@@ -193,7 +198,7 @@ mod tests {
     fn the_envelope_chains_to_the_failure_it_wraps() {
         // 封筒がここで連鎖を切ると、内包した失敗が自分の `source` に載せている材料へ
         // 辿り着けなくなる。読取・投影の変種は本物のエラー型を包む。
-        let read: CatchUpError = JournalReadError::Io {
+        let read: ReadModelUpdateError = JournalReadError::Io {
             kind: std::io::ErrorKind::WouldBlock,
             path: None,
         }
@@ -205,7 +210,7 @@ mod tests {
             "io: WouldBlock at -"
         );
 
-        let projection: CatchUpError = ProjectionError::ParkSectionMissing.into();
+        let projection: ReadModelUpdateError = ProjectionError::ParkSectionMissing.into();
         assert_eq!(
             std::error::Error::source(&projection)
                 .expect("投影の失敗へ連鎖する")
@@ -217,7 +222,7 @@ mod tests {
     /// b49 のメモリ層 2 変種は材料を自分の `Display` に持ち、連鎖の先は無い。
     #[test]
     fn the_memory_layer_failures_render_their_material_and_end_the_chain() {
-        let read = CatchUpError::MemoryFileRead {
+        let read = ReadModelUpdateError::MemoryFileRead {
             path: "memory/team.md".to_string(),
             kind: std::io::ErrorKind::IsADirectory,
         };
@@ -227,7 +232,7 @@ mod tests {
         );
         assert!(std::error::Error::source(&read).is_none());
 
-        let write = CatchUpError::MemoryFileWrite {
+        let write = ReadModelUpdateError::MemoryFileWrite {
             path: "memory/project.md".to_string(),
             detail: "read-only target".to_string(),
         };
@@ -241,57 +246,62 @@ mod tests {
     #[test]
     fn a_failure_that_owns_its_material_ends_the_chain() {
         // ループ自身の拒否は材料を自分の `Display` に持つ — 連鎖の先は無い。
-        assert!(std::error::Error::source(&CatchUpError::MixedIntents).is_none());
-        assert!(std::error::Error::source(&CatchUpError::PlanUnavailable).is_none());
+        assert!(std::error::Error::source(&ReadModelUpdateError::MixedIntents).is_none());
+        assert!(std::error::Error::source(&ReadModelUpdateError::PlanUnavailable).is_none());
     }
 
     #[test]
-    fn every_catch_up_failure_renders_its_material() {
+    fn every_read_model_update_failure_renders_its_material() {
         assert_eq!(
-            CatchUpError::HistoryDisappeared.to_string(),
+            ReadModelUpdateError::HistoryDisappeared.to_string(),
             "history disappeared between reads"
         );
-        assert!(std::error::Error::source(&CatchUpError::HistoryDisappeared).is_none());
-        let read: CatchUpError = JournalReadError::Io {
+        assert!(std::error::Error::source(&ReadModelUpdateError::HistoryDisappeared).is_none());
+        let read: ReadModelUpdateError = JournalReadError::Io {
             kind: std::io::ErrorKind::WouldBlock,
             path: None,
         }
         .into();
         assert_eq!(read.to_string(), "read: io: WouldBlock at -");
 
-        let projection: CatchUpError = ProjectionError::ParkSectionMissing.into();
+        let projection: ReadModelUpdateError = ProjectionError::ParkSectionMissing.into();
         assert_eq!(projection.to_string(), "projection: park section missing");
 
-        let state_read =
-            CatchUpError::StateFileRead(StateFileReadError::new("State file not found: /x"));
+        let state_read = ReadModelUpdateError::StateFileRead(StateFileReadError::new(
+            "State file not found: /x",
+        ));
         assert_eq!(
             state_read.to_string(),
             "state file read: State file not found: /x"
         );
 
-        let state_write = CatchUpError::StateFileWrite(StateFileWriteError::ReadOnlyTarget {
-            message: "state file is read-only: /x".to_string(),
-        });
+        let state_write =
+            ReadModelUpdateError::StateFileWrite(StateFileWriteError::ReadOnlyTarget {
+                message: "state file is read-only: /x".to_string(),
+            });
         assert!(
             state_write.to_string().starts_with("state file write: "),
             "実際: {state_write}"
         );
 
         assert_eq!(
-            CatchUpError::PlanUnavailable.to_string(),
+            ReadModelUpdateError::PlanUnavailable.to_string(),
             "plan unavailable"
         );
-        assert_eq!(CatchUpError::MixedIntents.to_string(), "mixed intents");
+        assert_eq!(
+            ReadModelUpdateError::MixedIntents.to_string(),
+            "mixed intents"
+        );
 
         for (failure, message) in [
             (
-                CatchUpError::PublicationConflict {
+                ReadModelUpdateError::PublicationConflict {
                     path: "/output".into(),
                 },
                 "publication conflict: /output",
             ),
             (
-                CatchUpError::PublicationIo {
+                ReadModelUpdateError::PublicationIo {
                     path: "/output".into(),
                     kind: std::io::ErrorKind::PermissionDenied,
                 },
@@ -301,7 +311,8 @@ mod tests {
             assert_eq!(failure.to_string(), message);
             assert!(std::error::Error::source(&failure).is_none());
         }
-        let steering: CatchUpError = UnsplittableSection::new("memory/org.md".into()).into();
+        let steering: ReadModelUpdateError =
+            UnsplittableSection::new("memory/org.md".into()).into();
         assert_eq!(
             steering.to_string(),
             "steering pack: unsplittable section in memory/org.md"
@@ -311,7 +322,7 @@ mod tests {
             "unsplittable section in memory/org.md"
         );
 
-        let read_tables: CatchUpError = ReadTablesError::MissingGenesis {
+        let read_tables: ReadModelUpdateError = ReadTablesError::MissingGenesis {
             aggregate_id: "claude".to_string(),
         }
         .into();
@@ -326,7 +337,7 @@ mod tests {
             "missing genesis for claude"
         );
 
-        let steering_read = CatchUpError::SteeringRead {
+        let steering_read = ReadModelUpdateError::SteeringRead {
             path: "memory/team.md".to_string(),
             kind: std::io::ErrorKind::PermissionDenied,
         };

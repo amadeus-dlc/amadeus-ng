@@ -81,7 +81,8 @@ impl Fixture {
     }
     async fn project(&self) -> Result<(), String> {
         use core_read_model_updater::orchestration::{
-            JournalReaderImpl, ProjectionName, ProjectionTargets, ReadModelUpdater, SteeringSource,
+            JournalReaderImpl, OrchestrationReadModelUpdater, ProjectionName, ProjectionTargets,
+            ReadModelUpdater, SteeringSource,
         };
         let memory = self.root.path().join("aidlc/spaces/default/memory");
         let targets = ProjectionTargets::new(
@@ -92,16 +93,15 @@ impl Fixture {
         let reader = JournalReaderImpl::open(&self.store()).map_err(|error| error.to_string())?;
         let projection =
             ProjectionName::parse(&format!("orchestration-{}", self.execution)).unwrap();
-        ReadModelUpdater::new(
+        OrchestrationReadModelUpdater::new(
             reader,
             projection,
             targets,
             SteeringSource::new(memory).relative_to(self.root.path().to_path_buf()),
         )
         .for_execution(self.execution.clone())
-        .catch_up()
+        .update_read_models()
         .await
-        .map(|_| ())
         .map_err(|error| error.to_string())
     }
 }
