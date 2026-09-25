@@ -51,6 +51,7 @@ mod execution_dao_impl;
 mod hook_health_dao_impl;
 mod intent_listing_dao_impl;
 mod intent_repos_dao_impl;
+mod invalid_continue_token;
 mod jump_dao_impl;
 mod jump_phase_dao_impl;
 mod memory;
@@ -134,7 +135,8 @@ pub use memory::{
 };
 
 // 継続トークンの封緘・開封 (輸送形の境界)。
-pub use continue_token_dto::{InvalidContinueToken, mint_continue_token, verify_continue_token};
+pub use continue_token_dto::{mint_continue_token, verify_continue_token};
+pub use invalid_continue_token::InvalidContinueToken;
 
 mod report_result_dao_impl;
 pub use report_result_dao_impl::ReportResultDaoImpl;

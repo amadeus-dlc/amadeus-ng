@@ -3,7 +3,7 @@
 **裁定日**: 2026-08-24（オーナー）
 **性格**: **土台**。他の複数の規則がここから導かれる（下記「ここから導かれる規則」）
 **関連スキル**: `j5ik2o-ddd-domain-primitives-and-always-valid`、`j5ik2o-ddd-domain-building-blocks`
-**機械強制**: 部分的（`cargo lint` の `no-public-fields` / `one-public-type`。それ以外はレビュー基準）
+**機械強制**: 部分的（`cargo lint` の `no-public-fields` / `one-public-type` / `public-type-file-name`。それ以外はレビュー基準）
 
 ## 原則
 
@@ -72,6 +72,18 @@ fn に落ちた」形になっている（`code-summary` §7 に申し送り済�
 機械強制は `cargo lint` の `one-public-type` — 検出は**ファイルのトップレベル・無制限
 `pub`** のみ（`pub(crate)` 以下・`pub type`・自由関数・`#[cfg(test)]` は数えない）。
 抑制は共通規約（`// amadeus-lint: allow(one-public-type) 理由` — 理由必須）。
+
+**ファイル名の検査は 2026-09-25 に `public-type-file-name` として加えた。** それまでの
+`one-public-type` は公開型の**数**しか見ておらず、「ファイル名は型名の snake_case」は機械が
+守っていなかった。そのため `hook_health_reader.rs`（中身は `HookHealthReadModelUpdater`）や、
+enum と変種の名前が入れ替わった `artifact_audit_event.rs` / `artifact_audit_event_family.rs` など
+10 件がすり抜けていた（同じ変更で是正済み）。検出は公開型が**ちょうど 1 つ**のファイルに限る
+（2 つ以上は `one-public-type` が先に鳴る）。`mod.rs` / `lib.rs` / `main.rs` / `build.rs` と、
+イベント族の変種ファイル（親ディレクトリ名が `_event` で終わり、型名の snake_case が
+`_<ファイル名>` で終わる — [module-visibility.md](module-visibility.md) §追記 2026-09-01 の形）は
+対象外。自由関数が主役のモジュールにエラー型を 1 つだけ同居させる形（`parse.rs` の
+`ParseError` など）も、型を自分のファイルへ出して揃えた — 正当と認めるのは**公開型ゼロ**の
+自由関数モジュールだけである。
 
 ## 判定 — 呼び手は何に依存しているか
 

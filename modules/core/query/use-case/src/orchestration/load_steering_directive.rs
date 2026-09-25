@@ -106,7 +106,7 @@ mod tests {
     use super::super::continue_token::ContinueTokenBuilder;
     use super::super::directive::Directive;
     use super::super::directive_digest::DirectiveDigest;
-    use super::super::directive_schema::DirectiveKind;
+    use super::super::directive_kind::DirectiveKind;
     use super::super::gate_field::GateField;
     use super::super::route_digest::RouteDigest;
     use super::*;

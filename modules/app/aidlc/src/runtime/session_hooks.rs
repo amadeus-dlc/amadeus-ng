@@ -137,7 +137,7 @@ pub(super) async fn end_session(layout: &Layout, input: &str) -> Completion {
         return Completion::silent();
     }
     let heartbeat = super::observe_hook_health(&selected, "session-end").await;
-    if heartbeat.code != 0 {
+    if heartbeat.code() != 0 {
         return heartbeat;
     }
     let key = match AuditFieldKey::parse("Reason") {
@@ -154,7 +154,7 @@ pub(super) async fn end_session(layout: &Layout, input: &str) -> Completion {
 /// PreCompactの監査。状態を遷移させず、既存の当該シャードだけへ記録する。
 pub(super) async fn validate_state(layout: &Layout, input: &str) -> Completion {
     let heartbeat = super::observe_hook_health(layout, "validate-state").await;
-    if heartbeat.code != 0 {
+    if heartbeat.code() != 0 {
         return heartbeat;
     }
     let Some(path) = layout.state_file().filter(|path| path.exists()) else {
@@ -226,14 +226,10 @@ pub(super) async fn validate_state(layout: &Layout, input: &str) -> Completion {
     if missing.is_empty() {
         Completion::silent()
     } else {
-        Completion::new(
-            None,
-            Some(format!(
-                "WARNING: aidlc-state.md missing sections: {}",
-                missing.join(", ")
-            )),
-            0,
-        )
+        Completion::warned(format!(
+            "WARNING: aidlc-state.md missing sections: {}",
+            missing.join(", ")
+        ))
     }
 }
 

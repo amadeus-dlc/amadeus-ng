@@ -1,39 +1,40 @@
-//! 成果物監査集約の保存事実。
+//! ArtifactAuditイベントの公開族。
+
+// 変種ペイロードは 1 ファイル 1 公開型で本ファイル同名のサブツリーに置き、ここで連鎖
+// 再輸出する (所有サブツリーのファサード — `coding-rules/module-visibility.md`
+// §追記 2026-09-01)。
 use super::{ArtifactAuditEventId, ArtifactAuditId, ArtifactWriteObservation};
+
+mod saved;
+
+pub use saved::ArtifactSaved;
+
+/// 保存観測イベント族。
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// 完成した成果物監査のドメイン型。
-pub struct ArtifactSaved {
-    id: ArtifactAuditEventId,
-    aggregate_id: ArtifactAuditId,
-    observation: ArtifactWriteObservation,
+pub enum ArtifactAuditEvent {
+    /// 成果物保存を観測した。
+    Saved(ArtifactSaved),
 }
-impl ArtifactSaved {
+impl ArtifactAuditEvent {
+    /// イベントID。
     #[must_use]
-    /// 検査済みの値を返す。
-    pub const fn new(
-        id: ArtifactAuditEventId,
-        aggregate_id: ArtifactAuditId,
-        observation: ArtifactWriteObservation,
-    ) -> Self {
-        Self {
-            id,
-            aggregate_id,
-            observation,
+    pub const fn id(&self) -> &ArtifactAuditEventId {
+        match self {
+            Self::Saved(v) => v.id(),
         }
     }
+    /// 集約ID。
     #[must_use]
-    /// 検査済みの値を返す。
-    pub const fn id(&self) -> &ArtifactAuditEventId {
-        &self.id
-    }
-    #[must_use]
-    /// 検査済みの値を返す。
     pub const fn aggregate_id(&self) -> &ArtifactAuditId {
-        &self.aggregate_id
+        match self {
+            Self::Saved(v) => v.aggregate_id(),
+        }
     }
+    /// 観測材料。
     #[must_use]
-    /// 検査済みの値を返す。
     pub const fn observation(&self) -> &ArtifactWriteObservation {
-        &self.observation
+        match self {
+            Self::Saved(v) => v.observation(),
+        }
     }
 }

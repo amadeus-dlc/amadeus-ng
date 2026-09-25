@@ -14,7 +14,8 @@
 //! クエリ側 `XxxDao` に収まっているか (造語ポートの禁止、gateway-taxonomy.md §1/§3/§5)。
 //! R7 はその裏返しで、コマンド側で外界に触ってよいのは Repository 実装だけ、という責務境界を
 //! fs / 乱数 / プロセス / ネットワークの使用箇所で押さえる (gateway-taxonomy.md §1)。
-//! R8 は [`crate::domain_getter`] に分離し、use-case 層からのドメイン getter 呼出し自体を
+//! R9 は R4 の後半 — 公開型が 1 つのファイルは、その型名の snake_case をファイル名にする
+//! (abstract-data-type.md「ファイル名は型名の snake_case」)。R8 は [`crate::domain_getter`] に分離し、use-case 層からのドメイン getter 呼出し自体を
 //! 禁止する。複数ファイルの型・getter 定義を索引するため、CLI が本検査の所見と合流する。
 
 use std::collections::BTreeSet;
@@ -43,6 +44,17 @@ pub(crate) const RULE_NO_PUBLIC_FIELDS: &str = "no-public-fields";
 /// 検出しない。深い `pub mod` の中の型は module-visibility 側の主題なので数えない。
 /// 公開型ゼロの自由関数モジュール (`codec.rs` 等) は正当。
 pub(crate) const RULE_ONE_PUBLIC_TYPE: &str = "one-public-type";
+/// R9: 公開型が 1 つだけのファイルで、ファイル名がその型名の snake_case ではない
+/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md` —
+/// 「ファイル名は型名の snake_case」、オーナー裁定 2026-09-01。R4 は数だけを見ていた)。
+///
+/// 検出境界: R4 と同じ — ファイルのトップレベルの無制限 `pub` の struct / enum / trait が
+/// **ちょうど 1 つ**のとき (2 つ以上は R4 が先に鳴る)。`mod.rs` / `lib.rs` / `main.rs` /
+/// `build.rs` はファサードや入口なので対象外。イベント族の変種ファイル (親ディレクトリ名が
+/// `_event` で終わり、型名の snake_case が `_<ファイル名>` で終わる — 例
+/// `codekb_event/published.rs` の `CodekbPublished`) は module-visibility.md §追記 2026-09-01
+/// の形なので鳴らさない。
+pub(crate) const RULE_PUBLIC_TYPE_FILE_NAME: &str = "public-type-file-name";
 /// R5: クエリ側 DAO の SQL が 1 文で 2 つ以上の `read_*` 表を読んでいる
 /// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md` 規則 6 — DAO は 1 表 1 引当、
 /// オーナー裁定 2026-09-03)。
@@ -106,6 +118,9 @@ const NO_PUBLIC_FIELDS_HELP: &str = "フィールドは private にし、アク�
 const ONE_PUBLIC_TYPE_HELP: &str = "公開型ごとに型名の snake_case のファイルへ分け、\
 ファサード (mod.rs) の pub use で公開する — \
 aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md (1 ファイル 1 公開型)";
+const PUBLIC_TYPE_FILE_NAME_HELP: &str = "ファイル名を公開型名の snake_case にする (呼出側の mod / pub use も一斉に直す)。\
+自由関数が主役のモジュールに同居する型は、自分のファイルへ出す — \
+aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md (ファイル名は型名の snake_case)";
 const DAO_SINGLE_TABLE_HELP: &str = "表ごとに DAO を分け、FK はユースケースがたどる — \
 aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md (規則 6: DAO は 1 表 1 引当)";
 const PORT_NAMING_HELP: &str = "ポートは集約名 + Repository (コマンド側) / リードモデル名 + Dao \
@@ -166,6 +181,9 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
     };
     visitor.visit_file(&file);
     visitor.findings.extend(one_public_type_findings(&file));
+    visitor
+        .findings
+        .extend(public_type_file_name_findings(&path, &file));
 
     let lines: Vec<&str> = source.lines().collect();
     let mut findings: Vec<Finding> = visitor
@@ -255,6 +273,69 @@ fn one_public_type_findings(file: &syn::File) -> Vec<Finding> {
                 "ファイル 2 つ目以降の公開型 `{name}` — 1 ファイル 1 公開型 (最初の公開型は `{first}`)"
             ),ONE_PUBLIC_TYPE_HELP))
         .collect()
+}
+
+/// R9: 公開型が 1 つだけのファイルについて、ファイル名がその型名の snake_case か確かめる。
+fn public_type_file_name_findings(path: &str, file: &syn::File) -> Vec<Finding> {
+    let mut segments = path.rsplit('/');
+    let Some(stem) = segments.next().and_then(|name| name.strip_suffix(".rs")) else {
+        return Vec::new();
+    };
+    if FACADE_FILE_STEMS.contains(&stem) {
+        return Vec::new();
+    }
+    let parent = segments.next().unwrap_or("");
+    let types: Vec<(usize, String)> = file
+        .items
+        .iter()
+        .filter(|item| !has_cfg_test(item_attrs(item)))
+        .filter_map(|item| match item {
+            syn::Item::Struct(i) => Some((&i.vis, &i.ident)),
+            syn::Item::Enum(i) => Some((&i.vis, &i.ident)),
+            syn::Item::Trait(i) => Some((&i.vis, &i.ident)),
+            _ => None,
+        })
+        .filter(|(vis, _)| matches!(vis, syn::Visibility::Public(_)))
+        .map(|(vis, ident)| (vis.span().start().line, ident.to_string()))
+        .collect();
+    let [(line, name)] = types.as_slice() else {
+        return Vec::new();
+    };
+    let expected = snake_case(name);
+    let is_event_variant = parent.ends_with("_event") && expected.ends_with(&format!("_{stem}"));
+    if expected == stem || is_event_variant {
+        return Vec::new();
+    }
+    vec![Finding::new(
+        RULE_PUBLIC_TYPE_FILE_NAME,
+        *line,
+        format!("公開型 `{name}` のファイル名が `{stem}.rs` — `{expected}.rs` であるべき"),
+        PUBLIC_TYPE_FILE_NAME_HELP,
+    )]
+}
+
+/// R9 の対象外 — ファサード (`mod.rs`) とクレート・ビルドの入口。
+const FACADE_FILE_STEMS: [&str; 4] = ["mod", "lib", "main", "build"];
+
+/// 型名 (UpperCamelCase) を snake_case へ写す。連続する大文字は頭字語として 1 語に扱い、
+/// 次に小文字が続く最後の大文字の前で区切る (`HTTPServer` → `http_server`)。
+fn snake_case(name: &str) -> String {
+    let chars: Vec<char> = name.chars().collect();
+    let mut out = String::with_capacity(name.len() + 4);
+    for (index, &current) in chars.iter().enumerate() {
+        if current.is_uppercase() && index > 0 {
+            let previous = chars[index - 1];
+            let next_is_lower = chars.get(index + 1).is_some_and(|c| c.is_lowercase());
+            if previous.is_lowercase()
+                || previous.is_ascii_digit()
+                || (previous.is_uppercase() && next_is_lower)
+            {
+                out.push('_');
+            }
+        }
+        out.extend(current.to_lowercase());
+    }
+    out
 }
 
 /// 所見の開始行の直前行が `// amadeus-lint: allow(<rule-id>) <理由>` で始まれば抑制する。
@@ -856,7 +937,16 @@ mod tests {
     const COMMAND_ADAPTER_PATH: &str =
         "modules/core/command/interface-adapter/src/workspace_scanner.rs";
 
+    /// R1〜R7 の検査。仮想パスのファイル名は各テストの型名と揃えていないので、R9 (ファイル名) は
+    /// ここでは除き、R9 の所見は [`check_all`] で確かめる。
     fn check(path: &str, source: &str) -> Vec<Finding> {
+        check_all(path, source)
+            .into_iter()
+            .filter(|finding| finding.rule != RULE_PUBLIC_TYPE_FILE_NAME)
+            .collect()
+    }
+
+    fn check_all(path: &str, source: &str) -> Vec<Finding> {
         check_source(path, source).expect("テストのソースは構文解析できること")
     }
 
@@ -1465,6 +1555,142 @@ pub struct Companion;
             vec![RULE_ONE_PUBLIC_TYPE],
             "理由の無い裸の allow は抑制しない"
         );
+    }
+
+    // ---- R9 赤例 (2026-09-25 に実在した形) ----------------------------------
+
+    #[test]
+    fn r9_detects_a_file_named_apart_from_its_only_public_type() {
+        // 実在した形: hook_health_reader.rs に HookHealthReadModelUpdater だけがあった。
+        let source = r#"
+struct EventWire;
+
+pub struct HookHealthReadModelUpdater;
+"#;
+        let findings = check_all(
+            "modules/core/read-model-updater/src/orchestration/hook_health_reader.rs",
+            source,
+        );
+        assert_eq!(rules(&findings), vec![RULE_PUBLIC_TYPE_FILE_NAME]);
+        assert_eq!(findings[0].line, 4, "公開型の pub 行を指すこと");
+        assert!(
+            findings[0]
+                .message
+                .contains("`hook_health_read_model_updater.rs`"),
+            "期待するファイル名を message に含めること: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r9_detects_an_error_type_living_in_a_free_function_module() {
+        // 実在した形: audit_shard.rs に AuditShardWriteError と pub fn append が同居していた。
+        let source = r#"
+pub enum AuditShardWriteError {
+    Io,
+}
+
+pub fn append() -> Result<(), AuditShardWriteError> {
+    Ok(())
+}
+"#;
+        assert_eq!(
+            rules(&check_all(
+                "modules/core/read-model-updater/src/workspace/audit_shard.rs",
+                source
+            )),
+            vec![RULE_PUBLIC_TYPE_FILE_NAME]
+        );
+    }
+
+    #[test]
+    fn r9_detects_an_event_family_enum_in_a_suffixed_file() {
+        // 実在した形: artifact_audit_event_family.rs に enum ArtifactAuditEvent があった。
+        let source = "pub enum ArtifactAuditEvent { Saved }\n";
+        assert_eq!(
+            rules(&check_all(
+                "modules/core/command/domain/src/workspace/artifact_audit_event_family.rs",
+                source
+            )),
+            vec![RULE_PUBLIC_TYPE_FILE_NAME]
+        );
+    }
+
+    // ---- R9 緑例 ---------------------------------------------------------
+
+    #[test]
+    fn r9_allows_a_file_named_after_its_public_type() {
+        let source = "pub struct StageSlug(String);\n\nstruct Parser;\n\npub fn helper() {}\n";
+        assert!(
+            check_all(
+                "modules/core/command/domain/src/workflow_definition/stage_slug.rs",
+                source
+            )
+            .is_empty()
+        );
+        let acronym = "pub struct HTTPServer;\n";
+        assert!(check_all("modules/app/aidlc/src/http_server.rs", acronym).is_empty());
+    }
+
+    #[test]
+    fn r9_allows_event_family_variant_files() {
+        // module-visibility.md §追記 2026-09-01 の変種ファイル。
+        let source = "pub struct CodekbPublished;\n";
+        assert!(
+            check_all(
+                "modules/core/command/domain/src/workspace/codekb_event/published.rs",
+                source
+            )
+            .is_empty()
+        );
+        let exact = "pub struct Started;\n";
+        assert!(
+            check_all(
+                "modules/core/command/domain/src/orchestration/intent_execution_event/started.rs",
+                exact
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn r9_ignores_facades_zero_type_modules_and_cfg_test_types() {
+        let one = "pub struct Anything;\n";
+        assert!(check_all("modules/core/command/domain/src/workspace/mod.rs", one).is_empty());
+        assert!(check_all("modules/app/aidlc/src/lib.rs", one).is_empty());
+        let free = "pub fn encode() {}\n";
+        assert!(check_all("modules/core/infrastructure/src/codec.rs", free).is_empty());
+        let fixture = "#[cfg(test)]\npub struct Fixture;\n";
+        assert!(check_all("modules/core/infrastructure/src/codec.rs", fixture).is_empty());
+    }
+
+    #[test]
+    fn r9_leaves_multiple_public_types_to_r4() {
+        let source = "pub struct A;\npub struct B;\n";
+        assert_eq!(
+            rules(&check_all("modules/app/aidlc/src/other.rs", source)),
+            vec![RULE_ONE_PUBLIC_TYPE]
+        );
+    }
+
+    #[test]
+    fn r9_is_suppressed_only_with_a_reason() {
+        let reasoned =
+            "// amadeus-lint: allow(public-type-file-name) — 移行途中\npub struct Other;\n";
+        assert!(check_all("modules/app/aidlc/src/misnamed.rs", reasoned).is_empty());
+        let bare = "// amadeus-lint: allow(public-type-file-name)\npub struct Other;\n";
+        assert_eq!(
+            rules(&check_all("modules/app/aidlc/src/misnamed.rs", bare)),
+            vec![RULE_PUBLIC_TYPE_FILE_NAME]
+        );
+    }
+
+    #[test]
+    fn snake_case_splits_words_digits_and_acronyms() {
+        assert_eq!(snake_case("IntentExecutionId"), "intent_execution_id");
+        assert_eq!(snake_case("HTTPServer"), "http_server");
+        assert_eq!(snake_case("Utf8Error"), "utf8_error");
+        assert_eq!(snake_case("Sha256Digest"), "sha256_digest");
     }
 
     // ---- R5 赤例 (2026-09-03 裁定時に実在した 4 形) -------------------------

@@ -57,7 +57,7 @@
 - **パス**: `modules/core/read-model-updater/`
 - **責務**: RMU。ジャーナルを横断で読み（`JournalReaderImpl`）、純粋投影核でリードモデルを作り、`read_*` 表・状態ファイル・監査シャードへ公開する（`ReadModelUpdater`）。チェックポイントと公開計画も管理する。`JournalReader` ポートと SQLite 実装は RMU 自身が所有する
 - **内部依存**: `core-command-domain`、`core-infrastructure`（外部では rusqlite を直接使う）
-- **Issue #134 との関係**: **不具合の中心**。修正前は `replace_pipeline` だけが DEFERRED トランザクションで「読んでから書く」形だった（`journal_reader_impl.rs:1105`）。#154（`065ab78f`）で IMMEDIATE で始まるように直した。同じ型が `hook_health_reader.rs:181` と `workspace_doctor_read_model_updater.rs:183` にもある。所見の詳細は `code-quality-assessment.md`
+- **Issue #134 との関係**: **不具合の中心**。修正前は `replace_pipeline` だけが DEFERRED トランザクションで「読んでから書く」形だった（`journal_reader_impl.rs:1105`）。#154（`065ab78f`）で IMMEDIATE で始まるように直した。同じ型が `hook_health_read_model_updater.rs:181`（旧名 `hook_health_reader.rs`） と `workspace_doctor_read_model_updater.rs:183` にもある。所見の詳細は `code-quality-assessment.md`
 
 ## core-infrastructure
 

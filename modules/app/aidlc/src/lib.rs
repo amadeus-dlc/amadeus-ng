@@ -41,7 +41,7 @@ pub mod record_name;
 pub mod runtime;
 mod stage_context;
 
-pub mod steering;
+pub mod steering_key;
 mod turn;
 pub mod wording;
 

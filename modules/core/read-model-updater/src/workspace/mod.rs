@@ -15,8 +15,10 @@ mod audit_block;
 mod audit_redaction;
 mod audit_shard;
 mod audit_shard_read_error;
+mod audit_shard_write_error;
 mod memory_faces;
 mod projection;
+mod projection_error;
 mod read_model;
 mod resolved_plan;
 mod state_file_read_error;
@@ -26,7 +28,8 @@ mod wording;
 
 // 純粋投影核とその作業面（二層構造の下側 — ストレージを知らない）
 pub use memory_faces::MemoryFaces;
-pub use projection::{ProjectionError, project};
+pub use projection::project;
+pub use projection_error::ProjectionError;
 pub use read_model::ReadModel;
 pub use resolved_plan::{PlannedStage, ResolvedPlan};
 
@@ -36,8 +39,9 @@ pub use audit_block::{SHARD_HEADER, render_audit_block};
 pub use audit_redaction::AuditRedaction;
 
 // 投影ライタ（リードモデルをディスクへ落とす 2 面。状態ファイルは置換、シャードは追記）
-pub use audit_shard::{AuditShardWriteError, append as append_audit_shard};
+pub use audit_shard::append as append_audit_shard;
 pub use audit_shard_read_error::{AuditShardReadError, read_all as read_all_audit_shards};
+pub use audit_shard_write_error::AuditShardWriteError;
 pub use state_file_read_error::{StateFileReadError, read as read_state_file};
 pub use state_file_write_error::{StateFileWriteError, write_atomic as write_state_file};
 
