@@ -106,7 +106,7 @@ sequenceDiagram
     RMU->>JR: prepare_read_model, pending_publication
     RMU->>JR: catch_up_steering
     RMU->>JR: catch_up_pipeline から replace_pipeline
-    JR->>DB: BEGIN DEFERRED, SELECT read_pipeline_progress
+    JR->>DB: BEGIN IMMEDIATE, SELECT read_pipeline_progress（#154 以降。修正前は DEFERRED）
     JR->>DB: DELETE と INSERT read_pipeline_progress, COMMIT
     RMU->>JR: checkpoint, events_after
     RMU->>JR: 投影と publish
@@ -115,9 +115,11 @@ sequenceDiagram
     Note over RMU,DB: publish で監査シャードへ PIPELINE_LINK_COMPLETED を追記
     RT-->>A: stdout に emitted PIPELINE_LINK_COMPLETED, 終了コード 0
 ```
-<!-- Text fallback: aidlc-log link は pipeline_link::run に入り、構文検査と handoff 観測の後、RecordPipelineLinkUseCase.execute を呼ぶ。ユースケースは IntentExecutionRepositoryImpl.find_by_id で集約を再構成し、集約が受領を判定してイベントを返し、store が DEFERRED トランザクションで snapshot の version 付き UPDATE と journal の INSERT を行う。次に after_projection が JournalReaderImpl を busy timeout 5000ms で開き、ReadModelUpdater.catch_up を呼ぶ。catch_up は prepare_read_model、pending_publication、catch_up_steering、catch_up_pipeline（replace_pipeline：DEFERRED で SELECT した後に DELETE / INSERT）、checkpoint と events_after、投影と publish（IMMEDIATE）の順に進み、監査シャードに PIPELINE_LINK_COMPLETED を追記する。成功すると stdout に emitted の JSON を出して終了コード 0 を返す。 -->
+<!-- Text fallback: aidlc-log link は pipeline_link::run に入り、構文検査と handoff 観測の後、RecordPipelineLinkUseCase.execute を呼ぶ。ユースケースは IntentExecutionRepositoryImpl.find_by_id で集約を再構成し、集約が受領を判定してイベントを返し、store が DEFERRED トランザクションで snapshot の version 付き UPDATE と journal の INSERT を行う。次に after_projection が JournalReaderImpl を busy timeout 5000ms で開き、ReadModelUpdater.catch_up を呼ぶ。catch_up は prepare_read_model、pending_publication、catch_up_steering、catch_up_pipeline（replace_pipeline：IMMEDIATE で書込ロックを取ってから SELECT し、DELETE / INSERT する。#154 より前は DEFERRED で SELECT した後に書込昇格していた）、checkpoint と events_after、投影と publish（IMMEDIATE）の順に進み、監査シャードに PIPELINE_LINK_COMPLETED を追記する。成功すると stdout に emitted の JSON を出して終了コード 0 を返す。 -->
 
 ### 並行した重複報告 — Issue #134 の失敗の形（仮説を含む）
+
+> **この節は修正前（2026-09-24、#154 のマージ前）の分析である。** `replace_pipeline` は #154（`065ab78f`）で IMMEDIATE で始まるようになり、下の図の即時 BUSY は起きなくなった。現在の正常系は上の図のとおり。
 
 2 本の同じ link 報告 A と B が並行したときの流れである。**「B の楽観ロック失敗の窓と A の書込昇格が重なって即時 BUSY になる」は仮説**で、アプリ本体での再現はまだしていない。確認済みの事実と仮説の切り分けは `code-quality-assessment.md` の R-1 に書いた。
 

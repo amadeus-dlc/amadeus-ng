@@ -48,3 +48,9 @@ Unit の分割は無い（ステージ単位の実行）。ワークスペース
 - 再現テストの同期を改訂した後、作業用のチェックアウトで確かめ直した。ビルド・fmt・clippy・lint と、単体テストのコマンドはすべて緑だった。ワークスペース全体は 4058 通過・1 失敗で、失敗は修正と関係しない macOS の SIGKILL である。
 - 判定は 1 回目と同じ: TC-SF-2 が Not Met、NFR2・NFR3 が Unverified（PR の CI で判定する）。詳細は `test-results.md` の「改訂 1」にある。
 
+## 訂正（2026-09-25）— FR1.2 の検証
+
+FR1.2（並行した 2 本のうち、もう一方は `already completed` と終了コード 1 で拒否される）を `OK` / `Met` としていたのは誤りだった。`concurrent_duplicate_completions_persist_only_one_receipt` は成功した起動の数と監査の件数しか確かめておらず、拒否側の文言と終了コードは検査していなかった（#155 での CodeRabbit の指摘）。
+
+- `code-generation/traceability.json` の FR1.2 を `Deferred` に改めた。
+- 拒否側の検査は PR #156（https://github.com/amadeus-dlc/amadeus-ng/pull/156）で足す。これがマージされるまで、FR1.2 は検証済みとして扱わない。TC-SV-1 の `Met` も FR1.2 については同じ扱いとする。

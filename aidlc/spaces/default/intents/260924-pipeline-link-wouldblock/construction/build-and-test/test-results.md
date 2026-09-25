@@ -114,3 +114,10 @@ PR #154 のレビュー指摘を受けて再現テストの同期を改訂した
 
 - **選択**: `Accept failure`（2026-09-24、改訂 1）
 - **扱い**: TC-SF-2 は Not Met のまま記録して承認ゲートへ進む。NFR2・NFR3 は PR #154 の CI で確かめる。
+
+## 訂正（2026-09-25）— FR1.2 の検証
+
+FR1.2（並行した 2 本のうち、もう一方は `already completed` と終了コード 1 で拒否される）を `OK` / `Met` としていたのは誤りだった。`concurrent_duplicate_completions_persist_only_one_receipt` は成功した起動の数と監査の件数しか確かめておらず、拒否側の文言と終了コードは検査していなかった（#155 での CodeRabbit の指摘）。
+
+- `code-generation/traceability.json` の FR1.2 を `Deferred` に改めた。
+- 拒否側の検査は PR #156（https://github.com/amadeus-dlc/amadeus-ng/pull/156）で足す。これがマージされるまで、FR1.2 は検証済みとして扱わない。TC-SV-1 の `Met` も FR1.2 については同じ扱いとする。

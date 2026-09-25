@@ -37,3 +37,10 @@
 - **FR5.1**（射程外の所見を Issue に記録）: 起票済み。[#151](https://github.com/amadeus-dlc/amadeus-ng/issues/151)（同じ形の DEFERRED 2 か所）と [#152](https://github.com/amadeus-dlc/amadeus-ng/issues/152)（失敗文言に段を載せる）。要件の合否基準のうち「PR 本文から参照されている」は、PR を作る Deployment Execution で満たす。
 - **NFR2**（CI の安定性）: 修正 PR の CI でしか判定できない。担当は Deployment Execution。
 - **NFR3**（カバレッジ 90% の床）: この段でローカルの計測を試した。結果は `test-results.md` にある。
+
+## 訂正（2026-09-25）— FR1.2 の検証
+
+FR1.2（並行した 2 本のうち、もう一方は `already completed` と終了コード 1 で拒否される）を `OK` / `Met` としていたのは誤りだった。`concurrent_duplicate_completions_persist_only_one_receipt` は成功した起動の数と監査の件数しか確かめておらず、拒否側の文言と終了コードは検査していなかった（#155 での CodeRabbit の指摘）。
+
+- `code-generation/traceability.json` の FR1.2 を `Deferred` に改めた。
+- 拒否側の検査は PR #156（https://github.com/amadeus-dlc/amadeus-ng/pull/156）で足す。これがマージされるまで、FR1.2 は検証済みとして扱わない。TC-SV-1 の `Met` も FR1.2 については同じ扱いとする。

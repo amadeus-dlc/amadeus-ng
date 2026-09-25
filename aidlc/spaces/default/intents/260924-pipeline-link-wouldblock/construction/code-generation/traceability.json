@@ -3,7 +3,7 @@
   "upstream_ids": ["FR1.1", "FR1.2", "FR1.3", "FR2.1", "FR2.2", "FR2.3", "FR3.1", "FR3.2", "FR4.1", "FR4.2", "FR5.1", "NFR1", "NFR2", "NFR3", "NFR4", "NFR5"],
   "coverage": [
     { "id": "FR1.1", "status": "OK", "target": "modules/app/aidlc/tests/pipeline_link_contract.rs" },
-    { "id": "FR1.2", "status": "OK", "target": "modules/app/aidlc/tests/pipeline_link_contract.rs" },
+    { "id": "FR1.2", "status": "Deferred", "target": "PR #156 で concurrent_duplicate_completions_persist_only_one_receipt に拒否側の終了コード 1 と already completed の検査を足す（2026-09-25 訂正。当初の OK は拒否側を検査していなかった）" },
     { "id": "FR1.3", "status": "OK", "target": "modules/app/aidlc/tests/pipeline_link_contract.rs" },
     { "id": "FR2.1", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" },
     { "id": "FR2.2", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" },
