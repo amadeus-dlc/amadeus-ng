@@ -21,6 +21,7 @@
 use std::collections::BTreeSet;
 
 use proc_macro2::{Ident, TokenStream, TokenTree};
+use syn::ext::IdentExt;
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
@@ -163,6 +164,7 @@ impl Finding {
 ///
 /// `source` が Rust ファイルとして構文解析できないとき `syn::Error` を返す。
 pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn::Error> {
+    let original_path = path;
     let path = path.replace('\\', "/");
     let file = syn::parse_file(source)?;
     // setter-methodはテスト配置/cfg(test)でも検査し、抑制フィルタを通さない。
@@ -183,7 +185,7 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
     visitor.findings.extend(one_public_type_findings(&file));
     visitor
         .findings
-        .extend(public_type_file_name_findings(&path, &file));
+        .extend(public_type_file_name_findings(original_path, &file));
 
     let lines: Vec<&str> = source.lines().collect();
     let mut findings: Vec<Finding> = visitor
@@ -276,15 +278,26 @@ fn one_public_type_findings(file: &syn::File) -> Vec<Finding> {
 }
 
 /// R9: 公開型が 1 つだけのファイルについて、ファイル名がその型名の snake_case か確かめる。
+///
+/// `path` は `\` を `/` へ置き換える前の元のパスを受ける。Unix では `\` もファイル名の文字
+/// なので、ファイル名と親ディレクトリ名は [`Path`](std::path::Path) の構成要素から取る。
 fn public_type_file_name_findings(path: &str, file: &syn::File) -> Vec<Finding> {
-    let mut segments = path.rsplit('/');
-    let Some(stem) = segments.next().and_then(|name| name.strip_suffix(".rs")) else {
+    let path = std::path::Path::new(path);
+    let Some(stem) = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(".rs"))
+    else {
         return Vec::new();
     };
     if FACADE_FILE_STEMS.contains(&stem) {
         return Vec::new();
     }
-    let parent = segments.next().unwrap_or("");
+    let parent = path
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
     let types: Vec<(usize, String)> = file
         .items
         .iter()
@@ -296,7 +309,7 @@ fn public_type_file_name_findings(path: &str, file: &syn::File) -> Vec<Finding> 
             _ => None,
         })
         .filter(|(vis, _)| matches!(vis, syn::Visibility::Public(_)))
-        .map(|(vis, ident)| (vis.span().start().line, ident.to_string()))
+        .map(|(vis, ident)| (vis.span().start().line, ident.unraw().to_string()))
         .collect();
     let [(line, name)] = types.as_slice() else {
         return Vec::new();
@@ -829,47 +842,44 @@ fn collect_checkbox_variants_in_tokens(tokens: &TokenStream, out: &mut BTreeSet<
     }
 }
 
-/// `#[cfg(test)]` (`#[cfg(all(test, ..))]` を含む) が付いているか。
-/// 属性のトークン列に裸の識別子 `test` が現れるかで判定する
-/// (`cfg(feature = "test")` の `"test"` は Literal なので誤検出しない)。
+/// テストビルド専用の `#[cfg(..)]` (`#[cfg(test)]`、`#[cfg(all(test, ..))]` など) が付いているか。
+/// 判定は [`cfg_requires_test`] — cfg 述語を解析し、どの有効化経路でも `test` を要するときだけ
+/// テスト専用と見なす (`cfg(feature = "test")` の `"test"` は値なので数えない)。
 pub(super) fn has_cfg_test(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attr| {
-        if !attr.path().is_ident("cfg") {
-            return false;
-        }
-        match &attr.meta {
-            syn::Meta::List(list) => stream_has_test_outside_not(&list.tokens),
-            _ => false,
-        }
+        attr.path().is_ident("cfg")
+            && attr
+                .parse_args::<syn::Meta>()
+                .is_ok_and(|predicate| cfg_requires_test(&predicate))
     })
 }
 
-/// トークン列に「`not(...)` の外側の」裸の識別子 `test` が現れるか。
+/// cfg 述語が**どの有効化経路でも** `test` を要するか (= テストビルド専用か)。
 ///
-/// `#[cfg(not(test))]` は**非テストビルド専用のプロダクトコード**なので、`test` の出現だけで
-/// テスト扱いにすると全ルールから誤免除される (PR #11 レビュー指摘)。`not` 直後の Group は
-/// 丸ごと読み飛ばす (`cfg(all(test, not(unix)))` の `test` は正しく拾う)。
-fn stream_has_test_outside_not(tokens: &TokenStream) -> bool {
-    let mut prev_is_not = false;
-    for tree in tokens.clone() {
-        match &tree {
-            TokenTree::Ident(ident) => {
-                if ident == "test" {
-                    return true;
-                }
-                prev_is_not = ident == "not";
-                continue;
+/// `test` は要る。`all(..)` は要素のどれかが要れば要る。`any(..)` は要素のすべてが要るときだけ
+/// 要る — `any(test, feature = "prod")` は `prod` 構成で `test` なしに有効なので、テスト専用では
+/// ない (PR #158 レビュー指摘)。`not(..)` とそれ以外の述語 (`unix`、`feature = ".."` など) は
+/// 要らない — `#[cfg(not(test))]` は非テストビルド専用のプロダクトコードである (PR #11 レビュー
+/// 指摘)。解析できない述語はテスト専用と見なさない (検査から漏らさない側へ倒す)。
+fn cfg_requires_test(predicate: &syn::Meta) -> bool {
+    match predicate {
+        syn::Meta::Path(path) => path.is_ident("test"),
+        syn::Meta::List(list) => {
+            let Ok(nested) = list.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+            ) else {
+                return false;
+            };
+            if list.path.is_ident("all") {
+                nested.iter().any(cfg_requires_test)
+            } else if list.path.is_ident("any") {
+                !nested.is_empty() && nested.iter().all(cfg_requires_test)
+            } else {
+                false
             }
-            TokenTree::Group(group)
-                if !prev_is_not && stream_has_test_outside_not(&group.stream()) =>
-            {
-                return true;
-            }
-            _ => {}
         }
-        prev_is_not = false;
+        syn::Meta::NameValue(_) => false,
     }
-    false
 }
 
 /// `syn::Item` は `#[non_exhaustive]` なので、属性を持つ既知の変種だけを列挙する。
@@ -1683,6 +1693,39 @@ pub fn append() -> Result<(), AuditShardWriteError> {
             rules(&check_all("modules/app/aidlc/src/misnamed.rs", bare)),
             vec![RULE_PUBLIC_TYPE_FILE_NAME]
         );
+    }
+
+    #[test]
+    fn r9_still_checks_types_enabled_outside_tests() {
+        // any(test, feature = "prod") は prod 構成で有効なので、テスト専用ではない (PR #158 指摘)。
+        let source = "#[cfg(any(test, feature = \"prod\"))]\npub struct WrongName;\n";
+        assert_eq!(
+            rules(&check_all("modules/app/aidlc/src/other.rs", source)),
+            vec![RULE_PUBLIC_TYPE_FILE_NAME]
+        );
+        let test_only = "#[cfg(all(test, feature = \"prod\"))]\npub struct WrongName;\n";
+        assert!(check_all("modules/app/aidlc/src/other.rs", test_only).is_empty());
+        let both_test = "#[cfg(any(test, all(test, unix)))]\npub struct WrongName;\n";
+        assert!(check_all("modules/app/aidlc/src/other.rs", both_test).is_empty());
+    }
+
+    #[test]
+    fn r9_reads_the_file_name_from_the_original_path() {
+        // Unix では `\` もファイル名の文字 — `weird\foo.rs` は `foo.rs` ではない (PR #158 指摘)。
+        let source = "pub struct Foo;\n";
+        let findings = check_all("modules/app/aidlc/src/weird\\foo.rs", source);
+        if cfg!(windows) {
+            assert!(findings.is_empty());
+        } else {
+            assert_eq!(rules(&findings), vec![RULE_PUBLIC_TYPE_FILE_NAME]);
+        }
+    }
+
+    #[test]
+    fn r9_strips_the_raw_identifier_prefix() {
+        // `pub struct r#Async;` の型名は `Async` — `async.rs` は正しい (PR #158 指摘)。
+        let source = "pub struct r#Async;\n";
+        assert!(check_all("modules/app/aidlc/src/async.rs", source).is_empty());
     }
 
     #[test]
