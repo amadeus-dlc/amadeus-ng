@@ -1,0 +1,1 @@
+"Issue #134: 並行した pipeline link の完了報告が、記録に成功した側も WouldBlock で失敗として返る"
