@@ -41,6 +41,8 @@
 field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiquitous-language は
 いずれもここから導かれる帰結である。
 
+**パッケージングの根拠は [packaging-principles-research-20260925.md](../../packaging-principles-research-20260925.md)** — 良い分割の条件（変わる理由で切る・依存の向き・深いモジュールなど）を文献で確かめた調査記録。規則ではなく根拠として参照する。
+
 **良い例は [good-examples.md](good-examples.md) に索引がある** — 規則の文面に対して
 「この形」と指せる実在ファイルの一覧。スニペットを書き写さずファイルを指すので、コードが
 変われば例も追随する。リンク切れは所見として扱う（カタログを直す前に「なぜ動いたか」を確認）。
@@ -62,6 +64,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | [no-backward-compatibility.md](no-backward-compatibility.md) | 後方互換のコードを残さない — `#[deprecated]`・旧名エイリアス・`pub use .. as`・互換口の並立を禁止。改名や署名変更は呼出側ごと一斉に直す（未配布のため互換の対価が無い。upstream 互換は別問題） | レビュー基準（機械化ロードマップ 4） |
 | [domain-object-kinds.md](domain-object-kinds.md) | ドメインオブジェクトは**エンティティ**（集約ルート = グローバル / ローカル）・**値オブジェクト**・**ファーストクラスコレクション**・**ドメインイベント**の 4 種が基本。**ドメインサービスの新設は人間の裁定が必須**。それ以外の種類は実測ありの問題と対策内容を添えて人間の裁定にかけてから（2026-09-02 オーナー規律） | レビュー基準 |
 | [domain-services.md](domain-services.md) | ドメインサービスは**最後の手段** — 構築規則・導出・判断はまず所有する型の関連メソッドへ。自由関数は「どの型も所有できない」説明を doc に書けるときだけ | レビュー基準 |
+| [domain-packaging.md](domain-packaging.md) | **ドメイン層はドメインの概念で分ける — 技術駆動パッケージングの禁止**（2026-09-25 オーナー裁定）。最上位は境界づけられたコンテキスト、その下は特定の型が所有するサブツリー（イベント族の変種・従属部品）だけ。`entities/`・`value_objects/`・`events/`・`services/` のような種類別の区切りは作らない | レビュー基準 |
 | [infrastructure-layer.md](infrastructure-layer.md) | infrastructure 層は**言語拡張**（原子的 I/O・時計・ID・ロギング等の汎用機構）だけ — **RPC クライアント・DB アクセスは置かない**（相手方契約を知る gateway は interface-adapter へ）。配置は core-infrastructure / harness-infrastructure | Cargo クレート分離 + レビュー基準 |
 | [factory-naming.md](factory-naming.md) | **基本コンストラクタ 1 本に構築経路を集約**し、補助コンストラクタは必ずそれへ委譲する（Scala の primary/auxiliary を Rust へ。検査可能な性質 = 構造体リテラルが型ごとに 1 箇所）。setter は使わない。コンストラクタ相当は `fn new(..) -> Self` に統一。それ以外は用途で選ぶ（`of` 集約 / `from`(`From`・`from_<源>`) 変換 / `parse` 文字列 / `open` リソース / `generate` 算出 / `create` エンティティ、ドメイン語があれば優先）。`valueOf`・`getInstance`・`newInstance` は Rust 慣用と衝突するので不採用 | `cargo lint`（`setter-method`）。完全初期化・構築経路・その他の命名はレビュー基準 |
 | [ubiquitous-language.md](ubiquitous-language.md) | ドメインモデル（`core/domain` の集約・エンティティ・値オブジェクト・ドメインイベント）の型名・フィールド名・メソッド名はユビキタス言語にする。例外は認めるが**doc コメントに理由の記述が必須** | レビュー基準 |
