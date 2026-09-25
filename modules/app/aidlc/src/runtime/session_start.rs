@@ -53,7 +53,7 @@ pub(super) async fn run(layout: &Layout, input: &str) -> Completion {
         };
     };
     let heartbeat = super::observe_hook_health(&selected, "session-start").await;
-    if heartbeat.code != 0 {
+    if heartbeat.code() != 0 {
         return heartbeat;
     }
     let kind = if envelope.rebind_check() {

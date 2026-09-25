@@ -100,13 +100,15 @@ mod canonical;
 mod digest;
 mod digest_family;
 mod parse;
+mod parse_error;
 mod profile;
 mod value;
 mod writer;
 
 pub use digest::{Digest, hash_canonical, hash_compact};
 pub use digest_family::DigestFamily;
-pub use parse::{MAX_DEPTH, ParseError, parse, parse_bytes};
+pub use parse::{MAX_DEPTH, parse, parse_bytes};
+pub use parse_error::ParseError;
 pub use profile::{Indent, KeyOrder, SerializationProfile};
 pub use value::{JsonValue, Number, ObjectMembers, ToValueError, to_value};
 pub use writer::serialize;

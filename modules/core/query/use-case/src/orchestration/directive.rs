@@ -11,7 +11,7 @@
 //! ままで、この共用体は**構築できる部分集合**である。
 
 use super::ask_directive::AskDirective;
-use super::directive_schema::DirectiveKind;
+use super::directive_kind::DirectiveKind;
 use super::load_steering_directive::LoadSteeringDirective;
 use super::run_stage_directive::RunStageDirective;
 use crate::orchestration::StageSlugView;

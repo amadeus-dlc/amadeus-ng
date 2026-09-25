@@ -13,7 +13,7 @@
 //!
 //! # 置き場を決めるのは [`crate::layout::Layout`]、名前を決めるのはここ
 //!
-//! 先行する 2 つの機構（[`crate::clone_identity`] / [`crate::steering`]）と同じ流儀である —
+//! 先行する 2 つの機構（[`crate::clone_identity`] / [`crate::steering_key`]）と同じ流儀である —
 //! 呼出側は record ディレクトリを渡すだけで、ファイル名を知らない。名前を 2 箇所に書くと
 //! 片方だけが動いたときに静かにずれる。
 

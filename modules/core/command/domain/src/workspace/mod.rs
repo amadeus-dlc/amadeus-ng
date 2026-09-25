@@ -126,9 +126,7 @@ pub use artifact_audit_id::ArtifactAuditId;
 mod artifact_audit_event_id;
 pub use artifact_audit_event_id::ArtifactAuditEventId;
 mod artifact_audit_event;
-pub use artifact_audit_event::ArtifactSaved;
-mod artifact_audit_event_family;
-pub use artifact_audit_event_family::ArtifactAuditEvent;
+pub use artifact_audit_event::{ArtifactAuditEvent, ArtifactSaved};
 mod artifact_audit;
 pub use artifact_audit::ArtifactAudit;
 

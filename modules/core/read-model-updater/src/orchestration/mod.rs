@@ -94,8 +94,8 @@ pub use plan_approval_read_model_updater::PlanApprovalReadModelUpdater;
 
 mod plan_approval_files;
 
-mod hook_health_reader;
-pub use hook_health_reader::HookHealthReadModelUpdater;
+mod hook_health_read_model_updater;
+pub use hook_health_read_model_updater::HookHealthReadModelUpdater;
 
 mod artifact_journal_entry;
 pub use artifact_journal_entry::ArtifactJournalEntry;

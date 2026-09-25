@@ -47,7 +47,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 
 | ルール | 一言 | 機械強制 |
 | --- | --- | --- |
-| [abstract-data-type.md](abstract-data-type.md) | **土台** — AVDM / DP は抽象データ型。操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。カプセル化の単位は `struct` であって `mod`。**1 ファイル 1 公開型**（2026-09-01 改訂 — 全層へ拡張） | 部分的（`cargo lint` の no-public-fields / one-public-type） |
+| [abstract-data-type.md](abstract-data-type.md) | **土台** — AVDM / DP は抽象データ型。操作（契約）で定義され表現では定義されない。内部構造を暴露せず、呼び手を契約にだけ依存させる。カプセル化の単位は `struct` であって `mod`。**1 ファイル 1 公開型**（2026-09-01 改訂 — 全層へ拡張） | 部分的（`cargo lint` の no-public-fields / one-public-type / public-type-file-name） |
 | [good-examples.md](good-examples.md) | 規則の文面に対して「この形」と指せる**実在ファイルの索引**。スニペットを書き写さないのでコードが変われば例も追随する | — |
 | [tell-dont-ask.md](tell-dont-ask.md) | **ユースケースの業務判断にgetterを使わない**。Repositoryの `find_by_id` への型付きIDの直接受け渡しは許可（2026-09-14）。アダプタ層でのgetterは合法。判断は状態の所有者へ。`value()`/`inner()`/`raw()`で内部型を意識させない | `cargo lint`（checkbox-vocabulary / use-case-domain-getter） |
 | [domain-equality.md](domain-equality.md) | ドメイン同値関係は `Eq`/`PartialEq` で表現 — 名前付き比較メソッド禁止 | レビュー基準 |
@@ -106,6 +106,14 @@ b43 の作業ツリーの現物から採ってテストに同梱、(3) 検出と
 先行して CI が赤になる状態は生じない）。[gateway-taxonomy.md](gateway-taxonomy.md)「機械強制の
 候補」1（ポート造語の検出）は `port-naming` が上位互換（禁止語の黒リストではなく許可接尾辞の
 白リスト）として吸収した。
+
+**更新 2026-09-25**: `public-type-file-name`（公開型が 1 つのファイルは、ファイル名がその型名の
+snake_case — [abstract-data-type.md](abstract-data-type.md)）が加わり実装済みは **7 本**。
+`one-public-type` が数だけを見ていたため、規則の後半（ファイル名）が機械強制されていなかった
+穴を塞いだもの。着手条件 1〜3 の充足: (1) 規則の文面に留保が無く、正当な形（ファサード・
+入口・イベント族の変種ファイル）は構造で除外できる、(2) 実在した 3 形（型名と無関係な名前・
+自由関数モジュールへのエラー型の同居・イベント族の名前の入れ替わり）を赤例として同梱、
+(3) 既存違反 10 件の是正を同じ変更で着地。
 
 そこで、**順序と着手条件をここ 1 箇所で管理する**。個々の規則に「予定」と書き足すのをやめる
 （規則側は「レビュー基準」か「`cargo lint`（ルール名）」のどちらかだけを書く）。

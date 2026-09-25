@@ -5,7 +5,7 @@
 //! （`.gitignore` の逐語コメント: 「it MUST stay machine-local (gitignored) or every clone
 //! from a commit would share a shard and git-conflict」）。
 //!
-//! 無ければ鋳造して置く。鍵（[`crate::steering`]）と同じ「マシンローカルな遅延鋳造」で、
+//! 無ければ鋳造して置く。鍵（[`crate::steering_key`]）と同じ「マシンローカルな遅延鋳造」で、
 //! **秘密ではない**ので 0600 は要らないが、**排他は要る** — 要件は「一度決まったら
 //! 変わらない」ことであり、上書きを許す書込ではそれが崩れるからである。
 //!

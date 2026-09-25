@@ -24,18 +24,7 @@ use core_query_use_case::orchestration::{
 };
 use serde::{Deserialize, Serialize};
 
-/// 無効なトークン (材料なし — 「無効」だけを約束する。fail-closed の逐語文言は呼出側の
-/// wording が組む)。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidContinueToken;
-
-impl std::fmt::Display for InvalidContinueToken {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("invalid continue token")
-    }
-}
-
-impl std::error::Error for InvalidContinueToken {}
+use crate::invalid_continue_token::InvalidContinueToken;
 
 /// state 束縛なしのときワイヤ `h` に置くセンチネル (輸送形の詳細 — クエリモデルへは出さない)。
 const NO_STATE_SENTINEL: &str = "-";
