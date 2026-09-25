@@ -6,7 +6,7 @@
 [abstract-data-type.md](abstract-data-type.md)（1 ファイル 1 公開型）、
 [ubiquitous-language.md](ubiquitous-language.md)
 **根拠の調査**: [packaging-principles-research-20260925.md](../../packaging-principles-research-20260925.md)
-**機械強制**: レビュー基準
+**機械強制**: `cargo lint`（`domain-packaging` — `modules/core/command/domain/src` の下のディレクトリ名・ファイル名・インライン `mod` 名が、下記「禁止する名前」に完全一致したら所見。特定の型名が `_event` などで終わる区間は鳴らない）
 
 ## 原則
 
@@ -42,8 +42,9 @@ domain/src/
 
 ドメイン層のディレクトリ名・モジュール名に、パターンや技術の役割を表す語を使わない。例:
 `entities` / `entity` / `value_objects` / `value_object` / `vo` / `aggregates` / `aggregate` /
-`domain_events` / `events` / `services` / `domain_services` / `repositories` / `factories` /
-`models` / `types` / `common` / `utils` / `helpers`。
+`domain_events` / `events` / `services` / `service` / `domain_services` / `repositories` / `repository` /
+`factories` / `factory` / `models` / `model` / `types` / `common` / `shared` / `utils` / `util` /
+`helpers` / `helper` / `misc`（`cargo lint` の検出対象と同じ一覧）。
 
 `intent_execution_event/` のように**特定の型名**が `_event` などで終わるのは禁止の対象ではない。
 禁止されるのは、種類そのものを名前にして複数の概念を束ねるディレクトリである。

@@ -64,7 +64,7 @@ field-visibility / tell-dont-ask / factory-naming / CQS / domain-equality / ubiq
 | [no-backward-compatibility.md](no-backward-compatibility.md) | 後方互換のコードを残さない — `#[deprecated]`・旧名エイリアス・`pub use .. as`・互換口の並立を禁止。改名や署名変更は呼出側ごと一斉に直す（未配布のため互換の対価が無い。upstream 互換は別問題） | レビュー基準（機械化ロードマップ 4） |
 | [domain-object-kinds.md](domain-object-kinds.md) | ドメインオブジェクトは**エンティティ**（集約ルート = グローバル / ローカル）・**値オブジェクト**・**ファーストクラスコレクション**・**ドメインイベント**の 4 種が基本。**ドメインサービスの新設は人間の裁定が必須**。それ以外の種類は実測ありの問題と対策内容を添えて人間の裁定にかけてから（2026-09-02 オーナー規律） | レビュー基準 |
 | [domain-services.md](domain-services.md) | ドメインサービスは**最後の手段** — 構築規則・導出・判断はまず所有する型の関連メソッドへ。自由関数は「どの型も所有できない」説明を doc に書けるときだけ | レビュー基準 |
-| [domain-packaging.md](domain-packaging.md) | **ドメイン層はドメインの概念で分ける — 技術駆動パッケージングの禁止**（2026-09-25 オーナー裁定）。最上位は境界づけられたコンテキスト、その下は特定の型が所有するサブツリー（イベント族の変種・従属部品）だけ。`entities/`・`value_objects/`・`events/`・`services/` のような種類別の区切りは作らない | レビュー基準 |
+| [domain-packaging.md](domain-packaging.md) | **ドメイン層はドメインの概念で分ける — 技術駆動パッケージングの禁止**（2026-09-25 オーナー裁定）。最上位は境界づけられたコンテキスト、その下は特定の型が所有するサブツリー（イベント族の変種・従属部品）だけ。`entities/`・`value_objects/`・`events/`・`services/` のような種類別の区切りは作らない | `cargo lint`（`domain-packaging`） |
 | [infrastructure-layer.md](infrastructure-layer.md) | infrastructure 層は**言語拡張**（原子的 I/O・時計・ID・ロギング等の汎用機構）だけ — **RPC クライアント・DB アクセスは置かない**（相手方契約を知る gateway は interface-adapter へ）。配置は core-infrastructure / harness-infrastructure | Cargo クレート分離 + レビュー基準 |
 | [factory-naming.md](factory-naming.md) | **基本コンストラクタ 1 本に構築経路を集約**し、補助コンストラクタは必ずそれへ委譲する（Scala の primary/auxiliary を Rust へ。検査可能な性質 = 構造体リテラルが型ごとに 1 箇所）。setter は使わない。コンストラクタ相当は `fn new(..) -> Self` に統一。それ以外は用途で選ぶ（`of` 集約 / `from`(`From`・`from_<源>`) 変換 / `parse` 文字列 / `open` リソース / `generate` 算出 / `create` エンティティ、ドメイン語があれば優先）。`valueOf`・`getInstance`・`newInstance` は Rust 慣用と衝突するので不採用 | `cargo lint`（`setter-method`）。完全初期化・構築経路・その他の命名はレビュー基準 |
 | [ubiquitous-language.md](ubiquitous-language.md) | ドメインモデル（`core/domain` の集約・エンティティ・値オブジェクト・ドメインイベント）の型名・フィールド名・メソッド名はユビキタス言語にする。例外は認めるが**doc コメントに理由の記述が必須** | レビュー基準 |
@@ -117,6 +117,13 @@ snake_case — [abstract-data-type.md](abstract-data-type.md)）が加わり実�
 入口・イベント族の変種ファイル）は構造で除外できる、(2) 実在した 3 形（型名と無関係な名前・
 自由関数モジュールへのエラー型の同居・イベント族の名前の入れ替わり）を赤例として同梱、
 (3) 既存違反 10 件の是正を同じ変更で着地。
+
+**更新 2026-09-25（2）**: `domain-packaging`（ドメイン層の技術駆動パッケージングの禁止 —
+[domain-packaging.md](domain-packaging.md)）が加わり実装済みは **8 本**。規則の新設と同時に機械化した。
+着手条件 1〜3 の充足: (1) 禁止する名前の完全一致だけを見るので、特定の型名が `_event` などで終わる区間
+（イベント族のサブツリー）は構造的に鳴らない、(2) オーナー裁定の例（`entities/`・`value_objects/`）を
+赤例に、コンテキスト・型の所有サブツリー・射程外の層を緑例に同梱、(3) 導入時点の既存違反は 0 件
+（13 のサブディレクトリはすべて所有者の型を持つ）。
 
 そこで、**順序と着手条件をここ 1 箇所で管理する**。個々の規則に「予定」と書き足すのをやめる
 （規則側は「レビュー基準」か「`cargo lint`（ルール名）」のどちらかだけを書く）。

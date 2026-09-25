@@ -186,6 +186,9 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
     visitor
         .findings
         .extend(public_type_file_name_findings(original_path, &file));
+    visitor
+        .findings
+        .extend(crate::domain_packaging::check(&path, &file));
 
     let lines: Vec<&str> = source.lines().collect();
     let mut findings: Vec<Finding> = visitor
