@@ -44,3 +44,7 @@ FR1.2（並行した 2 本のうち、もう一方は `already completed` と終
 
 - `code-generation/traceability.json` の FR1.2 を `Deferred` に改めた。
 - 拒否側の検査は PR #156（https://github.com/amadeus-dlc/amadeus-ng/pull/156）で足す。これがマージされるまで、FR1.2 は検証済みとして扱わない。TC-SV-1 の `Met` も FR1.2 については同じ扱いとする。
+
+### 解消（2026-09-25）
+
+PR #156（https://github.com/amadeus-dlc/amadeus-ng/pull/156、main の `d1c9caef`）がマージされ、並行テストが拒否側の終了コード 1 と `already completed this attempt` を確かめるようになった。`code-generation/traceability.json` の FR1.2 を `OK` に戻した。FR1.2 と TC-SV-1 は検証済みとして扱ってよい。
