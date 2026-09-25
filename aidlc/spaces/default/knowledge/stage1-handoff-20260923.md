@@ -1,8 +1,9 @@
 # stage-1 引き継ぎ（2026-09-23 作成 / 作業は 2026-09-22 UTC）
 
-前セッションの終了時点。PR #138 のマージまで完了し、次は stage-1 切替の 3 条件を埋める段階。
+前セッションの終了時点。PR #138 / #140 のマージまで完了し、次は stage-1 切替の 3 条件を埋める段階。
 
-- 直近の main: `27521f67`（PR #138 の squash マージ、2026-09-22T15:41:24Z）
+- 直近の main: `fe0093cb`（PR #140 = 本ファイルの追加、2026-09-23T03:25:02Z）
+- その 1 つ前: `27521f67`（PR #138、2026-09-22T15:41:24Z）
 - このファイルの置き場: space レベルの `knowledge/`。過去の handoff は `intents/260822-stage1-selfhost/construction/handoff-*.md` にあったが、その intent 記録は 2026-09-07 のリセット（`3ac8a36c`）で消えている
 
 ---
@@ -59,8 +60,10 @@ PR #136 の最終ゲートがオーナーへ引き継いだ**2 件の裁定**に
 | 種別 | リンク |
 |---|---|
 | PR #138（マージ済み、`27521f67`） | https://github.com/amadeus-dlc/amadeus-ng/pull/138 |
+| PR #140（マージ済み、`fe0093cb`） — 本ファイル | https://github.com/amadeus-dlc/amadeus-ng/pull/140 |
 | Issue #137 — 残り 6 入口の新規実装 | https://github.com/amadeus-dlc/amadeus-ng/issues/137 |
 | Issue #139 — 監査 M7 の例外作法 4 段階 | https://github.com/amadeus-dlc/amadeus-ng/issues/139 |
+| Issue #134 にコメント — CI 失敗の 2 例目 | https://github.com/amadeus-dlc/amadeus-ng/issues/134#issuecomment-5790538612 |
 
 Issue #139 が生まれた経緯: CodeRabbit が「規則ヘッダに `**例外**: <段階>` を足せ」と指摘したが、
 出典は `CONSISTENCY-AUDIT-2026-08-24.md:180` の**推奨**であって規約ではなかった。README `:5` が
@@ -78,11 +81,17 @@ Issue #7 は最終更新が 2026-09-04 前後で、`docs/specs/00-policy.md`（2
 | 条件 | 記録上 | 実測の評価 |
 |---|---|---|
 | `doctor_pass` | **met** | 2026-09-19 に 28 passed / 0 failed。ただし測定した実体は `sha256 69ae73b4c48c09c860d2c35036f0e09307036e8fa1dc58b6af95c3ab2944a8ad` で、その後 #136 / #138 が入ったため**再取得が必要** |
-| `all_ci_jobs_pass` | unmet | **実質達成済み**。main `27521f67` の CI（`merge_group`）が success。証拠を書き込めば met にできる |
+| `all_ci_jobs_pass` | unmet | **実質達成済み**。直近の main `fe0093cb` の CI（`merge_group`、run 35813094330）が success。証拠を書き込めば met にできる。ただし証拠は切替時点の main の先端で採り直すこと（それより前のコミットの成功は、後続のコミットの根拠にならない） |
 | `live_bugfix_smoke_pass` | unmet | **未実施**。実 Claude Code・実フック・人の応答が必要。order.md §7 が「人間が行う」とした唯一の条件 |
 
 実地スモークの題材は **Issue #134**（並行した pipeline link の完了報告が WouldBlock で失敗として返る）
 を温存してある（order.md §7「Issue #134 の不具合の修正（実地スモークの題材として取っておく）」）。
+
+ただしこの温存には勘定に入れるべきコストがある。**#134 は latent なバグではなく、実際に CI を
+赤くする**（→ §4-6）。スモークの実施を待つあいだも `coverage` が間欠的に落ちうる（初回はロック
+競合で落ち、再実行で通った）ので、「題材として取っておく」か「先に直してスモークの題材は別に
+選ぶ」かはオーナー裁定の余地がある。既知の flake として扱うのは再実行で通った場合だけで、
+同じ失敗が繰り返されるなら PR の変更も調べること。
 
 ---
 
@@ -185,12 +194,62 @@ gh api graphql -f query="mutation { enqueuePullRequest(input: {pullRequestId: \"
 `gh run rerun <id>` すれば `CLEAN` に戻る。必須ゲートは commit status の
 「Check unresolved comments」の方。
 
+### 4-6. `coverage` は自分の変更と無関係に落ちることがある（Issue #134）
+
+`coverage` ジョブの `pipeline_link_contract::concurrent_duplicate_completions_persist_only_one_receipt`
+が、並行した完了報告のロック競合で落ちる。**Issue #134 の既知バグ**である。
+
+```text
+assertion `left == right` failed:
+[... "already completed this attempt." ..., ... "projection: read: io: WouldBlock at .../.aidlc-store.sqlite" ...]
+  left: 0    ← 成功した起動の数
+ right: 1
+```
+
+書き込みに成功した側が、その後の投影の読み取りでロック競合に当たって失敗として返っている。
+
+- **変更内容と無関係に起きる。** 2026-09-23 の 2 例目（run 35810746755）は、Markdown 1 本を
+  足しただけの PR #140 で発生した。Rust には一切触れていない
+- **`check` は通り `coverage` だけ落ちる。** coverage の計測で処理が遅くなり、並行する 2 つの
+  起動が重なりやすくなるため
+- **再実行で通る。** `gh run rerun <run-id> --failed`。ただし `coverage` は 20 分かかる
+
+`coverage` が落ちたら、まずこのテスト名かどうかを確認すること。該当すれば自分の変更は疑わなくてよい。
+別の flake として Issue #82（相対ゲートの経路揺れ、±0.01〜0.02pp）もある。
+
+### 4-7. markdownlint はこのリポジトリで強制されていない
+
+`.markdownlint-cli2.jsonc` は存在するが、**CI には配線されていない**（`.github/workflows/` に
+記述なし）。このファイルの役割は監査シャードと developer-brief を `ignores` することだけで、
+追跡済みの既存ファイルも既定規則を破っている。
+
+```text
+upstream-contracts.md / coding-rules/README.md / CLAUDE.md の 3 本:
+  MD013/line-length            12
+  MD040/fenced-code-language    1
+  MD012/no-multiple-blanks      1
+  MD001/heading-increment       1
+```
+
+一方 **CodeRabbit はこの設定ファイルを根拠に MD040 を指摘してくる**（PR #140 で実際に来た）。
+新しい Markdown を足すときは、コードフェンスに言語指定を付けておくと 1 往復省ける。出力の
+貼り付けなら `text`。
+
+MD013（80 桁）などは直さなくてよい。この 1 本だけ折り返すとリポジトリの他の文書と揃わなくなる。
+規約として効かせるなら CI 配線と既存是正をまとめて行う話になる。
+
+### 4-8. マージ済みブランチが残る
+
+リポジトリ設定で `delete_branch_on_merge` が無効なので、マージ後もリモートにブランチが残る。
+2026-09-23 時点で `origin/feat/selfhost-wire-jump-execute` と `origin/docs-stage1-handoff` が
+未削除。掃除するかは任意。
+
 ---
 
 ## 5. 次の選択肢（前セッションの提示内容）
 
 1. **（推奨）安く取れる証拠から埋める** — native を作り直し、`--doctor` を再取得して
-   `doctor_pass` を更新。あわせて `all_ci_jobs_pass` を main `27521f67` の CI 成功で met にする。
+   `doctor_pass` を更新。あわせて `all_ci_jobs_pass` を main の先端（現時点では `fe0093cb`）の CI 成功で met にする。
    残るは実地スモーク 1 件だけになる
 
    ```bash
