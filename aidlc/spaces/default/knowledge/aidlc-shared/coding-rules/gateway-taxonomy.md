@@ -180,12 +180,12 @@ EventStoreForSqlite を使わないといけない」。**ファイルから集�
 **例外はこの 2 本のみ**で、新たに `XxxStore` / `XxxReader` を増やすことは認めない。
 機械化する場合も、この 2 本を除外リストに持つ実装にすること。
 
-> **暫定の扱い（追記 2026-09-26 — 裁定待ち）**: RMU の移行中は、面ごとのジャーナル読取ポート
+> **暫定の扱い（追記 2026-09-26 — オーナー裁定: 最後に `JournalReader` 1 本へまとめる）**: RMU の移行中は、面ごとのジャーナル読取ポート
 > （既存の `PlanApprovalJournalReader`、PR1 の `WorkspaceDoctorJournalReader`）を `JournalReader` の面別の
 > 分身 — ジャーナルという同じ要素の代理 — として扱う。旧 `JournalReader` はまだリードモデルへの書込を抱えて
-> いるため、移行済みの面がそれに依存すると書く口ごと依存してしまうからである。移行の最後に 1 本へまとめるか、
-> 面別の `…JournalReader` を正式に例外へ加えるかはオーナーの裁定を待つ
-> （[read-model-updater-structure.md](read-model-updater-structure.md)「実装の形」、移行計画の未決事項）。
+> いるため、移行済みの面がそれに依存すると書く口ごと依存してしまうからである。面別の `…JournalReader` は
+> 例外に加えない — 移行の最後に `JournalReader` 1 本（読む事実の種類は引数で絞る）へまとめて消す
+> （[read-model-updater-structure.md](read-model-updater-structure.md) 原則 2、オーナー裁定 2026-09-26）。
 
 ~~なお `DefinitionArtifactsClient` は…~~ — **決着（2026-09-02、b36）**: この型は
 `CompiledDefinitionRepository` へ昇格して消滅した（§1 の再是正）。`Client` 命名は本当に

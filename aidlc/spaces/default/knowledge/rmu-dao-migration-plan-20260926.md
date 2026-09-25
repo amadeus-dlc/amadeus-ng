@@ -39,7 +39,7 @@
 - `PlanApprovalJournalReader` も `all_events`（または位置つきの読取）だけにする。`plan_approval_receipts` は
   読み手の上の関数のまま残せる。
 - 面ごとの `…JournalReader`（`PlanApprovalJournalReader` / `WorkspaceDoctorJournalReader`）を 1 本の
-  `JournalReader`（manifest か事実の型で引数を取る形）へまとめるかは未決（下記）。
+  `JournalReader`（manifest か事実の型で引数を取る形）へまとめて消す（下記「決定事項」1）。
 
 ## 最後に入れる lint（移行完了の PR で、既存違反 0 件の状態で入れる）
 
@@ -66,7 +66,7 @@
    コミットの前に落ちてもファイルは戻らない。**救済はある** — 計画（前後のバイト）を先に別 Tx で保存しているので、
    次の実行が同じ計画を再適用し、`apply` は「すでに後の内容なら何もしない」「追記は未反映の残りだけ」で二重適用を
    避ける。つまり今の安全性は Tx の原子性ではなく**書き込み前の計画（redo の記録）**に依っている。PR5 では、この
-   計画による冪等と、原則 6 の「追記ファイルはファイルごとの反映済み番号」をどう対応させるかを決める（下記の未決事項）。
+   計画による冪等を、原則 6 の「追記ファイルはファイルごとの反映済み番号」に置き換え、計画の仕組みはなくす（下記「決定事項」2）。
 2. **承認ランタイム（`PlanApprovalJournalReaderImpl::replace`）**: IMMEDIATE Tx の中で `plan_approval_files::publish`
    （ファイルの置換・削除・ディレクトリの削除）をしてからコミットする。コミットに失敗すると、ファイルは新しく表と
    番号は古い。全履歴からの再計算なので次の実行で揃うが、**それまでの間、ファイルと表が食い違って見える**。
@@ -80,10 +80,12 @@
    「ファイル末尾が履歴のどこまでと一致するか」の推測で、同じ行が繰り返す履歴や、利用者が末尾を編集した場合に
    二重追記・取りこぼしを起こしうる。
 
-## 未決事項（オーナーの裁定が要るもの）
+## 決定事項（オーナー裁定 2026-09-26）
 
-1. **面ごとの `…JournalReader` を認めるか**: `gateway-taxonomy.md` §3 は例外を `EventStore` / `JournalReader` の
-   2 本に限っている。PR1 は `PlanApprovalJournalReader` の先例に倣って `WorkspaceDoctorJournalReader` を足し、§3 に
-   暫定の扱いを書いた。最後に 1 本の `JournalReader` へまとめるか、面別を例外として正式に認めるか。
-2. **公開計画（redo の記録）と「ファイルごとの反映済み番号」の関係**: 監査シャードは今、公開計画の前後バイトで
-   二重追記を防いでいる。原則 6 の番号方式に置き換えるのか、計画方式を「番号の一形態」として残すのか。
+1. **ジャーナルを読む口は `JournalReader` 1 本**。面ごとの `…JournalReader`（`PlanApprovalJournalReader`・
+   `WorkspaceDoctorJournalReader`）は移行中の暫定で、最後の PR で `JournalReader`（読む事実の種類は引数で絞る）へ
+   まとめて消す。`gateway-taxonomy.md` §3 の例外は増やさない。
+2. **追記するファイルの二重追記は「ファイルごとの反映済み番号」で防ぐ**（原則 6）。公開計画（書込前に前後の
+   バイトを保存して適用し直す仕組み、`amadeus_publication*` の表と適用し直す処理）は、公開の移行（行 5）でなくす。
+3. **トランザクションの受け渡しは PR1 の形にそろえる**（更新器が IMMEDIATE で開き、表の DAO へ
+   `&mut Transaction` で渡す）。DAO の責務はリードデータの読み書きだけ。
