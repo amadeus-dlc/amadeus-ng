@@ -26,7 +26,7 @@ pub(super) async fn run(layout: &Layout, input: &str) -> Completion {
             .execute(cursor.execution_id(), &stage, Utc::now())
             .await
             .map_err(|e| e.to_string())?;
-        super::catch_up(layout).await
+        super::update_read_models(layout).await
     }
     .await;
     if let Err(error) = result {

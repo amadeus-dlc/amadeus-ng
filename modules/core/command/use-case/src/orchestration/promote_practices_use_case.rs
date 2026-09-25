@@ -24,7 +24,7 @@ use super::promote_practices_error::PromotePracticesError;
 /// - **昇格内容の計算**。ドラフト 2 本と正本 2 本から節と規則行を決めるのは
 ///   `PracticesPromotion::plan`（純関数）であり、それを呼ぶのは合成ルートである。
 /// - **文言**。`practices-promote failed: …` の逐語は合成ルートが組む。
-/// - **リードモデルの更新**。`catch_up` を起動するのは合成ルートである。
+/// - **リードモデルの更新**。`update_read_models` を起動するのは合成ルートである。
 ///
 /// # 成功は `Ok(())` である（CQS）
 ///

@@ -3945,7 +3945,7 @@ async fn a_skeleton_stance_report_surfaces_every_medium_failure() {
 /// リードモデルの `read_execution` を**引けない形**に置き換える（イベントストアは無傷）。
 ///
 /// 実 CLI からは作れない形なので、ここだけストアへ直接 SQL を打つ。表ごと落とすと
-/// `catch_up` の `CREATE TABLE IF NOT EXISTS` が空の表を建て直してしまい「行が無い」に
+/// リードモデル更新 (`update_read_models`) の `CREATE TABLE IF NOT EXISTS` が空の表を建て直してしまい「行が無い」に
 /// なるので、**列が足りない表**を残して SELECT 自体を失敗させる。
 fn break_read_execution(workspace: &Workspace) {
     let store = workspace.path("aidlc/spaces/default/intents/.aidlc-store.sqlite");

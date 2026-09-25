@@ -944,7 +944,9 @@ async fn stop_request_results_recover_by_their_original_ids_after_projection_fai
     use core_command_use_case::orchestration::RecordContinuationUseCase;
     use core_query_interface_adapter::ReadModelDaos;
     use core_query_use_case::orchestration::ContinuationResultUseCase;
-    use core_read_model_updater::orchestration::WorkflowContinuationReadModelUpdater;
+    use core_read_model_updater::orchestration::{
+        ReadModelUpdater, WorkflowContinuationReadModelUpdater,
+    };
     let workspace = Workspace::new();
     assert!(workspace.create().status.success());
     assert!(!workspace.stop("{}", &[]).stdout.is_empty());
@@ -993,10 +995,15 @@ async fn stop_request_results_recover_by_their_original_ids_after_projection_fai
     let connection = rusqlite::Connection::open(store.as_path()).unwrap();
     connection.execute_batch("CREATE TRIGGER fail_stop_result BEFORE INSERT ON read_continuation_result BEGIN SELECT RAISE(ABORT, 'injected stop projection failure'); END;").unwrap();
     assert!(
-        WorkflowContinuationReadModelUpdater::open(store.as_path())
-            .unwrap()
-            .catch_up(&id, &record)
-            .is_err()
+        WorkflowContinuationReadModelUpdater::open(
+            store.as_path(),
+            id.clone(),
+            record.to_path_buf()
+        )
+        .unwrap()
+        .update_read_models()
+        .await
+        .is_err()
     );
     assert!(
         query().execute(request_id.as_str()).unwrap().is_none(),
@@ -1005,9 +1012,10 @@ async fn stop_request_results_recover_by_their_original_ids_after_projection_fai
     connection
         .execute_batch("DROP TRIGGER fail_stop_result")
         .unwrap();
-    WorkflowContinuationReadModelUpdater::open(store.as_path())
+    WorkflowContinuationReadModelUpdater::open(store.as_path(), id.clone(), record.to_path_buf())
         .unwrap()
-        .catch_up(&id, &record)
+        .update_read_models()
+        .await
         .unwrap();
     let observed = query().execute(request_id.as_str()).unwrap().unwrap();
     core_command_use_case::orchestration::SettleContinuationPublicationUseCase::new(
@@ -1023,9 +1031,10 @@ async fn stop_request_results_recover_by_their_original_ids_after_projection_fai
     )
     .await
     .unwrap();
-    WorkflowContinuationReadModelUpdater::open(store.as_path())
+    WorkflowContinuationReadModelUpdater::open(store.as_path(), id.clone(), record.to_path_buf())
         .unwrap()
-        .catch_up(&id, &record)
+        .update_read_models()
+        .await
         .unwrap();
     let recovered = query().execute(request_id.as_str()).unwrap().unwrap();
     assert!(recovered.blocked());
@@ -1045,9 +1054,10 @@ async fn stop_request_results_recover_by_their_original_ids_after_projection_fai
     )
     .await
     .unwrap();
-    WorkflowContinuationReadModelUpdater::open(store.as_path())
+    WorkflowContinuationReadModelUpdater::open(store.as_path(), id.clone(), record.to_path_buf())
         .unwrap()
-        .catch_up(&id, &record)
+        .update_read_models()
+        .await
         .unwrap();
     assert_eq!(
         query().execute(request_id.as_str()).unwrap(),
@@ -1057,9 +1067,10 @@ async fn stop_request_results_recover_by_their_original_ids_after_projection_fai
         query().execute(later_id.as_str()).unwrap().unwrap().count(),
         2
     );
-    WorkflowContinuationReadModelUpdater::open(store.as_path())
+    WorkflowContinuationReadModelUpdater::open(store.as_path(), id.clone(), record.to_path_buf())
         .unwrap()
-        .catch_up(&id, &record)
+        .update_read_models()
+        .await
         .unwrap();
     assert_eq!(
         query().execute(later_id.as_str()).unwrap().unwrap().count(),
@@ -1071,7 +1082,9 @@ async fn stop_request_results_recover_by_their_original_ids_after_projection_fai
 #[test]
 fn stop_projection_rejects_a_first_event_that_claims_an_unobserved_count() {
     use core_command_domain::orchestration::WorkflowContinuationId;
-    use core_read_model_updater::orchestration::WorkflowContinuationReadModelUpdater;
+    use core_read_model_updater::orchestration::{
+        ReadModelUpdater, WorkflowContinuationReadModelUpdater,
+    };
     let workspace = Workspace::new();
     assert!(workspace.create().status.success());
     assert!(!workspace.stop("{}", &[]).stdout.is_empty());
@@ -1089,12 +1102,16 @@ fn stop_projection_rejects_a_first_event_that_claims_an_unobserved_count() {
     let before = fs::read(&marker).unwrap();
     let db = rusqlite::Connection::open(&store).unwrap();
     assert_eq!(db.execute("UPDATE journal SET payload=CAST(json_set(CAST(payload AS TEXT),'$.count',9,'$.blocked',json('false')) AS BLOB) WHERE manifest='workflow-continuation-event/1' AND seq_nr=1", []).unwrap(), 1);
-    let result = WorkflowContinuationReadModelUpdater::open(&store)
+    let mut updater = WorkflowContinuationReadModelUpdater::open(
+        &store,
+        WorkflowContinuationId::for_execution(cursor.execution_id()),
+        record,
+    )
+    .unwrap();
+    let result = tokio::runtime::Builder::new_current_thread()
+        .build()
         .unwrap()
-        .catch_up(
-            &WorkflowContinuationId::for_execution(cursor.execution_id()),
-            &record,
-        );
+        .block_on(updater.update_read_models());
     assert!(result.is_err(), "誕生イベントのcount9を投影しない");
     assert_eq!(fs::read(marker).unwrap(), before);
 }

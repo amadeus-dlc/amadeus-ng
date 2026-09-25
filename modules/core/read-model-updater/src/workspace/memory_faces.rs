@@ -6,7 +6,7 @@
 /// 監査シャードのような追記面ではない。
 ///
 /// `dirty` を持つのは、**触っていないなら 1 バイトも書かない**ためである — メモリ層は人が
-/// 編集する正本でもあるので、`PracticesAffirmed` を含まないキャッチアップが mtime を
+/// 編集する正本でもあるので、`PracticesAffirmed` を含まない更新が mtime を
 /// 動かすことがあってはならない（設計 §5）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryFaces {

@@ -2,8 +2,8 @@
 
 use super::store_failure::SqliteResultExt;
 use super::{
-    CatchUpError, GlobalSeqNr, JournalReadError, JournalReaderImpl, ProjectionName,
-    PublicationBatch, PublicationFile,
+    GlobalSeqNr, JournalReadError, JournalReaderImpl, ProjectionName, PublicationBatch,
+    PublicationFile, ReadModelUpdateError,
 };
 use crate::read_tables::ReadTables;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -76,8 +76,8 @@ fn invalid(path: &Path) -> JournalReadError {
     }
 }
 
-fn conflict(path: &Path) -> CatchUpError {
-    CatchUpError::PublicationConflict {
+fn conflict(path: &Path) -> ReadModelUpdateError {
+    ReadModelUpdateError::PublicationConflict {
         path: path.to_path_buf(),
     }
 }
@@ -239,7 +239,7 @@ fn prepare(
     path: &Path,
     projection: &ProjectionName,
     candidate: &PublicationBatch,
-) -> Result<Option<PublicationBatch>, CatchUpError> {
+) -> Result<Option<PublicationBatch>, ReadModelUpdateError> {
     let invalid_number = |_: std::num::TryFromIntError| invalid(path);
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -376,7 +376,7 @@ pub(super) fn publish(
     projection: &ProjectionName,
     candidate: &PublicationBatch,
     tables: &ReadTables,
-) -> Result<(), CatchUpError> {
+) -> Result<(), ReadModelUpdateError> {
     let Some(batch) = prepare(connection, path, projection, candidate)? else {
         return Ok(());
     };
@@ -391,7 +391,7 @@ fn publish_prepared(
     projection: &ProjectionName,
     batch: &PublicationBatch,
     tables: &ReadTables,
-) -> Result<(), CatchUpError> {
+) -> Result<(), ReadModelUpdateError> {
     // 計画は耐久化済み。比較開始から確定までDBの書込排他を保持する。
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -532,7 +532,7 @@ mod tests {
 
         assert_eq!(
             error,
-            CatchUpError::PublicationConflict {
+            ReadModelUpdateError::PublicationConflict {
                 path: path.as_path().to_path_buf()
             }
         );
@@ -579,7 +579,7 @@ mod tests {
 
         assert_eq!(
             error,
-            CatchUpError::PublicationConflict {
+            ReadModelUpdateError::PublicationConflict {
                 path: path.as_path().to_path_buf()
             }
         );
@@ -640,7 +640,7 @@ mod tests {
 
         assert_eq!(
             prepare(&mut first, path.as_path(), &projection(), &first_resolution),
-            Err(CatchUpError::PublicationConflict {
+            Err(ReadModelUpdateError::PublicationConflict {
                 path: path.as_path().to_path_buf()
             })
         );
@@ -700,7 +700,7 @@ mod tests {
 
         assert_eq!(
             error,
-            CatchUpError::PublicationConflict {
+            ReadModelUpdateError::PublicationConflict {
                 path: path.as_path().to_path_buf()
             }
         );

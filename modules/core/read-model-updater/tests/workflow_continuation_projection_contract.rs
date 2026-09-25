@@ -15,10 +15,19 @@
 #![allow(clippy::disallowed_methods)]
 use core_command_domain::orchestration::{IntentExecutionId, WorkflowContinuationId};
 use core_read_model_updater::orchestration::{
-    JournalReadError, WorkflowContinuationReadModelUpdater,
+    JournalReadError, ReadModelUpdater, WorkflowContinuationReadModelUpdater,
 };
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
+
+/// 共通契約の境界は非同期なので、同期のテストは current_thread ランタイムで待つ
+/// (この投影器の内部は同期 I/O だけである)。
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("current_thread ランタイムを組める")
+        .block_on(future)
+}
 
 const EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0000";
 const OTHER_EXECUTION: &str = "0190aaaa-bbbb-7ccc-9ddd-eeeeffff0001";
@@ -52,8 +61,10 @@ impl Fixture {
             params![format!("row-{seq}"), self.id().as_str(), seq, payload.to_vec(), 1_757_300_000_000_000_000_i64 + seq],
         ).unwrap();
     }
-    fn catch_up(&self) -> Result<(), JournalReadError> {
-        WorkflowContinuationReadModelUpdater::open(&self.path)?.catch_up(&self.id(), &self.record())
+    fn project(&self) -> Result<(), JournalReadError> {
+        let mut updater =
+            WorkflowContinuationReadModelUpdater::open(&self.path, self.id(), self.record())?;
+        block_on(updater.update_read_models())
     }
     fn result_rows(&self) -> Vec<(String, i64, bool, Option<bool>, bool)> {
         let db = Connection::open(&self.path).unwrap();
@@ -106,7 +117,7 @@ fn a_blocked_attempt_is_projected_with_its_published_counter() {
             .to_string()
             .as_bytes(),
     );
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     assert_eq!(
         fixture.result_rows(),
         vec![(attempt(1), 1, true, Some(true), false)]
@@ -132,7 +143,7 @@ fn a_blocked_attempt_is_projected_with_its_published_counter() {
 #[test]
 fn an_empty_stream_projects_nothing() {
     let fixture = Fixture::new();
-    fixture.catch_up().unwrap();
+    fixture.project().unwrap();
     assert!(fixture.result_rows().is_empty());
     assert!(!fixture.record().join(".aidlc-stop-hook").exists());
 }
@@ -215,7 +226,7 @@ fn corrupt_continuation_rows_are_refused_as_invalid_data() {
         for (seq, payload) in rows {
             fixture.row(seq, &payload);
         }
-        let outcome = fixture.catch_up();
+        let outcome = fixture.project();
         assert!(
             outcome.as_ref().is_err_and(invalid_data),
             "{label}: {outcome:?}"

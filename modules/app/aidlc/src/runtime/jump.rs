@@ -1,5 +1,5 @@
 //! 本家aidlc-jumpの通常root execute接続。
-use super::{Completion, Layout, active_execution, catch_up, store_path};
+use super::{Completion, Layout, active_execution, store_path, update_read_models};
 use core_command_domain::{orchestration::IntentExecutionEventId, workflow_definition::StageSlug};
 use core_command_interface_adapter::orchestration::{
     IntentExecutionRepositoryImpl, IntentRepositoryImpl, WorkflowDefinitionRepositoryImpl,
@@ -78,7 +78,7 @@ async fn execute(layout: &Layout, args: &[String]) -> Result<String, String> {
     )
     .await
     .map_err(|error| error.to_string())?;
-    catch_up(layout).await?;
+    update_read_models(layout).await?;
     let view = JumpResultUseCase::new(
         ReadModelDaos::open(store.as_path())
             .map_err(|error| error.to_string())?
@@ -195,7 +195,7 @@ async fn resolve(
     let cursor = active_execution(layout)
         .map_err(|e| e.to_string())?
         .ok_or("No active workflow is selected")?;
-    catch_up(layout).await?;
+    update_read_models(layout).await?;
     let store = store_path(layout)?;
     let daos = ReadModelDaos::open(store.as_path()).map_err(|e| e.to_string())?;
     let query = FindJumpUseCase::new(daos.jump(), daos.jump_phase());

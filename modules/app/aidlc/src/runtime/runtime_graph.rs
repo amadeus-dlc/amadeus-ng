@@ -18,7 +18,9 @@ use core_command_domain::orchestration::{MemoryJournal, MemoryJournalSurvey, Sta
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_interface_adapter::orchestration::IntentExecutionRepositoryImpl;
 use core_command_use_case::orchestration::ObserveMemoryJournalsUseCase;
-use core_read_model_updater::orchestration::{RuntimeGraphReadModelUpdater, RuntimeGraphTargets};
+use core_read_model_updater::orchestration::{
+    ReadModelUpdater, RuntimeGraphReadModelUpdater, RuntimeGraphTargets,
+};
 use std::path::Path;
 
 /// 承認 1 回が 1 度の Bash で書く監査行の上限 (本家の tail-read 幅)。
@@ -85,16 +87,17 @@ async fn compile(layout: &Layout, record: &Path) -> Result<(), String> {
         .execute(cursor.execution_id(), survey(record), Utc::now())
         .await
         .map_err(|error| error.to_string())?;
-    super::catch_up(layout).await?;
+    super::update_read_models(layout).await?;
     let prefix = record_prefix(layout, record)?;
-    RuntimeGraphReadModelUpdater::open(&store)
-        .map_err(|error| error.to_string())?
-        .catch_up(
-            cursor.execution_id(),
-            &RuntimeGraphTargets::new(record, prefix),
-        )
-        .await
-        .map_err(|error| format!("runtime graph: {error}"))
+    RuntimeGraphReadModelUpdater::open(
+        &store,
+        cursor.execution_id().clone(),
+        RuntimeGraphTargets::new(record, prefix),
+    )
+    .map_err(|error| error.to_string())?
+    .update_read_models()
+    .await
+    .map_err(|error| format!("runtime graph: {error}"))
 }
 
 /// 記録ディレクトリのプロジェクト相対の綴り (`memory_path` の前置)。

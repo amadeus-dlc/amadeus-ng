@@ -18,7 +18,7 @@ use super::skeleton_stance_error::SkeletonStanceError;
 /// - **業務判断**。「いまが skeleton-gate ステージか」も「再記録を受理するか」も
 ///   `IntentExecution::record_skeleton_stance` が持つ。
 /// - **文言**。`Recorded walking-skeleton stance …` のような逐語は合成ルートの `wording` が組む。
-/// - **リードモデルの更新**。`catch_up` を起動するのは合成ルートである。
+/// - **リードモデルの更新**。`update_read_models` を起動するのは合成ルートである。
 #[derive(Debug)]
 pub struct RecordSkeletonStanceUseCase<E: IntentExecutionRepository, I: IntentRepository> {
     intent_execution_repository: E,

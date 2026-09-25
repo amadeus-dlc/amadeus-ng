@@ -24,7 +24,10 @@ use core_command_domain::orchestration::{IntentExecutionEvent, IntentExecutionId
 use core_command_domain::workspace::{EventType, OrderedAuditEvents};
 use serde::Serialize;
 
-use super::{CatchUpError, GlobalSeqNr, JournalBatch, JournalReadError, JournalReader as _};
+use super::{
+    GlobalSeqNr, JournalBatch, JournalReadError, JournalReader as _, ReadModelUpdateError,
+    ReadModelUpdater,
+};
 use super::{JournalReaderImpl, RuntimeGraphTargets};
 use crate::workspace::ResolvedPlan;
 use core_command_domain::workspace::StorePath;
@@ -90,21 +93,35 @@ struct PairingEntry {
 }
 
 /// runtime-graph リードモデルの取得ループ。
+///
+/// 描く対象の実行と書込先は構築時に束ねる（[`ReadModelUpdater`] の契約）。
 #[derive(Debug)]
 pub struct RuntimeGraphReadModelUpdater {
     reader: JournalReaderImpl,
+    execution: IntentExecutionId,
+    targets: RuntimeGraphTargets,
 }
 
 impl RuntimeGraphReadModelUpdater {
-    /// 既にあるストアを読取用に開く。
+    /// 既にあるストアを読取用に開き、描く実行と書込先を束ねる。
     ///
     /// # Errors
     /// ストアを開けない・本家の `journal` 表がまだ無い場合。
-    pub fn open(store: &StorePath) -> Result<Self, JournalReadError> {
+    pub fn open(
+        store: &StorePath,
+        execution: IntentExecutionId,
+        targets: RuntimeGraphTargets,
+    ) -> Result<Self, JournalReadError> {
         Ok(Self {
             reader: JournalReaderImpl::open(store)?,
+            execution,
+            targets,
         })
     }
+}
+
+impl ReadModelUpdater for RuntimeGraphReadModelUpdater {
+    type Error = ReadModelUpdateError;
 
     /// 対象実行の runtime-graph を描き直す。
     ///
@@ -113,18 +130,16 @@ impl RuntimeGraphReadModelUpdater {
     ///
     /// # Errors
     /// ジャーナル読取、計画の不在、監査・出力の I/O 失敗。
-    pub async fn catch_up(
-        &mut self,
-        execution: &IntentExecutionId,
-        targets: &RuntimeGraphTargets,
-    ) -> Result<(), CatchUpError> {
+    async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
+        let execution = &self.execution;
+        let targets = &self.targets;
         // 全履歴を読む — 差分ではない。日誌 `memory.md` はジャーナルの外で書き換わるので、
         // compile は毎回すべての対を数え直す。
         let history = self
             .reader
             .events_after(GlobalSeqNr::ZERO)
             .await
-            .map_err(CatchUpError::Read)?;
+            .map_err(ReadModelUpdateError::Read)?;
         let plan = resolve_plan(&history, execution)?;
         let audit = read_audit(targets.audit_dir())?;
         let Some(graph) = build_graph(&audit, &history, execution, &plan, targets) else {
@@ -133,7 +148,7 @@ impl RuntimeGraphReadModelUpdater {
         // 契約 JSON の直列化は `ContractPretty` (2 スペース + 宣言順 + 末尾改行) — 固定本家の
         // `JSON.stringify(graph, null, 2)` に改行を足した体裁と同じである (BR1.7)。
         let value = core_infrastructure::canon_json::to_value(&graph).map_err(|_| {
-            CatchUpError::PublicationIo {
+            ReadModelUpdateError::PublicationIo {
                 path: targets.graph_file().to_path_buf(),
                 kind: std::io::ErrorKind::InvalidData,
             }
@@ -143,18 +158,18 @@ impl RuntimeGraphReadModelUpdater {
             core_infrastructure::canon_json::SerializationProfile::ContractPretty,
         );
         core_infrastructure::atomic::write_file_atomic(targets.graph_file(), body.as_bytes())
-            .map_err(|error| CatchUpError::PublicationIo {
+            .map_err(|error| ReadModelUpdateError::PublicationIo {
                 path: targets.graph_file().to_path_buf(),
                 kind: error.kind(),
             })
     }
 }
 
-/// 誕生記録から計画を起こす (`ReadModelUpdater::resolve_plan` と同じ規則)。
+/// 誕生記録から計画を起こす (`OrchestrationReadModelUpdater::resolve_plan` と同じ規則)。
 fn resolve_plan(
     history: &JournalBatch,
     execution: &IntentExecutionId,
-) -> Result<ResolvedPlan, CatchUpError> {
+) -> Result<ResolvedPlan, ReadModelUpdateError> {
     let intent_id = history
         .executions()
         .iter()
@@ -163,17 +178,17 @@ fn resolve_plan(
             IntentExecutionEvent::Started(started) => Some(started.intent_id().clone()),
             _ => None,
         })
-        .ok_or(CatchUpError::PlanUnavailable)?;
+        .ok_or(ReadModelUpdateError::PlanUnavailable)?;
     history
         .intents()
         .iter()
         .find(|intent| intent.id() == &intent_id)
         .map(ResolvedPlan::of)
-        .ok_or(CatchUpError::PlanUnavailable)
+        .ok_or(ReadModelUpdateError::PlanUnavailable)
 }
 
 /// 監査シャードをファイル名順に連結する (本家 `readAllAuditShards`)。
-fn read_audit(dir: &Path) -> Result<String, CatchUpError> {
+fn read_audit(dir: &Path) -> Result<String, ReadModelUpdateError> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(String::new());
     };
@@ -185,11 +200,12 @@ fn read_audit(dir: &Path) -> Result<String, CatchUpError> {
     shards.sort();
     let mut buffer = String::new();
     for shard in shards {
-        let text =
-            std::fs::read_to_string(&shard).map_err(|error| CatchUpError::PublicationIo {
+        let text = std::fs::read_to_string(&shard).map_err(|error| {
+            ReadModelUpdateError::PublicationIo {
                 path: shard.clone(),
                 kind: error.kind(),
-            })?;
+            }
+        })?;
         buffer.push_str(&text.replace("\r\n", "\n"));
     }
     Ok(buffer)

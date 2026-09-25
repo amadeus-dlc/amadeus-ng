@@ -12,7 +12,7 @@
 use chrono::DateTime;
 use core_command_domain::workspace::{HookHealthId, HookHealthTarget, HookName, SpaceName};
 use core_read_model_updater::orchestration::{
-    CorruptCause, HookHealthReadModelUpdater, JournalReadError,
+    CorruptCause, HookHealthReadModelUpdater, JournalReadError, ReadModelUpdater,
 };
 use event_store_adapter_rs::{
     EventStoreForSqlite,
@@ -23,6 +23,23 @@ use rusqlite::params;
 use serde_json::Value;
 use std::fmt;
 use tempfile::tempdir;
+
+/// 同期のテストから共通契約 (`ReadModelUpdater::update_read_models`) を待つ補助。
+///
+/// 契約の境界は非同期だが、この投影器の内部は同期 I/O だけなので、current_thread
+/// ランタイムでその場で待てば足りる。
+trait UpdateNow {
+    fn update_now(&mut self) -> Result<(), JournalReadError>;
+}
+
+impl UpdateNow for HookHealthReadModelUpdater {
+    fn update_now(&mut self) -> Result<(), JournalReadError> {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("current_thread ランタイムを組める")
+            .block_on(self.update_read_models())
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct Key(String);
 impl fmt::Display for Key {
@@ -79,7 +96,7 @@ async fn rmu_projects_only_hook_health_events_after_interleaved_journal_rows() {
     ).unwrap();
     drop(db);
     let mut updater = HookHealthReadModelUpdater::open(&path).unwrap();
-    updater.catch_up().unwrap();
+    updater.update_read_models().await.unwrap();
     let db = rusqlite::Connection::open(&path).unwrap();
     let row: (String, i64, i64) = db
         .query_row(
@@ -178,7 +195,7 @@ fn a_journal_whose_first_row_is_a_first_drop_projects_a_drop_without_heartbeat()
         ],
     );
     let mut updater = HookHealthReadModelUpdater::open(&path).unwrap();
-    updater.catch_up().unwrap();
+    updater.update_now().unwrap();
     let db = rusqlite::Connection::open(&path).unwrap();
     let row: (Option<String>, i64, i64, Option<String>) = db
         .query_row(
@@ -201,7 +218,7 @@ fn a_journal_whose_first_row_is_a_first_drop_projects_a_drop_without_heartbeat()
         "2026-09-08T02:00:00Z\tENOSPC\n2026-09-08T02:00:00Z\tEISDIR again\n"
     );
     // 再投影は drop 履歴を重複追記せず、利用者が切り詰めた分だけを補う。
-    updater.catch_up().unwrap();
+    updater.update_now().unwrap();
     assert_eq!(
         std::fs::read_to_string(health_dir.join("write-audit-log.drops")).unwrap(),
         drops
@@ -211,7 +228,7 @@ fn a_journal_whose_first_row_is_a_first_drop_projects_a_drop_without_heartbeat()
         "2026-09-08T02:00:00Z\tENOSPC\n",
     )
     .unwrap();
-    updater.catch_up().unwrap();
+    updater.update_now().unwrap();
     assert_eq!(
         std::fs::read_to_string(health_dir.join("write-audit-log.drops")).unwrap(),
         drops
@@ -240,7 +257,7 @@ fn a_read_table_that_requires_heartbeat_is_rebuilt_before_projecting() {
     drop(db);
     HookHealthReadModelUpdater::open(&path)
         .unwrap()
-        .catch_up()
+        .update_now()
         .unwrap();
     let db = rusqlite::Connection::open(&path).unwrap();
     let notnull: i64 = db
@@ -507,7 +524,7 @@ fn corrupt_hook_health_rows_are_refused_with_their_cause() {
         let path = journal_with_rows(dir.path(), &borrowed);
         let error = HookHealthReadModelUpdater::open(&path)
             .unwrap()
-            .catch_up()
+            .update_now()
             .unwrap_err();
         assert_eq!(cause_of(&error), Some(expected), "{label}");
         let db = rusqlite::Connection::open(&path).unwrap();
@@ -541,7 +558,7 @@ fn a_row_whose_aggregate_column_disagrees_with_its_payload_is_refused() {
     drop(db);
     let error = HookHealthReadModelUpdater::open(&path)
         .unwrap()
-        .catch_up()
+        .update_now()
         .unwrap_err();
     assert_eq!(
         cause_of(&error),
@@ -562,7 +579,7 @@ fn a_row_whose_columns_cannot_be_read_is_refused_as_undecodable() {
     drop(db);
     let error = HookHealthReadModelUpdater::open(&path)
         .unwrap()
-        .catch_up()
+        .update_now()
         .unwrap_err();
     assert_eq!(
         cause_of(&error),
@@ -593,7 +610,7 @@ fn a_drop_history_that_cannot_be_appended_is_refused_after_the_rows_are_projecte
     std::fs::create_dir_all(health_dir.join("write-audit-log.drops")).unwrap();
     let error = HookHealthReadModelUpdater::open(&path)
         .unwrap()
-        .catch_up()
+        .update_now()
         .unwrap_err();
     assert_eq!(
         cause_of(&error),
@@ -624,7 +641,7 @@ fn a_shared_db_without_the_journal_table_is_refused_before_any_read_table_is_cre
         .unwrap();
     let error = HookHealthReadModelUpdater::open(&path)
         .unwrap()
-        .catch_up()
+        .update_now()
         .unwrap_err();
     assert_eq!(
         cause_of(&error),
@@ -686,7 +703,7 @@ fn a_read_only_shared_db_refuses_every_write_step_it_reaches() {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
         let error = HookHealthReadModelUpdater::open(&path)
             .unwrap()
-            .catch_up()
+            .update_now()
             .unwrap_err();
         assert_eq!(
             cause_of(&error),
@@ -745,7 +762,7 @@ fn a_drifted_read_table_or_checkpoint_table_rolls_the_projection_back() {
             .unwrap();
         let error = HookHealthReadModelUpdater::open(&path)
             .unwrap()
-            .catch_up()
+            .update_now()
             .unwrap_err();
         assert_eq!(
             cause_of(&error),
@@ -803,7 +820,7 @@ fn an_unwritable_publication_target_is_reported_after_the_rows_are_projected() {
         .unwrap();
         let error = HookHealthReadModelUpdater::open(&path)
             .unwrap()
-            .catch_up()
+            .update_now()
             .unwrap_err();
         assert_eq!(
             cause_of(&error),
@@ -829,7 +846,7 @@ fn an_unwritable_publication_target_is_reported_after_the_rows_are_projected() {
         std::fs::create_dir_all(&heartbeat).unwrap();
         let error = HookHealthReadModelUpdater::open(&path)
             .unwrap()
-            .catch_up()
+            .update_now()
             .unwrap_err();
         match error {
             JournalReadError::Io { kind, path: at } => {

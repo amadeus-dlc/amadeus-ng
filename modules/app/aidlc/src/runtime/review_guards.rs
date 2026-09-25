@@ -98,7 +98,7 @@ pub(super) async fn freeze(layout: &Layout, input: &str) -> Completion {
         Err(error) => return drop_and_allow(layout, FREEZE, &error.to_string()).await,
     };
     // 拒否は保存済みである。台帳へ描けなくても拒否は変えない (upstream も同じ)。
-    if let Err(error) = super::catch_up(layout).await {
+    if let Err(error) = super::update_read_models(layout).await {
         let _ = super::record_hook_drop(layout, FREEZE, &error).await;
     }
     let stage = block.stage().as_str();
@@ -217,7 +217,7 @@ pub(super) async fn reviewer_scope(layout: &Layout, input: &str) -> Completion {
             error.block().clone()
         }
     };
-    if let Err(error) = super::catch_up(layout).await {
+    if let Err(error) = super::update_read_models(layout).await {
         let _ = super::record_hook_drop(layout, REVIEWER_SCOPE, &error).await;
     }
     Completion::hook_denied(wording::reviewer_scope_blocked(

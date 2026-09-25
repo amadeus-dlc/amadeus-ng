@@ -12,7 +12,7 @@ use core_command_use_case::orchestration::{
 };
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, PlanApprovalJournalReaderImpl,
-    PlanApprovalReadModelUpdater,
+    PlanApprovalReadModelUpdater, ReadModelUpdater,
 };
 
 #[tokio::test]
@@ -111,7 +111,7 @@ async fn context_invalidation_projects_error_and_preserves_the_original_source_a
     let mut updater = PlanApprovalReadModelUpdater::new(
         PlanApprovalJournalReaderImpl::open(&runtime_path).unwrap(),
     );
-    updater.catch_up().unwrap();
+    updater.update_read_models().await.unwrap();
     let daos = core_query_interface_adapter::ReadModelDaos::open(runtime_path.as_path()).unwrap();
     let query = core_query_use_case::orchestration::PlanApprovalOperationUseCase::new(
         daos.plan_approval_operation(),

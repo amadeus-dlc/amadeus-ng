@@ -27,8 +27,9 @@ use core_command_domain::workflow_definition::{
 use core_command_domain::workspace::PromotedSection;
 use core_command_domain::workspace::{PromotedSections, RuleLines};
 use core_read_model_updater::orchestration::{
-    CatchUpError, GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
-    ProjectionName, ProjectionTargets, PublicationBatch, ReadModelUpdater, SteeringSource,
+    GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
+    OrchestrationReadModelUpdater, ProjectionName, ProjectionTargets, PublicationBatch,
+    ReadModelUpdateError, ReadModelUpdater, SteeringSource, StructuredReadModelUpdater,
 };
 use core_read_model_updater::read_tables::{ReadTables, SteeringTables};
 use tempfile::TempDir;
@@ -218,7 +219,7 @@ struct FakeReader {
 }
 
 impl JournalReader for FakeReader {
-    fn prepare_read_model(&mut self) -> Result<(), CatchUpError> {
+    fn prepare_read_model(&mut self) -> Result<(), ReadModelUpdateError> {
         Ok(())
     }
 
@@ -286,7 +287,7 @@ impl JournalReader for FakeReader {
         projection: &ProjectionName,
         candidate: &PublicationBatch,
         tables: &ReadTables,
-    ) -> Result<(), CatchUpError> {
+    ) -> Result<(), ReadModelUpdateError> {
         let batch = candidate.clone();
         self.publications
             .borrow_mut()
@@ -514,7 +515,7 @@ impl Fixture {
         &self,
         journal: Vec<JournalEntry>,
         intents: Vec<(u64, Intent)>,
-    ) -> ReadModelUpdater<FakeReader> {
+    ) -> OrchestrationReadModelUpdater<FakeReader> {
         self.spied_updater(journal, intents).0
     }
 
@@ -524,7 +525,7 @@ impl Fixture {
         journal: Vec<JournalEntry>,
         intents: Vec<(u64, Intent)>,
     ) -> (
-        ReadModelUpdater<FakeReader>,
+        OrchestrationReadModelUpdater<FakeReader>,
         Rc<RefCell<Option<ReadTables>>>,
     ) {
         // genesis を投影せずに済むよう、チェックポイントはその直後から始める。
@@ -533,7 +534,7 @@ impl Fixture {
             checkpoints.insert(projection(), GlobalSeqNr::new(2));
         }
         let spy = Rc::new(RefCell::new(None));
-        let updater = ReadModelUpdater::new(
+        let updater = OrchestrationReadModelUpdater::new(
             FakeReader {
                 plan_fingerprints: BTreeMap::new(),
                 code_generation_approvals: BTreeMap::new(),
@@ -568,12 +569,12 @@ impl Fixture {
         journal: Vec<JournalEntry>,
         intents: Vec<(u64, Intent)>,
         steering_dir: PathBuf,
-    ) -> ReadModelUpdater<FakeReader> {
+    ) -> OrchestrationReadModelUpdater<FakeReader> {
         let mut checkpoints = BTreeMap::new();
         if !journal.is_empty() {
             checkpoints.insert(projection(), GlobalSeqNr::new(2));
         }
-        ReadModelUpdater::new(
+        OrchestrationReadModelUpdater::new(
             FakeReader {
                 plan_fingerprints: BTreeMap::new(),
                 code_generation_approvals: BTreeMap::new(),
@@ -604,7 +605,7 @@ impl Fixture {
         intents: Vec<(u64, Intent)>,
         late_row: JournalEntry,
     ) -> (
-        ReadModelUpdater<FakeReader>,
+        OrchestrationReadModelUpdater<FakeReader>,
         Rc<RefCell<Option<ReadTables>>>,
     ) {
         let mut checkpoints = BTreeMap::new();
@@ -612,7 +613,7 @@ impl Fixture {
             checkpoints.insert(projection(), GlobalSeqNr::new(2));
         }
         let spy = Rc::new(RefCell::new(None));
-        let updater = ReadModelUpdater::new(
+        let updater = OrchestrationReadModelUpdater::new(
             FakeReader {
                 plan_fingerprints: BTreeMap::new(),
                 code_generation_approvals: BTreeMap::new(),
@@ -651,7 +652,12 @@ async fn catching_up_writes_both_faces_and_advances_the_checkpoint() {
     let fixture = Fixture::new();
     let mut updater = fixture.updater(journal(), intents());
 
-    let reached = updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
+
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(reached, GlobalSeqNr::new(4), "末尾まで進む");
 
     // 状態面: `[-]` → `[?]`（GateOpened）→ `[?]`（StageRevised も同じ位置）
@@ -693,7 +699,12 @@ async fn a_row_that_lands_between_the_two_reads_is_drawn_on_both_faces_at_one_po
     );
     let (mut updater, spy) = fixture.racing_updater(journal(), intents(), late);
 
-    let reached = updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
+
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(
         reached,
         GlobalSeqNr::new(5),
@@ -721,15 +732,25 @@ async fn a_row_that_lands_between_the_two_reads_is_drawn_on_both_faces_at_one_po
 }
 
 #[tokio::test]
-async fn a_second_catch_up_has_nothing_to_do_and_touches_nothing() {
+async fn a_second_update_has_nothing_to_do_and_touches_nothing() {
     let fixture = Fixture::new();
     let mut updater = fixture.updater(journal(), intents());
 
-    let first = updater.catch_up().await.expect("1 回目");
+    updater.update_read_models().await.expect("1 回目");
+
+    let first = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     let state_after_first = fixture.state();
     let shard_after_first = fixture.shard();
 
-    let second = updater.catch_up().await.expect("2 回目");
+    updater.update_read_models().await.expect("2 回目");
+
+    let second = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(second, first, "チェックポイントは動かない");
     assert_eq!(fixture.state(), state_after_first, "状態面は同一バイト");
     assert_eq!(fixture.shard(), shard_after_first, "監査面も同一バイト");
@@ -740,7 +761,12 @@ async fn an_empty_journal_writes_nothing_at_all() {
     let fixture = Fixture::new();
     let mut updater = fixture.updater(Vec::new(), Vec::new());
 
-    let reached = updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
+
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(reached, GlobalSeqNr::ZERO);
     assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
     assert!(
@@ -755,7 +781,7 @@ async fn regenerating_from_zero_twice_yields_identical_bytes() {
     let run = || async {
         let fixture = Fixture::new();
         let mut updater = fixture.updater(journal(), intents());
-        updater.catch_up().await.expect("キャッチアップ");
+        updater.update_read_models().await.expect("更新");
         (fixture.state(), fixture.shard())
     };
     assert_eq!(run().await, run().await);
@@ -772,7 +798,10 @@ async fn a_projection_failure_leaves_the_checkpoint_where_it_was() {
     .expect("対象ステージの無い出発点");
     let mut updater = fixture.updater(journal(), intents());
 
-    let error = updater.catch_up().await.expect_err("投影が失敗する");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("投影が失敗する");
     assert!(
         error.to_string().starts_with("projection: "),
         "実際: {error}"
@@ -780,7 +809,10 @@ async fn a_projection_failure_leaves_the_checkpoint_where_it_was() {
     assert!(!fixture.audit_shard.exists(), "監査面へ何も書かない");
 
     // 次の試行が同じ差分をもう一度読めることが「進んでいない」ことの観測である。
-    let retried = updater.catch_up().await.expect_err("同じ失敗を繰り返す");
+    let retried = updater
+        .update_read_models()
+        .await
+        .expect_err("同じ失敗を繰り返す");
     assert_eq!(retried.to_string(), error.to_string());
 }
 
@@ -790,7 +822,7 @@ async fn a_missing_state_file_is_refused_with_the_verbatim_wording() {
     std::fs::remove_file(&fixture.state_file).expect("消す");
     let mut updater = fixture.updater(journal(), intents());
 
-    let error = updater.catch_up().await.expect_err("読めない");
+    let error = updater.update_read_models().await.expect_err("読めない");
     assert_eq!(
         error.to_string(),
         format!(
@@ -846,7 +878,7 @@ async fn a_promotion_rewrites_the_memory_layer_and_the_other_faces() {
         intents(),
     );
 
-    updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
 
     assert_eq!(
         fixture.rule("team.md"),
@@ -881,15 +913,18 @@ async fn a_promotion_without_both_memory_files_is_refused_and_nothing_advances()
         intents(),
     );
 
-    let error = updater.catch_up().await.expect_err("面が無ければ描けない");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("面が無ければ描けない");
     assert_eq!(error.to_string(), "projection: memory files missing");
     assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
     assert_eq!(fixture.rule("team.md"), TEAM_MD, "正本に触らない");
 }
 
-/// メモリ層を触らないキャッチアップは 2 本の mtime を動かさない（dirty のときだけ書く）。
+/// メモリ層を触らない更新は 2 本の mtime を動かさない（dirty のときだけ書く）。
 #[tokio::test]
-async fn a_catch_up_that_touches_no_memory_face_leaves_both_files_untouched() {
+async fn a_update_that_touches_no_memory_face_leaves_both_files_untouched() {
     let fixture = Fixture::new();
     fixture.write_rule("team.md", TEAM_MD);
     fixture.write_rule("project.md", PROJECT_MD);
@@ -899,7 +934,7 @@ async fn a_catch_up_that_touches_no_memory_face_leaves_both_files_untouched() {
     );
     let mut updater = fixture.updater(journal(), intents());
 
-    updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
 
     assert_eq!(fixture.rule("team.md"), TEAM_MD);
     assert_eq!(fixture.rule("project.md"), PROJECT_MD);
@@ -916,9 +951,9 @@ async fn a_catch_up_that_touches_no_memory_face_leaves_both_files_untouched() {
 /// 在るのに読めないメモリ層は blocking である（不在と混ぜない）。
 ///
 /// 参照入力 (steering) は別のディレクトリへ向けてある — 同じ memory ディレクトリを指すと
-/// `catch_up_steering` が先に同じファイルで倒れ、投影面の読取失敗だけを観測できない。
+/// `update_steering` が先に同じファイルで倒れ、投影面の読取失敗だけを観測できない。
 #[tokio::test]
-async fn a_memory_file_that_exists_but_cannot_be_read_stops_the_catch_up() {
+async fn a_memory_file_that_exists_but_cannot_be_read_stops_the_update() {
     let fixture = Fixture::new();
     // `team.md` の位置にディレクトリを置く — `exists()` は真だが `read_to_string` は失敗する。
     std::fs::create_dir(fixture.memory_dir.join("team.md")).expect("ディレクトリを置く");
@@ -932,7 +967,7 @@ async fn a_memory_file_that_exists_but_cannot_be_read_stops_the_catch_up() {
     );
 
     let error = updater
-        .catch_up()
+        .update_read_models()
         .await
         .expect_err("在るのに読めないので止まる");
     assert!(
@@ -945,7 +980,7 @@ async fn a_memory_file_that_exists_but_cannot_be_read_stops_the_catch_up() {
 /// 書けないメモリ層も blocking である（read-only バリア）。
 #[cfg(unix)]
 #[tokio::test]
-async fn a_read_only_memory_file_stops_the_catch_up_with_its_material() {
+async fn a_read_only_memory_file_stops_the_update_with_its_material() {
     use std::os::unix::fs::PermissionsExt;
 
     let fixture = Fixture::new();
@@ -960,7 +995,10 @@ async fn a_read_only_memory_file_stops_the_catch_up_with_its_material() {
         vec![entry(2, 1, genesis()), entry(3, 2, practices_affirmed())],
         intents(),
     );
-    let error = updater.catch_up().await.expect_err("書けないので止まる");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("書けないので止まる");
     assert!(
         error
             .to_string()
@@ -979,7 +1017,7 @@ async fn a_read_only_memory_file_stops_the_catch_up_with_its_material() {
 /// 置き場そのものが書けないときは OS の I/O 文言を材料に運ぶ。
 #[cfg(unix)]
 #[tokio::test]
-async fn a_memory_directory_that_cannot_be_written_stops_the_catch_up_with_the_io_material() {
+async fn a_memory_directory_that_cannot_be_written_stops_the_update_with_the_io_material() {
     use std::os::unix::fs::PermissionsExt;
 
     let fixture = Fixture::new();
@@ -997,7 +1035,7 @@ async fn a_memory_directory_that_cannot_be_written_stops_the_catch_up_with_the_i
         intents(),
     );
     let error = updater
-        .catch_up()
+        .update_read_models()
         .await
         .expect_err("置き場が書けないので止まる");
 
@@ -1031,7 +1069,12 @@ async fn an_intent_only_batch_advances_the_checkpoint_without_writing() {
     let fixture = Fixture::new();
     let mut updater = fixture.updater(Vec::new(), intents());
 
-    let reached = updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
+
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(reached, GlobalSeqNr::new(1), "intent 行の位置まで進む");
     assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
     assert!(
@@ -1057,7 +1100,10 @@ async fn a_journal_without_a_started_is_plan_unavailable() {
     )];
     let mut updater = fixture.updater(journal, intents());
 
-    let error = updater.catch_up().await.expect_err("計画の材料が無い");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("計画の材料が無い");
     assert_eq!(error.to_string(), "plan unavailable");
 }
 
@@ -1092,7 +1138,7 @@ async fn executions_of_two_different_intents_are_refused_as_mixed() {
     ];
     let mut updater = fixture.updater(journal, intents());
 
-    let error = updater.catch_up().await.expect_err("混在は拒否");
+    let error = updater.update_read_models().await.expect_err("混在は拒否");
     assert_eq!(error.to_string(), "mixed intents");
     assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
 }
@@ -1104,7 +1150,10 @@ async fn a_started_without_its_created_is_plan_unavailable() {
     let fixture = Fixture::new();
     let mut updater = fixture.updater(journal(), Vec::new());
 
-    let error = updater.catch_up().await.expect_err("計画の材料が無い");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("計画の材料が無い");
     assert_eq!(error.to_string(), "plan unavailable");
 }
 
@@ -1117,7 +1166,12 @@ async fn the_structured_rows_reach_the_reader_with_the_advance() {
     let fixture = Fixture::new();
     let (mut updater, spy) = fixture.spied_updater(journal(), intents());
 
-    let reached = updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
+
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
 
     let received = spy.borrow();
     let tables = received.as_ref().expect("前進と一緒に行が届く");
@@ -1142,20 +1196,20 @@ async fn an_empty_journal_hands_the_reader_no_rows_at_all() {
     let fixture = Fixture::new();
     let (mut updater, spy) = fixture.spied_updater(Vec::new(), Vec::new());
 
-    updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
 
     assert!(spy.borrow().is_none(), "前進が起きないので行も渡らない");
 }
 
 #[tokio::test]
-async fn a_second_catch_up_leaves_the_rows_as_the_first_one_left_them() {
+async fn a_second_update_leaves_the_rows_as_the_first_one_left_them() {
     let fixture = Fixture::new();
     let (mut updater, spy) = fixture.spied_updater(journal(), intents());
 
-    updater.catch_up().await.expect("1 回目");
+    updater.update_read_models().await.expect("1 回目");
     let after_first = spy.borrow().clone().expect("1 回目で届く");
 
-    updater.catch_up().await.expect("2 回目");
+    updater.update_read_models().await.expect("2 回目");
     assert_eq!(
         spy.borrow().as_ref(),
         Some(&after_first),
@@ -1166,14 +1220,14 @@ async fn a_second_catch_up_leaves_the_rows_as_the_first_one_left_them() {
 // ---- 参照入力 (steering) ----
 
 #[tokio::test]
-async fn the_first_catch_up_projects_the_memory_layer_it_finds() {
+async fn the_first_update_projects_the_memory_layer_it_finds() {
     let fixture = Fixture::new();
     fixture.write_rule(
         "phases/inception.md",
         "# Inception\n\nALWAYS confirm the scope.\n",
     );
     let mut updater = fixture.updater(journal(), intents());
-    updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
 
     assert_eq!(fixture.steering_writes(), 1);
     let steering = fixture.steering().expect("steering 面が書かれている");
@@ -1198,9 +1252,9 @@ async fn an_unchanged_memory_layer_is_not_reprojected() {
     // 毎回書き替えると、規則を 1 文字も触っていないのに束のバイトが動きうる。
     let fixture = Fixture::new();
     let mut updater = fixture.updater(journal(), intents());
-    updater.catch_up().await.expect("1 回目");
+    updater.update_read_models().await.expect("1 回目");
     assert_eq!(fixture.steering_writes(), 1);
-    updater.catch_up().await.expect("2 回目");
+    updater.update_read_models().await.expect("2 回目");
     assert_eq!(fixture.steering_writes(), 1, "同じ参照入力では書き替えない");
 }
 
@@ -1209,12 +1263,12 @@ async fn an_edited_rule_file_is_reprojected_even_when_the_journal_has_not_moved(
     // ジャーナル差分が空でも参照入力は見る — 規則は人が編集するので、イベントを伴わない。
     let fixture = Fixture::new();
     let mut updater = fixture.updater(journal(), intents());
-    updater.catch_up().await.expect("1 回目");
+    updater.update_read_models().await.expect("1 回目");
     let before = fixture.steering().expect("1 回目の面");
 
     fixture.write_rule("org.md", "# Org\n\n変更した規則\n");
     updater
-        .catch_up()
+        .update_read_models()
         .await
         .expect("2 回目 — ジャーナル差分は空");
 
@@ -1238,9 +1292,9 @@ async fn an_edited_rule_file_is_reprojected_even_when_the_journal_has_not_moved(
 async fn a_rule_file_that_disappears_is_normal_and_shrinks_the_bundle() {
     let fixture = Fixture::new();
     let mut updater = fixture.updater(journal(), intents());
-    updater.catch_up().await.expect("1 回目");
+    updater.update_read_models().await.expect("1 回目");
     fixture.remove_rule("org.md");
-    updater.catch_up().await.expect("欠損は正常");
+    updater.update_read_models().await.expect("欠損は正常");
 
     let steering = fixture.steering().expect("steering 面");
     assert_eq!(fixture.steering_writes(), 2);
@@ -1260,7 +1314,7 @@ async fn a_missing_memory_directory_is_normal_too() {
 }
 
 #[tokio::test]
-async fn a_rule_file_that_exists_but_cannot_be_read_stops_the_catch_up() {
+async fn a_rule_file_that_exists_but_cannot_be_read_stops_the_update() {
     // 「在るのに読めない」は blocking である — 規則を落として進むと、届く steering が
     // 静かに痩せる。
     let fixture = Fixture::new();
@@ -1269,9 +1323,12 @@ async fn a_rule_file_that_exists_but_cannot_be_read_stops_the_catch_up() {
     std::fs::write(&path, [0x80_u8, 0x81]).expect("UTF-8 として不正なバイトを置く");
 
     let mut updater = fixture.updater(journal(), intents());
-    let error = updater.catch_up().await.expect_err("読めない規則は止める");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("読めない規則は止める");
     match error {
-        CatchUpError::SteeringRead { path: named, kind } => {
+        ReadModelUpdateError::SteeringRead { path: named, kind } => {
             assert!(named.ends_with("team.md"), "実際: {named}");
             assert_eq!(kind, std::io::ErrorKind::InvalidData);
         }
@@ -1282,7 +1339,7 @@ async fn a_rule_file_that_exists_but_cannot_be_read_stops_the_catch_up() {
 
 #[tokio::test]
 async fn the_steering_failure_renders_its_material() {
-    let error = CatchUpError::SteeringRead {
+    let error = ReadModelUpdateError::SteeringRead {
         path: "memory/team.md".to_string(),
         kind: std::io::ErrorKind::PermissionDenied,
     };
@@ -1299,7 +1356,7 @@ async fn the_memory_layer_is_read_before_the_journal_difference_is_probed() {
     // 行われる (ジャーナルが動くまで規則が届かない、という穴を塞ぐ)。
     let fixture = Fixture::new();
     let mut updater = fixture.updater(Vec::new(), Vec::new());
-    updater.catch_up().await.expect("空のジャーナル");
+    updater.update_read_models().await.expect("空のジャーナル");
     assert_eq!(fixture.steering_writes(), 1);
     assert_eq!(fixture.steering().expect("steering 面").plans().len(), 5);
 }
@@ -1312,8 +1369,8 @@ async fn an_invalid_audit_target_prevents_any_file_or_plan_publication() {
     let state = fixture.state();
     let (mut updater, published_tables) = fixture.spied_updater(journal(), intents());
     assert_eq!(
-        updater.catch_up().await,
-        Err(CatchUpError::PublicationConflict {
+        updater.update_read_models().await,
+        Err(ReadModelUpdateError::PublicationConflict {
             path: fixture.audit_shard.clone()
         })
     );
@@ -1322,15 +1379,15 @@ async fn an_invalid_audit_target_prevents_any_file_or_plan_publication() {
     assert!(fixture.publications.borrow().is_empty());
     assert!(published_tables.borrow().is_none());
     std::fs::remove_dir(&fixture.audit_shard).unwrap();
-    updater.catch_up().await.unwrap();
+    updater.update_read_models().await.unwrap();
     let audit = fixture.shard();
-    updater.catch_up().await.unwrap();
+    updater.update_read_models().await.unwrap();
     assert_eq!(fixture.shard(), audit);
 }
 
 /// 差分を観測した直後に履歴が消えた場合、古い読取位置で成功したことにしない。
 #[tokio::test]
-async fn a_disappeared_history_is_not_a_successful_catch_up() {
+async fn a_disappeared_history_is_not_a_successful_update() {
     for structured in [false, true] {
         let fixture = Fixture::new();
         let state = fixture.state();
@@ -1345,26 +1402,26 @@ async fn a_disappeared_history_is_not_a_successful_catch_up() {
             ..FakeReader::default()
         };
         let result = if structured {
-            let result =
-                ReadModelUpdater::<FakeReader>::catch_up_structured(&mut reader, &projection())
-                    .await;
+            let result = StructuredReadModelUpdater::new(&mut reader, &projection())
+                .update_read_models()
+                .await;
             assert_eq!(
                 reader.checkpoint(&projection()).await.unwrap(),
                 GlobalSeqNr::new(2)
             );
             result
         } else {
-            let mut updater = ReadModelUpdater::new(
+            let mut updater = OrchestrationReadModelUpdater::new(
                 reader,
                 projection(),
                 fixture.targets(),
                 fixture.steering_source(),
             );
-            updater.catch_up().await
+            updater.update_read_models().await
         };
         assert_eq!(
             result,
-            Err(CatchUpError::HistoryDisappeared),
+            Err(ReadModelUpdateError::HistoryDisappeared),
             "structured={structured}"
         );
         assert!(fixture.publications.borrow().is_empty());
@@ -1416,20 +1473,25 @@ fn directive_issued() -> IntentExecutionEvent {
     ))
 }
 
-fn publication_io(error: CatchUpError) -> (PathBuf, std::io::ErrorKind) {
+fn publication_io(error: ReadModelUpdateError) -> (PathBuf, std::io::ErrorKind) {
     match error {
-        CatchUpError::PublicationIo { path, kind } => (path, kind),
+        ReadModelUpdateError::PublicationIo { path, kind } => (path, kind),
         other => panic!("PublicationIo を期待した: {other:?}"),
     }
 }
 
 #[tokio::test]
-async fn a_human_turn_file_that_cannot_be_read_stops_the_catch_up_with_its_path() {
+async fn a_human_turn_file_that_cannot_be_read_stops_the_update_with_its_path() {
     let fixture = Fixture::new();
     let human_turn = fixture.targets().human_turn_file().to_path_buf();
     std::fs::create_dir_all(&human_turn).expect("読めない形で置く");
     let mut updater = fixture.updater(journal_with(prompt_observed()), intents());
-    let (path, kind) = publication_io(updater.catch_up().await.expect_err("読めないので止まる"));
+    let (path, kind) = publication_io(
+        updater
+            .update_read_models()
+            .await
+            .expect_err("読めないので止まる"),
+    );
     assert_eq!(path, human_turn);
     assert_ne!(kind, std::io::ErrorKind::NotFound);
     assert!(!fixture.audit_shard.exists(), "監査面へ何も書かない");
@@ -1441,7 +1503,7 @@ async fn a_human_turn_is_published_as_the_prompt_time() {
     let human_turn = fixture.targets().human_turn_file().to_path_buf();
     std::fs::write(&human_turn, "2020-01-01T00:00:00Z\n").expect("前回の値");
     let mut updater = fixture.updater(journal_with(prompt_observed()), intents());
-    updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
     let batch = fixture
         .publications
         .borrow()
@@ -1465,12 +1527,17 @@ async fn a_human_turn_is_published_as_the_prompt_time() {
 }
 
 #[tokio::test]
-async fn an_active_directive_file_that_cannot_be_read_stops_the_catch_up_with_its_path() {
+async fn an_active_directive_file_that_cannot_be_read_stops_the_update_with_its_path() {
     let fixture = Fixture::new();
     let directive = fixture.targets().active_directive_file().to_path_buf();
     std::fs::create_dir_all(&directive).expect("読めない形で置く");
     let mut updater = fixture.updater(journal_with(directive_issued()), intents());
-    let (path, kind) = publication_io(updater.catch_up().await.expect_err("読めないので止まる"));
+    let (path, kind) = publication_io(
+        updater
+            .update_read_models()
+            .await
+            .expect_err("読めないので止まる"),
+    );
     assert_eq!(path, directive);
     assert_ne!(kind, std::io::ErrorKind::NotFound);
 }
@@ -1482,7 +1549,7 @@ async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
     std::fs::write(&blocker, "not a directory").expect("ファイルで塞ぐ");
     let mut checkpoints = BTreeMap::new();
     checkpoints.insert(projection(), GlobalSeqNr::new(2));
-    let mut updater = ReadModelUpdater::new(
+    let mut updater = OrchestrationReadModelUpdater::new(
         FakeReader {
             plan_fingerprints: BTreeMap::new(),
             code_generation_approvals: BTreeMap::new(),
@@ -1508,9 +1575,12 @@ async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
         ),
         fixture.steering_source(),
     );
-    let error = updater.catch_up().await.expect_err("存在を確かめられない");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("存在を確かめられない");
     assert!(
-        matches!(error, CatchUpError::StateFileRead(_)),
+        matches!(error, ReadModelUpdateError::StateFileRead(_)),
         "実際: {error:?}"
     );
 }
@@ -1580,10 +1650,10 @@ impl RegistryFixture {
     fn registry(&self) -> PathBuf {
         self.fixture._dir.path().join("intents.json")
     }
-    fn updater(&self) -> ReadModelUpdater<FakeReader> {
+    fn updater(&self) -> OrchestrationReadModelUpdater<FakeReader> {
         let mut checkpoints = BTreeMap::new();
         checkpoints.insert(projection(), GlobalSeqNr::new(2));
-        ReadModelUpdater::new(
+        OrchestrationReadModelUpdater::new(
             FakeReader {
                 plan_fingerprints: BTreeMap::new(),
                 code_generation_approvals: BTreeMap::new(),
@@ -1620,7 +1690,7 @@ async fn a_named_intent_is_registered_and_a_foreign_row_is_kept() {
         "[{\"uuid\":\"11111111-1111-7111-8111-111111111111\",\"slug\":\"other\",\"dirName\":\"260901-other\",\"scope\":\"express\",\"status\":\"complete\"}]\n",
     )
     .expect("既存の登録");
-    registry.updater().catch_up().await.expect("キャッチアップ");
+    registry.updater().update_read_models().await.expect("更新");
     let rows: Vec<serde_json::Value> =
         serde_json::from_str(&std::fs::read_to_string(registry.registry()).expect("登録"))
             .expect("JSON");
@@ -1654,11 +1724,11 @@ async fn a_registry_row_whose_directory_disagrees_with_the_birth_is_a_conflict()
     .expect("食い違う登録");
     let error = registry
         .updater()
-        .catch_up()
+        .update_read_models()
         .await
         .expect_err("読み替えない");
     assert!(
-        matches!(&error, CatchUpError::PublicationConflict { path } if *path == registry.registry()),
+        matches!(&error, ReadModelUpdateError::PublicationConflict { path } if *path == registry.registry()),
         "実際: {error:?}"
     );
 }
@@ -1673,59 +1743,71 @@ async fn a_registry_row_that_already_owns_the_directory_under_another_intent_is_
     .expect("同じディレクトリを持つ別 intent");
     let error = registry
         .updater()
-        .catch_up()
+        .update_read_models()
         .await
         .expect_err("読み替えない");
     assert!(
-        matches!(&error, CatchUpError::PublicationConflict { path } if *path == registry.registry()),
+        matches!(&error, ReadModelUpdateError::PublicationConflict { path } if *path == registry.registry()),
         "実際: {error:?}"
     );
 }
 
 #[tokio::test]
-async fn a_registry_that_cannot_be_read_stops_the_catch_up_with_its_path() {
+async fn a_registry_that_cannot_be_read_stops_the_update_with_its_path() {
     let registry = RegistryFixture::new();
     std::fs::create_dir_all(registry.registry()).expect("読めない形で置く");
-    let (path, kind) = publication_io(registry.updater().catch_up().await.expect_err("読めない"));
+    let (path, kind) = publication_io(
+        registry
+            .updater()
+            .update_read_models()
+            .await
+            .expect_err("読めない"),
+    );
     assert_eq!(path, registry.registry());
     assert_ne!(kind, std::io::ErrorKind::NotFound);
     let broken = RegistryFixture::new();
     std::fs::write(broken.registry(), "{not json").expect("壊れた登録");
-    let (path, kind) = publication_io(broken.updater().catch_up().await.expect_err("読めない"));
+    let (path, kind) = publication_io(
+        broken
+            .updater()
+            .update_read_models()
+            .await
+            .expect_err("読めない"),
+    );
     assert_eq!(path, broken.registry());
     assert_eq!(kind, std::io::ErrorKind::InvalidData);
 }
 
 /// 取得ループの失敗は、材料（投影名・位置・内包した失敗）を診断文言に載せる。
 #[test]
-fn the_catch_up_failures_render_their_material() {
+fn the_update_failures_render_their_material() {
     use core_read_model_updater::read_tables::ReadTablesError;
     use core_read_model_updater::workspace::StateFileWriteError;
-    let cases: Vec<(CatchUpError, &str)> = vec![
+    let cases: Vec<(ReadModelUpdateError, &str)> = vec![
         (
-            CatchUpError::LegacyProjection {
+            ReadModelUpdateError::LegacyProjection {
                 projection: "state-file".to_string(),
             },
             "legacy shared projection requires migration: state-file",
         ),
         (
-            CatchUpError::StateFileWrite(StateFileWriteError::Io {
+            ReadModelUpdateError::StateFileWrite(StateFileWriteError::Io {
                 message: "disk full".to_string(),
             }),
             "state file write: Io { message: \"disk full\" }",
         ),
         (
-            CatchUpError::HistoryDisappeared,
+            ReadModelUpdateError::HistoryDisappeared,
             "history disappeared between reads",
         ),
         (
-            CatchUpError::ReadTables(ReadTablesError::MissingGenesis {
+            ReadModelUpdateError::ReadTables(ReadTablesError::MissingGenesis {
                 aggregate_id: "abc".to_string(),
             }),
             "read tables: missing genesis for abc",
         ),
-        (CatchUpError::PlanUnavailable, "plan unavailable"),
-        (CatchUpError::MixedIntents, "mixed intents"),
+        (ReadModelUpdateError::PlanUnavailable, "plan unavailable"),
+        (ReadModelUpdateError::MixedIntents, "mixed intents"),
     ];
     for (error, expected) in cases {
         assert_eq!(error.to_string(), expected);
@@ -1733,7 +1815,7 @@ fn the_catch_up_failures_render_their_material() {
 }
 
 // ---------------------------------------------------------------------------
-// 誕生 (genesis) からの初回キャッチアップ — 状態ファイルの骨格・依頼原文・ソース基準
+// 誕生 (genesis) からの初回更新 — 状態ファイルの骨格・依頼原文・ソース基準
 // ---------------------------------------------------------------------------
 
 /// 記録名とソース基準を持つ intent の誕生記録（初回投影が公開する付随ファイルの材料）。
@@ -1799,8 +1881,8 @@ fn updater_from_zero(
     fixture: &Fixture,
     journal: Vec<JournalEntry>,
     intents: Vec<(u64, Intent)>,
-) -> ReadModelUpdater<FakeReader> {
-    ReadModelUpdater::new(
+) -> OrchestrationReadModelUpdater<FakeReader> {
+    OrchestrationReadModelUpdater::new(
         FakeReader {
             journal,
             intents,
@@ -1816,7 +1898,7 @@ fn updater_from_zero(
 }
 
 #[tokio::test]
-async fn the_first_catch_up_from_genesis_composes_the_state_and_publishes_the_birth_files() {
+async fn the_first_update_from_genesis_composes_the_state_and_publishes_the_birth_files() {
     let fixture = Fixture::new();
     std::fs::remove_file(&fixture.state_file).expect("骨格は投影が組む");
     let intent = genesis_intent_with_baseline(true);
@@ -1840,7 +1922,11 @@ async fn the_first_catch_up_from_genesis_composes_the_state_and_publishes_the_bi
         ),
     ];
     let mut updater = updater_from_zero(&fixture, journal, vec![(1, intent.clone())]);
-    let reached = updater.catch_up().await.expect("初回キャッチアップ");
+    updater.update_read_models().await.expect("初回更新");
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(reached, GlobalSeqNr::new(3));
     let state = fixture.state();
     assert!(
@@ -1896,7 +1982,7 @@ async fn the_first_catch_up_from_genesis_composes_the_state_and_publishes_the_bi
         )],
         vec![(1, init_only.clone())],
     );
-    updater.catch_up().await.expect("初回キャッチアップ");
+    updater.update_read_models().await.expect("初回更新");
     assert_eq!(
         std::fs::read_to_string(again.targets().description_file()).unwrap(),
         "\"kept\"\n"
@@ -1909,7 +1995,7 @@ async fn the_first_catch_up_from_genesis_composes_the_state_and_publishes_the_bi
 }
 
 #[tokio::test]
-async fn a_state_or_description_path_that_cannot_be_probed_stops_the_catch_up() {
+async fn a_state_or_description_path_that_cannot_be_probed_stops_the_update() {
     // 状態ファイルの親の位置にファイルがある → 在否を確かめられない (ENOTDIR)。
     let fixture = Fixture::new();
     let blocker = fixture._dir.path().join("blocker");
@@ -1919,7 +2005,7 @@ async fn a_state_or_description_path_that_cannot_be_probed_stops_the_catch_up() 
         fixture.audit_shard.clone(),
         fixture.memory_dir.clone(),
     );
-    let mut updater = ReadModelUpdater::new(
+    let mut updater = OrchestrationReadModelUpdater::new(
         FakeReader {
             journal: journal(),
             intents: intents(),
@@ -1932,9 +2018,12 @@ async fn a_state_or_description_path_that_cannot_be_probed_stops_the_catch_up() 
         targets,
         fixture.steering_source(),
     );
-    let error = updater.catch_up().await.expect_err("在否を確かめられない");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("在否を確かめられない");
     assert!(
-        matches!(error, CatchUpError::StateFileRead(_)),
+        matches!(error, ReadModelUpdateError::StateFileRead(_)),
         "実際: {error:?}"
     );
     assert!(fixture.publications.borrow().is_empty());
@@ -1950,7 +2039,7 @@ async fn a_state_or_description_path_that_cannot_be_probed_stops_the_catch_up() 
         fixture.audit_shard.clone(),
         fixture.memory_dir.clone(),
     );
-    let mut updater = ReadModelUpdater::new(
+    let mut updater = OrchestrationReadModelUpdater::new(
         FakeReader {
             journal: journal(),
             intents: intents(),
@@ -1963,9 +2052,12 @@ async fn a_state_or_description_path_that_cannot_be_probed_stops_the_catch_up() 
         nested,
         fixture.steering_source(),
     );
-    let error = updater.catch_up().await.expect_err("在否を確かめられない");
+    let error = updater
+        .update_read_models()
+        .await
+        .expect_err("在否を確かめられない");
     assert!(
-        matches!(error, CatchUpError::StateFileRead(_)),
+        matches!(error, ReadModelUpdateError::StateFileRead(_)),
         "実際: {error:?}"
     );
 }
@@ -1995,10 +2087,14 @@ async fn a_pending_publication_is_finished_before_new_events_are_drawn() {
         .borrow_mut()
         .insert(projection(), (pending, false));
     let mut updater = fixture.updater(journal(), intents());
-    let reached = updater
-        .catch_up()
+    updater
+        .update_read_models()
         .await
         .expect("保存済みの断面を先に確定する");
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(reached, GlobalSeqNr::new(4));
     let shard = fixture.shard();
     let saved = shard
@@ -2042,8 +2138,8 @@ async fn a_pending_publication_for_other_targets_or_beyond_the_history_is_refuse
         .insert(projection(), (pending, false));
     let mut updater = fixture.updater(journal(), intents());
     assert_eq!(
-        updater.catch_up().await,
-        Err(CatchUpError::PublicationConflict {
+        updater.update_read_models().await,
+        Err(ReadModelUpdateError::PublicationConflict {
             path: fixture.state_file.clone()
         })
     );
@@ -2059,7 +2155,10 @@ async fn a_pending_publication_for_other_targets_or_beyond_the_history_is_refuse
         .borrow_mut()
         .insert(projection(), (pending, false));
     let mut updater = fixture.updater(journal(), intents());
-    assert_eq!(updater.catch_up().await, Err(CatchUpError::PlanUnavailable));
+    assert_eq!(
+        updater.update_read_models().await,
+        Err(ReadModelUpdateError::PlanUnavailable)
+    );
     assert!(!fixture.audit_shard.exists());
 }
 
@@ -2103,12 +2202,12 @@ impl RecordFixture {
         intents: Vec<(u64, Intent)>,
         artifacts: Vec<core_read_model_updater::orchestration::ArtifactJournalEntry>,
         sessions: Vec<core_read_model_updater::orchestration::SessionJournalEntry>,
-    ) -> ReadModelUpdater<FakeReader> {
+    ) -> OrchestrationReadModelUpdater<FakeReader> {
         let mut checkpoints = BTreeMap::new();
         if checkpoint > 0 {
             checkpoints.insert(projection(), GlobalSeqNr::new(checkpoint));
         }
-        ReadModelUpdater::new(
+        OrchestrationReadModelUpdater::new(
             FakeReader {
                 journal,
                 intents,
@@ -2214,7 +2313,11 @@ async fn artifact_and_session_rows_of_the_record_are_appended_to_its_audit_shard
         ],
         Vec::new(),
     );
-    let reached = updater.catch_up().await.expect("成果物の窓");
+    updater.update_read_models().await.expect("成果物の窓");
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(reached, GlobalSeqNr::new(6));
     let shard = fixture.shard();
     assert!(shard.contains("**Event**: ARTIFACT_CREATED"), "{shard}");
@@ -2236,7 +2339,11 @@ async fn artifact_and_session_rows_of_the_record_are_appended_to_its_audit_shard
             session_entry(8, 1, "260907-other"),
         ],
     );
-    let reached = updater.catch_up().await.expect("セッションの窓");
+    updater.update_read_models().await.expect("セッションの窓");
+    let reached = updater
+        .checkpoint()
+        .await
+        .expect("チェックポイントを読める");
     assert_eq!(reached, GlobalSeqNr::new(8));
     let shard = fixture.shard();
     assert_eq!(
@@ -2270,7 +2377,11 @@ async fn an_audit_only_batch_is_projected_without_a_plan_and_advances_the_checkp
     ] {
         let fixture = RecordFixture::new();
         let mut updater = fixture.updater(0, Vec::new(), Vec::new(), artifacts, sessions);
-        let reached = updater.catch_up().await.expect("監査だけのキャッチアップ");
+        updater.update_read_models().await.expect("監査だけの更新");
+        let reached = updater
+            .checkpoint()
+            .await
+            .expect("チェックポイントを読める");
         assert_eq!(reached, GlobalSeqNr::new(1));
         let shard = fixture.shard();
         assert!(shard.contains(&format!("**Event**: {event}")), "{shard}");
@@ -2294,9 +2405,12 @@ async fn an_audit_shard_that_cannot_be_read_stops_the_artifact_and_session_publi
         let fixture = RecordFixture::new();
         std::fs::create_dir_all(fixture.record.join("audit/host-abcd1234.md")).unwrap();
         let mut updater = fixture.updater(0, Vec::new(), Vec::new(), artifacts, sessions);
-        let error = updater.catch_up().await.expect_err("シャードが読めない");
+        let error = updater
+            .update_read_models()
+            .await
+            .expect_err("シャードが読めない");
         assert!(
-            matches!(error, CatchUpError::PublicationConflict { .. }),
+            matches!(error, ReadModelUpdateError::PublicationConflict { .. }),
             "実際: {error:?}"
         );
         assert!(fixture.publications.borrow().is_empty());
@@ -2308,7 +2422,7 @@ async fn a_first_human_turn_is_published_as_a_creation() {
     let fixture = Fixture::new();
     let human_turn = fixture.targets().human_turn_file().to_path_buf();
     let mut updater = fixture.updater(journal_with(prompt_observed()), intents());
-    updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
     assert_eq!(
         std::fs::read_to_string(&human_turn).expect("作られる"),
         "2026-08-21T09:14:07Z\n"
@@ -2320,7 +2434,7 @@ async fn an_active_directive_is_created_and_then_replaced_in_place() {
     let fixture = Fixture::new();
     let directive = fixture.targets().active_directive_file().to_path_buf();
     let mut updater = fixture.updater(journal_with(directive_issued()), intents());
-    updater.catch_up().await.expect("初回は作成");
+    updater.update_read_models().await.expect("初回は作成");
     let created = std::fs::read_to_string(&directive).expect("指示ファイルが作られる");
     assert!(
         created.contains("practices-discovery"),
@@ -2331,7 +2445,7 @@ async fn an_active_directive_is_created_and_then_replaced_in_place() {
     let directive = again.targets().active_directive_file().to_path_buf();
     std::fs::write(&directive, "stale\n").unwrap();
     let mut updater = again.updater(journal_with(directive_issued()), intents());
-    updater.catch_up().await.expect("置換");
+    updater.update_read_models().await.expect("置換");
     let replaced = std::fs::read_to_string(&directive).unwrap();
     assert_ne!(replaced, "stale\n");
     assert_eq!(replaced, created, "同じ指示は同じ内容へ落ち着く");
@@ -2407,7 +2521,7 @@ async fn a_report_carrying_a_source_baseline_publishes_its_listing() {
     let fixture = Fixture::new();
     std::fs::write(&fixture.state_file, FULL_STATE).unwrap();
     let mut updater = fixture.updater(journal_with(reported), intents());
-    updater.catch_up().await.expect("キャッチアップ");
+    updater.update_read_models().await.expect("更新");
     let published = fixture
         .state_file
         .with_file_name(".aidlc-source-review")

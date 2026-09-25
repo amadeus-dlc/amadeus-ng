@@ -11,7 +11,7 @@
     clippy::type_complexity
 )]
 use core_command_domain::orchestration::PlanTarget;
-use core_read_model_updater::orchestration::{CatchUpError, PlanSource, SteeringSource};
+use core_read_model_updater::orchestration::{PlanSource, ReadModelUpdateError, SteeringSource};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -45,9 +45,9 @@ impl Fixture {
         directory.join("code-generation")
     }
 }
-fn steering_read(error: CatchUpError) -> (String, ErrorKind) {
+fn steering_read(error: ReadModelUpdateError) -> (String, ErrorKind) {
     match error {
-        CatchUpError::SteeringRead { path, kind } => (path, kind),
+        ReadModelUpdateError::SteeringRead { path, kind } => (path, kind),
         other => panic!("SteeringRead を期待した: {other:?}"),
     }
 }

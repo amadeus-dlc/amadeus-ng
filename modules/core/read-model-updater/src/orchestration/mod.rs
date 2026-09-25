@@ -17,7 +17,7 @@
 //! 消費側のパスは `core_read_model_updater::orchestration::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
 
-mod catch_up_error;
+mod code_generation_approval_read_model_updater;
 mod corrupt_cause;
 mod definition_entry;
 mod dto;
@@ -27,31 +27,43 @@ mod journal_entry;
 mod journal_read_error;
 mod journal_reader;
 mod journal_reader_impl;
+mod orchestration_read_model_updater;
+mod plan_fingerprint_read_model_updater;
 mod projection_name;
 mod projection_name_error;
 mod projection_targets;
 mod publication_batch;
 mod publication_file;
 mod publication_store;
+mod read_model_update_error;
 mod read_model_updater;
 mod runtime_graph_read_model_updater;
 mod runtime_graph_targets;
 mod shared_projection;
 mod steering_source;
 mod store_failure;
+mod structured_read_model_updater;
+mod testing_read_model_updater;
 
 // ポート (trait) と実 I/O 実装
 pub use journal_reader::JournalReader;
 pub use journal_reader_impl::JournalReaderImpl;
 
-// 取得ループ (RMU コンポーネント本体 — 二層構造の上側)
+// リードモデル更新の共通契約 (RMU のすべての更新入口が実装する)
+pub use read_model_updater::ReadModelUpdater;
+
+// 取得ループ (RMU コンポーネント本体 — 二層構造の上側) と、面ごとの更新器
+pub use code_generation_approval_read_model_updater::CodeGenerationApprovalReadModelUpdater;
+pub use orchestration_read_model_updater::OrchestrationReadModelUpdater;
+pub use plan_fingerprint_read_model_updater::PlanFingerprintReadModelUpdater;
 pub use projection_targets::ProjectionTargets;
 pub use publication_batch::PublicationBatch;
 pub use publication_file::PublicationFile;
-pub use read_model_updater::ReadModelUpdater;
 pub use runtime_graph_read_model_updater::RuntimeGraphReadModelUpdater;
 pub use runtime_graph_targets::RuntimeGraphTargets;
 pub use steering_source::SteeringSource;
+pub use structured_read_model_updater::StructuredReadModelUpdater;
+pub use testing_read_model_updater::TestingReadModelUpdater;
 
 // Domain Primitive (永続化の通番と投影の名前)
 pub use global_seq_nr::GlobalSeqNr;
@@ -71,10 +83,10 @@ pub use dto::{
     StageSkippedDto, StartedDto, TaskSynchronizedDto, WorkflowDefinitionEventDto,
 };
 
-pub use catch_up_error::CatchUpError;
 pub use corrupt_cause::CorruptCause;
 pub use journal_read_error::JournalReadError;
 pub use projection_name_error::ProjectionNameError;
+pub use read_model_update_error::ReadModelUpdateError;
 
 mod intent_registry;
 mod plan_source;

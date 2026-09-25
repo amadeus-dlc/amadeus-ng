@@ -7,7 +7,7 @@ use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::{PermissionsExt, symlink};
 
 use core_read_model_updater::orchestration::{
-    CatchUpError, GlobalSeqNr, ProjectionTargets, PublicationBatch, PublicationFile,
+    GlobalSeqNr, ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdateError,
 };
 use core_read_model_updater::workspace::StateFileWriteError;
 
@@ -36,7 +36,7 @@ fn an_audit_removed_or_rewritten_after_planning_is_not_recreated() {
         let error = plan.apply().unwrap_err();
         assert_eq!(
             error,
-            CatchUpError::PublicationConflict { path: path.clone() }
+            ReadModelUpdateError::PublicationConflict { path: path.clone() }
         );
         assert_eq!(
             error.to_string(),
@@ -60,7 +60,7 @@ fn replacement_refuses_a_deleted_or_changed_original() {
         let error = plan.apply().unwrap_err();
         assert_eq!(
             error,
-            CatchUpError::PublicationConflict { path: path.clone() }
+            ReadModelUpdateError::PublicationConflict { path: path.clone() }
         );
         assert_eq!(
             error.to_string(),
@@ -83,11 +83,11 @@ fn directories_and_symlinks_are_never_followed_as_publication_files() {
     for path in [link, directory] {
         assert!(matches!(
             PublicationFile::audit(&path, "event"),
-            Err(CatchUpError::PublicationConflict { .. })
+            Err(ReadModelUpdateError::PublicationConflict { .. })
         ));
         assert!(matches!(
             PublicationFile::replacement(&path, "user text", "changed").apply(),
-            Err(CatchUpError::PublicationConflict { .. })
+            Err(ReadModelUpdateError::PublicationConflict { .. })
         ));
     }
     assert_eq!(fs::read_to_string(&original).unwrap(), "user text");
@@ -108,14 +108,14 @@ fn read_only_memory_and_state_report_their_distinct_write_errors() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(
         memory_error,
-        CatchUpError::MemoryFileWrite {
+        ReadModelUpdateError::MemoryFileWrite {
             path: path.display().to_string(),
             detail: "read-only target".to_string(),
         }
     );
     assert!(matches!(
         state_error,
-        CatchUpError::StateFileWrite(StateFileWriteError::ReadOnlyTarget { .. })
+        ReadModelUpdateError::StateFileWrite(StateFileWriteError::ReadOnlyTarget { .. })
     ));
     assert_eq!(fs::read_to_string(&path).unwrap(), "original");
     memory.apply().unwrap();
@@ -137,7 +137,7 @@ fn an_unwritable_parent_preserves_memory_and_reports_the_io_reason() {
 
     fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
     assert!(
-        matches!(error, CatchUpError::MemoryFileWrite { path: got, detail } if got == path.display().to_string() && !detail.is_empty() && detail != "read-only target")
+        matches!(error, ReadModelUpdateError::MemoryFileWrite { path: got, detail } if got == path.display().to_string() && !detail.is_empty() && detail != "read-only target")
     );
     assert_eq!(fs::read_to_string(&path).unwrap(), "original");
 }
@@ -161,7 +161,7 @@ fn unreadable_files_and_uncreatable_audits_return_io_errors_with_the_target() {
         assert!(std::error::Error::source(&error).is_none());
         assert_eq!(
             error,
-            CatchUpError::PublicationIo {
+            ReadModelUpdateError::PublicationIo {
                 path: path.clone(),
                 kind: ErrorKind::PermissionDenied
             }
@@ -177,7 +177,7 @@ fn unreadable_files_and_uncreatable_audits_return_io_errors_with_the_target() {
     fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(
         error,
-        CatchUpError::PublicationIo {
+        ReadModelUpdateError::PublicationIo {
             path: missing.clone(),
             kind: ErrorKind::PermissionDenied
         }
@@ -192,7 +192,7 @@ fn a_parent_symlink_loop_is_reported_without_treating_the_file_as_absent() {
     symlink(&parent, &parent).unwrap();
     let path = parent.join("audit.md");
     assert!(matches!(PublicationFile::audit(&path, "event"),
-        Err(CatchUpError::PublicationIo { path: got, .. }) if got == path));
+        Err(ReadModelUpdateError::PublicationIo { path: got, .. }) if got == path));
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn targets_without_lossless_path_representation_are_rejected() {
     );
     let batch = PublicationBatch::new(GlobalSeqNr::ZERO, GlobalSeqNr::ZERO, vec![]);
     assert!(
-        matches!(batch.for_targets(&targets), Err(CatchUpError::PublicationConflict { path }) if path == invalid)
+        matches!(batch.for_targets(&targets), Err(ReadModelUpdateError::PublicationConflict { path }) if path == invalid)
     );
 }
 
@@ -219,7 +219,7 @@ fn unexpected_audit_suffix_is_preserved_as_a_conflict() {
     fs::write(&path, "original\nunrelated user text\n").unwrap();
     assert_eq!(
         plan.apply(),
-        Err(CatchUpError::PublicationConflict { path: path.clone() })
+        Err(ReadModelUpdateError::PublicationConflict { path: path.clone() })
     );
     assert_eq!(
         fs::read_to_string(&path).unwrap(),
@@ -278,7 +278,7 @@ fn an_audit_parent_that_cannot_be_created_preserves_the_absent_output() {
     fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(
         error,
-        CatchUpError::PublicationIo {
+        ReadModelUpdateError::PublicationIo {
             path: target.clone(),
             kind: ErrorKind::PermissionDenied
         }
@@ -300,7 +300,7 @@ fn a_parent_that_cannot_be_synced_does_not_report_durable_publication() {
     fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(
         error,
-        CatchUpError::PublicationIo {
+        ReadModelUpdateError::PublicationIo {
             path: parent,
             kind: ErrorKind::PermissionDenied
         }
@@ -325,7 +325,7 @@ fn a_parent_directory_that_cannot_be_synced_is_reported_with_the_parent_path() {
     fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(
         error,
-        CatchUpError::PublicationIo {
+        ReadModelUpdateError::PublicationIo {
             path: folder,
             kind: ErrorKind::PermissionDenied
         }

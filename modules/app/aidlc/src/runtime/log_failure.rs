@@ -1,5 +1,5 @@
 //! 本家2.7.1 emitErrorに対応するlog面の共通終了処理。
-use super::{Completion, active_execution, catch_up, store_path};
+use super::{Completion, active_execution, store_path, update_read_models};
 use crate::layout::Layout;
 use chrono::Utc;
 use core_command_domain::orchestration::CommandFailure;
@@ -51,5 +51,5 @@ async fn record(layout: &Layout, failure: &CommandFailure) -> Result<(), String>
         .execute(cursor.execution_id(), failure, Utc::now())
         .await
         .map_err(|error| error.to_string())?;
-    catch_up(layout).await
+    update_read_models(layout).await
 }

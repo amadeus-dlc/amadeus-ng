@@ -9,7 +9,7 @@ use core_command_domain::workflow_definition::PhaseId;
 
 use crate::read_tables::{MemoryRules, RuleContent};
 
-use super::catch_up_error::CatchUpError;
+use super::read_model_update_error::ReadModelUpdateError;
 
 /// base 規則の解決順 (strict-additive — 後のものが前のものを特殊化する)。
 const BASE_FILES: [&str; 3] = ["org.md", "team.md", "project.md"];
@@ -71,13 +71,13 @@ impl SteeringSource {
     /// 存在する規則文書をUTF-8として読めない場合。
     pub fn read_testing_sections(
         &self,
-    ) -> Result<core_command_domain::orchestration::TestingSections, CatchUpError> {
+    ) -> Result<core_command_domain::orchestration::TestingSections, ReadModelUpdateError> {
         let read = |name: &str| {
             let path = self.memory_dir.join(name);
             match fs::read_to_string(&path) {
                 Ok(text) => Ok(text),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
-                Err(error) => Err(CatchUpError::SteeringRead {
+                Err(error) => Err(ReadModelUpdateError::SteeringRead {
                     path: display(&path),
                     kind: error.kind(),
                 }),
@@ -96,12 +96,12 @@ impl SteeringSource {
     ///
     /// # Errors
     ///
-    /// 在るのに読めない規則ファイル ([`CatchUpError::SteeringRead`])。取得ループの失敗を
+    /// 在るのに読めない規則ファイル ([`ReadModelUpdateError::SteeringRead`])。取得ループの失敗を
     /// そのまま返すのは、この読取が取得ループの一部だからである — 純粋投影核
     /// ([`SteeringTables::pack`]) はこの型を知らない (二層構造)。
     ///
     /// [`SteeringTables::pack`]: crate::read_tables::SteeringTables::pack
-    pub fn read(&self) -> Result<MemoryRules, CatchUpError> {
+    pub fn read(&self) -> Result<MemoryRules, ReadModelUpdateError> {
         let mut base = Vec::new();
         for relative in BASE_FILES {
             if let Some(rule) = self.read_if_present(relative)? {
@@ -121,7 +121,7 @@ impl SteeringSource {
     }
 
     /// 在れば読み、無ければ `None`。読めないのは失敗である。
-    fn read_if_present(&self, relative: &str) -> Result<Option<RuleContent>, CatchUpError> {
+    fn read_if_present(&self, relative: &str) -> Result<Option<RuleContent>, ReadModelUpdateError> {
         let path = self.memory_dir.join(relative);
         match fs::read_to_string(&path) {
             Ok(text) => {
@@ -136,7 +136,7 @@ impl SteeringSource {
                 Ok(Some(RuleContent::new(display(displayed), text)))
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(CatchUpError::SteeringRead {
+            Err(error) => Err(ReadModelUpdateError::SteeringRead {
                 path: display(&path),
                 kind: error.kind(),
             }),
@@ -342,7 +342,7 @@ mod tests {
             .read()
             .expect_err("読めない規則は止める");
         match error {
-            CatchUpError::SteeringRead { path, kind } => {
+            ReadModelUpdateError::SteeringRead { path, kind } => {
                 assert!(path.ends_with("team.md"), "実際: {path}");
                 assert_eq!(kind, io::ErrorKind::InvalidData);
             }

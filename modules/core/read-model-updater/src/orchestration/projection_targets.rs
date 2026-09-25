@@ -104,12 +104,12 @@ impl ProjectionTargets {
     }
 
     /// 所有対象を損失なく記録した束縛。ファイル変更がない計画にも同じ値を用いる。
-    pub(super) fn binding(&self) -> Result<String, super::CatchUpError> {
+    pub(super) fn binding(&self) -> Result<String, super::ReadModelUpdateError> {
         let mut paths = Vec::new();
         for path in self.owned_paths() {
             paths.push(core_infrastructure::canon_json::JsonValue::String(
                 path.to_str()
-                    .ok_or_else(|| super::CatchUpError::PublicationConflict {
+                    .ok_or_else(|| super::ReadModelUpdateError::PublicationConflict {
                         path: path.to_path_buf(),
                     })?
                     .to_string(),

@@ -24,7 +24,7 @@ use super::single_stage_run_error::SingleStageRunError;
 ///   このユースケースが遷移ポートを持たないことではなく、集約の適用の空虚さがそれを保証する。
 /// - **文言**。`Single-stage run of "<slug>" committed under …` のような逐語は合成ルートの
 ///   `wording` が組む。
-/// - **リードモデルの更新**。`catch_up` を起動するのは合成ルートである。
+/// - **リードモデルの更新**。`update_read_models` を起動するのは合成ルートである。
 ///
 /// # 束縛はスタティック
 ///

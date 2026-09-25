@@ -18,7 +18,7 @@
 //!
 //! モデルの抽象は「集約 1・writer 2・投影 1」である。writer 2 つは同じ `IntentExecutionId` を別々に
 //! 再水和した 2 本の「ロード済み集約」で表し、衝突は楽観 version の不一致だけで起きる
-//! (ロックは ADR-007 で退役した — BR3.2)。投影は**実 RMU** (`ReadModelUpdater::catch_up`) で
+//! (ロックは ADR-007 で退役した — BR3.2)。投影は**実 RMU** (`OrchestrationReadModelUpdater::update_read_models`) で
 //! ある — フェイクではない (固定裁定 7)。モデルが持つ `readModelSeq` は、実 RMU が
 //! 「リードモデルを書き終えてから進めた」チェックポイントへ射影される。
 //!
@@ -27,7 +27,7 @@
 //!   snapVersion   = 本家 `get_latest_snapshot_by_id` が返す封筒の `version()` (行が無ければ 0)
 //!   snapSeq       = 同じ封筒の `seq_nr()` (行が無ければ 0)
 //!   checkpoint    = `JournalReader::checkpoint(ProjectionName)` の値 (我々の表)
-//!   readModelSeq  = 実 RMU の `catch_up` が描き終えて返した最後の global 通番
+//!   readModelSeq  = 実 RMU の `update_read_models` が描き終えた後に `checkpoint` で読む global 通番
 //!   loadedVersion = 各 writer が握っている再水和結果の `version()` (未永続の genesis は 0)
 //!
 //! v3 で楽観 version は集約から外れ、`SnapshotEnvelope` (列) が正本になった (ADR-010 / B7)。
@@ -82,8 +82,8 @@ use core_command_use_case::orchestration::{
 use core_read_model_updater::orchestration::IntentExecutionEventDto as ProjectionExecutionEventDto;
 use core_read_model_updater::orchestration::WorkflowDefinitionEventDto as ProjectionDefinitionEventDto;
 use core_read_model_updater::orchestration::{
-    GlobalSeqNr, JournalReader, JournalReaderImpl, ProjectionName, ProjectionTargets,
-    ReadModelUpdater, SteeringSource,
+    GlobalSeqNr, JournalReader, JournalReaderImpl, OrchestrationReadModelUpdater, ProjectionName,
+    ProjectionTargets, ReadModelUpdater, SteeringSource,
 };
 use event_store_adapter_rs::types::EventStore;
 use serde_json::Value;
@@ -377,17 +377,17 @@ impl Writer {
     }
 }
 
-/// 投影 (U4) — **実 RMU** を駆動する側。モデルの `readModelSeq` は `catch_up` の到達点。
+/// 投影 (U4) — **実 RMU** を駆動する側。モデルの `readModelSeq` は `update_read_models` の到達点。
 ///
 /// リードモデルの書込先はこのテストが用意した一時ディレクトリで、状態ファイルには合成計画の
 /// 24 ステージぶんのチェックボックス行と、投影が書き換えるフィールド行が入っている。
 /// バイトの逐語性を見るのは `projection_golden_test.rs` の仕事であり、ここが見るのは
-/// **ループの契約** (真実源がジャーナルであること・キャッチアップが冪等であること) である。
+/// **ループの契約** (真実源がジャーナルであること・リードモデル更新が冪等であること) である。
 struct RealProjection {
     _dir: TempDir,
     targets: ProjectionTargets,
     read_model_seq: u64,
-    /// キャッチアップが一度でも走ったか (モデルとの通番写像の分岐点 — 下の
+    /// リードモデル更新が一度でも走ったか (モデルとの通番写像の分岐点 — 下の
     /// `INTENT_ROW_OFFSET` を参照)。
     caught_up: bool,
     /// 参照入力の読取先 (置かないので空計画になる)。
@@ -413,14 +413,18 @@ impl RealProjection {
     }
 
     /// チェックポイント以降を読んで描き、位置を進める (実 RMU の取得ループ)。
-    async fn catch_up(&mut self, store: &Store) {
-        let mut updater = ReadModelUpdater::new(
+    async fn update_read_models(&mut self, store: &Store) {
+        let mut updater = OrchestrationReadModelUpdater::new(
             store.journal_reader(),
             projection_name(),
             self.targets.clone(),
             SteeringSource::new(self.memory_dir.clone()),
         );
-        let reached = updater.catch_up().await.expect("キャッチアップは通る");
+        updater.update_read_models().await.expect("更新は通る");
+        let reached = updater
+            .checkpoint()
+            .await
+            .expect("チェックポイントを読める");
         self.read_model_seq = reached.to_u64();
         self.caught_up = true;
     }
@@ -430,7 +434,7 @@ impl RealProjection {
 ///
 /// モデル (`journal_protocol.qnt`) は**実行のストリームだけ**を抽象する。実ストアでは同じ
 /// journal 表に intent の `Created` が rowid 1 で同居するため、実行の行の global 通番は
-/// モデル値 + 1、チェックポイントと readModelSeq は**キャッチアップが一度でも走った後は**
+/// モデル値 + 1、チェックポイントと readModelSeq は**リードモデル更新が一度でも走った後は**
 /// モデル値 + 1 になる (走査は intent 行もまたいで前進する)。走る前は 0 のままで一致する。
 const INTENT_ROW_OFFSET: u64 = 1;
 
@@ -664,10 +668,10 @@ async fn replay(path: &Path, seen: &mut BTreeSet<String>) {
                 // writer は触らない — 下書きは複製に対して打ったので握っている版は動かない。
             }
 
-            // 投影のキャッチアップ — **実 RMU** がチェックポイント以降を読んで描き、
+            // 投影のリードモデル更新 — **実 RMU** がチェックポイント以降を読んで描き、
             // リードモデルを書いてから位置を進める (固定裁定 7)。読むものが無ければ
             // 何も書かず現在値を返す = 冪等 (projection_idempotent)。
-            "catchup" => projection.catch_up(&store).await,
+            "catchup" => projection.update_read_models(&store).await,
 
             // Tx 済み・投影未反映のままプロセスが落ちる。開き直しても永続状態は同じ。
             "crash" => {

@@ -16,7 +16,7 @@ use core_command_domain::orchestration::{MemoryJournal, MemoryJournalSurvey, Sta
 use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
-    CatchUpError, RuntimeGraphReadModelUpdater, RuntimeGraphTargets,
+    ReadModelUpdateError, ReadModelUpdater, RuntimeGraphReadModelUpdater, RuntimeGraphTargets,
 };
 use std::path::PathBuf;
 
@@ -85,10 +85,10 @@ impl Fixture {
     fn write_shard(&self, name: &str, audit: &str) {
         std::fs::write(self.record().join("audit").join(name), audit).unwrap();
     }
-    async fn catch_up(&self) -> Result<(), CatchUpError> {
-        RuntimeGraphReadModelUpdater::open(&self.store)
+    async fn project(&self) -> Result<(), ReadModelUpdateError> {
+        RuntimeGraphReadModelUpdater::open(&self.store, support::execution_id(), self.targets())
             .unwrap()
-            .catch_up(&support::execution_id(), &self.targets())
+            .update_read_models()
             .await
     }
     fn graph(&self) -> Option<String> {
@@ -282,7 +282,7 @@ async fn the_graph_pairs_the_ledger_and_reads_the_scope_from_the_workflow_start(
         ),
     ]);
     fixture.write_shard("host-clone.md", &audit);
-    fixture.catch_up().await.unwrap();
+    fixture.project().await.unwrap();
     let expected = r#"{
   "workflow_id": "2026-09-09T00:00:00Z",
   "scope": "classic",
@@ -397,7 +397,7 @@ async fn the_state_file_scope_outranks_the_ledger_and_an_unreadable_baseline_kee
         ),
     ]);
     fixture.write_shard("host-clone.md", &audit);
-    fixture.catch_up().await.unwrap();
+    fixture.project().await.unwrap();
     let graph: serde_json::Value = serde_json::from_str(&fixture.graph().unwrap()).unwrap();
     assert_eq!(graph["scope"], "express");
     assert_eq!(graph["stages"][0]["sensor_firings"], serde_json::json!([]));
@@ -436,7 +436,7 @@ async fn shards_are_concatenated_in_name_order_and_crlf_is_normalised() {
         "**Event**: STAGE_STARTED\n",
     )
     .unwrap();
-    fixture.catch_up().await.unwrap();
+    fixture.project().await.unwrap();
     let graph: serde_json::Value = serde_json::from_str(&fixture.graph().unwrap()).unwrap();
     assert_eq!(graph["stages"][0]["completed_at"], "2026-09-09T00:00:05Z");
     assert_eq!(graph["stages"][0]["outcome"], "approved");
@@ -453,7 +453,7 @@ async fn a_ledger_without_a_workflow_start_writes_nothing() {
             &[("Stage", "intent-capture")],
         )]),
     );
-    fixture.catch_up().await.unwrap();
+    fixture.project().await.unwrap();
     assert_eq!(
         fixture.graph(),
         None,
@@ -467,9 +467,9 @@ async fn a_missing_audit_directory_writes_nothing() {
     let record = fixture.record();
     std::fs::remove_dir_all(record.join("audit")).unwrap();
     let targets = RuntimeGraphTargets::new(&record, "aidlc/spaces/default/intents/record");
-    RuntimeGraphReadModelUpdater::open(&fixture.store)
+    RuntimeGraphReadModelUpdater::open(&fixture.store, support::execution_id(), targets)
         .unwrap()
-        .catch_up(&support::execution_id(), &targets)
+        .update_read_models()
         .await
         .unwrap();
     assert!(!record.join("runtime-graph.json").exists());
@@ -486,12 +486,19 @@ async fn an_execution_without_a_birth_record_has_no_plan() {
             &[("Scope", "classic")],
         )]),
     );
-    let error = RuntimeGraphReadModelUpdater::open(&fixture.store)
-        .unwrap()
-        .catch_up(&support::other_execution_id(), &fixture.targets())
-        .await
-        .unwrap_err();
-    assert!(matches!(error, CatchUpError::PlanUnavailable), "{error:?}");
+    let error = RuntimeGraphReadModelUpdater::open(
+        &fixture.store,
+        support::other_execution_id(),
+        fixture.targets(),
+    )
+    .unwrap()
+    .update_read_models()
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(error, ReadModelUpdateError::PlanUnavailable),
+        "{error:?}"
+    );
     assert_eq!(fixture.graph(), None);
 }
 
@@ -500,9 +507,9 @@ async fn a_shard_that_is_not_utf8_is_refused_as_publication_io() {
     let fixture = Fixture::seeded().await;
     let shard = fixture.record().join("audit").join("host-clone.md");
     std::fs::write(&shard, [0xff, 0xfe, 0x00]).unwrap();
-    let error = fixture.catch_up().await.unwrap_err();
+    let error = fixture.project().await.unwrap_err();
     match error {
-        CatchUpError::PublicationIo { path, kind } => {
+        ReadModelUpdateError::PublicationIo { path, kind } => {
             assert_eq!(path, shard);
             assert_eq!(kind, std::io::ErrorKind::InvalidData);
         }
@@ -523,9 +530,9 @@ async fn a_graph_file_that_cannot_be_replaced_is_refused_with_its_path() {
     );
     let graph_path = fixture.record().join("runtime-graph.json");
     std::fs::create_dir_all(graph_path.join("occupied")).unwrap();
-    let error = fixture.catch_up().await.unwrap_err();
+    let error = fixture.project().await.unwrap_err();
     match error {
-        CatchUpError::PublicationIo { path, .. } => assert_eq!(path, graph_path),
+        ReadModelUpdateError::PublicationIo { path, .. } => assert_eq!(path, graph_path),
         other => panic!("PublicationIo を期待した: {other:?}"),
     }
 }
@@ -539,7 +546,14 @@ fn opening_a_store_without_a_journal_table_is_refused() {
         .unwrap()
         .execute_batch("CREATE TABLE unrelated(x)")
         .unwrap();
-    assert!(RuntimeGraphReadModelUpdater::open(&store).is_err());
+    assert!(
+        RuntimeGraphReadModelUpdater::open(
+            &store,
+            support::execution_id(),
+            RuntimeGraphTargets::new(root.path(), "aidlc/spaces/default/intents/record"),
+        )
+        .is_err()
+    );
 }
 
 /// 同じ発火に終端が 2 つ以上あれば、時刻の遅いほうが結果になる（先に読んだ順ではない）。
@@ -610,7 +624,7 @@ async fn the_latest_terminal_of_a_firing_wins_regardless_of_ledger_order() {
         ),
     ]);
     fixture.write_shard("host-a.md", &audit);
-    fixture.catch_up().await.unwrap();
+    fixture.project().await.unwrap();
     let graph: serde_json::Value = serde_json::from_str(&fixture.graph().unwrap()).unwrap();
     let firings = &graph["stages"][0]["sensor_firings"];
     assert_eq!(firings[0]["fire_id"], "aaaa0001");

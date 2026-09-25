@@ -22,7 +22,7 @@ SQLite の `read_*` 表）。規則 3 と規則 6 に追記。b26 / b27 が `nex
 誤りの是正 — `query-side-audit/audit-1.md` / `read-model-spec.md`）**
 **関連**: ADR-001（ES 採用）/ ADR-003（互換ファイルはリードモデル + RMU）/ ADR-004（状態ファイルは
 リードモデル）/ **ADR-009（本規則の記録）**、[gateway-taxonomy.md](gateway-taxonomy.md) §4
-**機械強制**: **クレート分離**（`Cargo.toml` に相手が現れないこと）。違反はビルドで落ちる。規則 6 の「DAO は 1 表 1 引当」は `cargo lint`（`dao-single-table` — クエリ側 interface-adapter の SQL リテラルが 1 文で 2 表以上を読んだら所見、2026-09-03）
+**機械強制**: **クレート分離**（`Cargo.toml` に相手が現れないこと）。違反はビルドで落ちる。規則 6 の「DAO は 1 表 1 引当」は `cargo lint`（`dao-single-table` — クエリ側 interface-adapter の SQL リテラルが 1 文で 2 表以上を読んだら所見、2026-09-03）。規則 3 の「RMU の更新入口は共通契約 `ReadModelUpdater` 1 つ」は `cargo lint`（`read-model-updater-contract` — RMU クレートの `…ReadModelUpdater` 公開型が契約を実装していない・契約を実装する型が名乗っていない・更新器の inherent impl に公開の `update_read_models` / `catch_up*` がある、の 3 形を所見、2026-09-25）
 
 ## 原則
 
@@ -47,8 +47,25 @@ SQLite の `read_*` 表）。規則 3 と規則 6 に追記。b26 / b27 が `nex
    `jump_resolve` / `scope_cost` / 述語面 …）を呼んで答えを計算し、その**計算結果をリードモデル
    として書く**のは投影核の仕事である。判断の正本は集約 1 箇所のまま、RMU はそれを呼ぶだけ、
    クエリ側は書かれた答えを読むだけ、という三者の分業がこれで成立する。イベントではない
-   **参照入力**（memory 規則ファイルなど、人が編集するファイル）を畳み込む投影は、`catch_up`
-   ごとに内容ダイジェストを比べて変化時だけ再投影する（取得ループの仕事）。
+   **参照入力**（memory 規則ファイルなど、人が編集するファイル）を畳み込む投影は、更新
+   （`update_read_models`）ごとに内容ダイジェストを比べて変化時だけ再投影する（取得ループの仕事）。
+
+   **更新の入口は共通契約 1 つ**（追記 2026-09-25、オーナー承認）: 取得ループは投影の単位ごとに
+   複数ある（取得ループ本体 `OrchestrationReadModelUpdater`・構造化面だけ・テスト契約・計画指紋・
+   Code Generation 開始可否・runtime-graph・停止制御・心拍・自己診断・承認ランタイム）。そのすべてが
+   trait `ReadModelUpdater`（`modules/core/read-model-updater/src/orchestration/read_model_updater.rs`）を
+   実装し、更新の入口は `update_read_models()` だけである。更新は**コマンド**（CQS — 成功時に値を
+   返さない。到達点を知りたい側は `OrchestrationReadModelUpdater::checkpoint` のようなクエリで読む）、
+   描く対象（実行・書込先・参照入力）は**構築時に束ねる**、境界は非同期（内部が同期 I/O だけの
+   更新器も `Future` を返す）。型名は `…ReadModelUpdater` で揃える。以前は型ごとに形の違う
+   `catch_up`（引数・戻り値・同期／非同期がばらばら）が並んでおり、合成ルートから見て同じ仕事が
+   型ごとに違う綴りで現れていた。
+   **置き方**: 更新器の型と、その `impl ReadModelUpdater for …` は**同じ Rust ファイル**に置く
+   （1 ファイル 1 公開型 — [abstract-data-type.md](abstract-data-type.md)。`cargo lint` はファイル単位で
+   照合するので、別ファイルに置くと未実装として鳴る）。**機械強制の射程**: `read-model-updater-contract` の
+   「名乗るのに実装しない」はファイル直下の**無制限 `pub`** の struct / enum だけを見る。クレート内部だけで
+   使う `pub(crate)` 以下の更新器は検出しない（Rust は `pub(crate)` の型を `pub use` で公開できないので、
+   RMU の公開面に契約外の更新器が漏れる経路は無い）が、規則そのものは可視性によらず適用する（レビュー基準）。
 4. **コマンド側は最新状態を常に集約から判断する。**
 
 追加の規則 3 つ（オーナー明言 2026-08-30 — 逐語に近い形で記録する。**この説明を
