@@ -24,6 +24,7 @@
 
 mod check;
 mod domain_getter;
+mod domain_packaging;
 mod setter_methods;
 
 use std::path::{Path, PathBuf};
