@@ -1,0 +1,22 @@
+{
+  "stage": "code-generation",
+  "upstream_ids": ["FR1.1", "FR1.2", "FR1.3", "FR2.1", "FR2.2", "FR2.3", "FR3.1", "FR3.2", "FR4.1", "FR4.2", "FR5.1", "NFR1", "NFR2", "NFR3", "NFR4", "NFR5"],
+  "coverage": [
+    { "id": "FR1.1", "status": "OK", "target": "modules/app/aidlc/tests/pipeline_link_contract.rs" },
+    { "id": "FR1.2", "status": "OK", "target": "modules/app/aidlc/tests/pipeline_link_contract.rs" },
+    { "id": "FR1.3", "status": "OK", "target": "modules/app/aidlc/tests/pipeline_link_contract.rs" },
+    { "id": "FR2.1", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" },
+    { "id": "FR2.2", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" },
+    { "id": "FR2.3", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" },
+    { "id": "FR3.1", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" },
+    { "id": "FR3.2", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" },
+    { "id": "FR4.1", "status": "OK", "target": "modules/app/aidlc/tests/pipeline_link_contract.rs" },
+    { "id": "FR4.2", "status": "Deferred", "target": "ローカルの cargo test --workspace は、今回の変更と無関係な 3 件で緑にならなかった（コミットしないローカルの .claude/settings.json 変更による 1 件と、修正前にも再現する子プロセスの SIGKILL フレーク 2 件。code-summary.md を参照）。コミット対象の状態での全体の緑は Build and Test と CI で判定する" },
+    { "id": "FR5.1", "status": "N/A", "target": "コードではなく GitHub Issue で満たす要件。起票は進行役が行い、文面の案は code-summary.md の「射程外の所見」に用意した" },
+    { "id": "NFR1", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" },
+    { "id": "NFR2", "status": "Deferred", "target": "CI の coverage ジョブを含む実行でしか判定できない。ローカルでは対象の契約テスト 3 本を 20 回続けて緑にしたことを補助証拠として code-summary.md に記録した" },
+    { "id": "NFR3", "status": "Deferred", "target": "カバレッジはローカルで測っていない（計画上任意）。閾値と除外の設定は変えておらず、90% の床の判定は CI の coverage ジョブと Build and Test で行う" },
+    { "id": "NFR4", "status": "OK", "target": "modules/app/aidlc/tests/pipeline_link_contract.rs" },
+    { "id": "NFR5", "status": "OK", "target": "modules/core/read-model-updater/src/orchestration/journal_reader_impl.rs" }
+  ]
+}
