@@ -17,6 +17,9 @@
 //! R9 は R4 の後半 — 公開型が 1 つのファイルは、その型名の snake_case をファイル名にする
 //! (abstract-data-type.md「ファイル名は型名の snake_case」)。R8 は [`crate::domain_getter`] に分離し、use-case 層からのドメイン getter 呼出し自体を
 //! 禁止する。複数ファイルの型・getter 定義を索引するため、CLI が本検査の所見と合流する。
+//! R10 は RMU の更新入口の契約 — `…ReadModelUpdater` を名乗る公開型は共通契約
+//! `ReadModelUpdater` を実装し、契約を実装する型はその名を名乗り、更新器の inherent impl に
+//! 契約の外の更新入口 (`update_read_models` / `catch_up*`) を並べない (cqrs-boundaries.md 規則 3)。
 
 use std::collections::BTreeSet;
 
@@ -87,6 +90,30 @@ pub(crate) const RULE_PORT_NAMING: &str = "port-naming";
 /// だけで、`std::io` 単独 (エラー型の写像)・`std::time` (Clock はアダプタ層の機構)・
 /// `uuid` (集約内採番はオーナー裁定 2026-09-02 で正当) は鳴らない。
 pub(crate) const RULE_COMMAND_SIDE_IO: &str = "command-side-io";
+/// R10: RMU の更新器の名前と共通契約 `ReadModelUpdater` の実装が対応していない
+/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md` 規則 3 —
+/// RMU の更新入口は共通契約 `ReadModelUpdater::update_read_models` 1 つに揃える、
+/// オーナー承認 2026-09-25)。
+///
+/// 検出境界: **RMU クレートの非テストコード** ([`RMU_SCOPE`]) に限る。検出する形は 3 つ。
+/// (a) ファイルのトップレベルにある無制限 `pub` の struct / enum で、名前が
+/// [`READ_MODEL_UPDATER_SUFFIX`] で終わるのに、同じファイルに
+/// `impl … ReadModelUpdater for <その型>` (ジェネリクス・ライフタイム可、trait のパスは末尾の
+/// 名前で照合) が無い。(b) `impl ReadModelUpdater for X` の `X` の名前が
+/// [`READ_MODEL_UPDATER_SUFFIX`] で終わらない。(c) 名前が [`READ_MODEL_UPDATER_SUFFIX`] で
+/// 終わる型の inherent impl に、可視性付き (`pub` / `pub(..)`) の `update_read_models` または
+/// `catch_up` で始まるメソッドがある — 契約の外に更新入口を並立させる形である。private な
+/// 補助メソッドは検出しない。`#[cfg(test)]` の中は数えない。
+pub(crate) const RULE_READ_MODEL_UPDATER_CONTRACT: &str = "read-model-updater-contract";
+
+/// R10 の射程。更新器を持つのは RMU クレートだけである。
+const RMU_SCOPE: &str = "modules/core/read-model-updater/src/";
+/// R10 が見る型名の接尾辞であり、共通契約 (trait) の名前でもある。
+const READ_MODEL_UPDATER_SUFFIX: &str = "ReadModelUpdater";
+/// R10 (c) が契約の外の更新入口とみなす旧名の接頭辞。
+const LEGACY_UPDATE_PREFIX: &str = "catch_up";
+/// 共通契約のメソッド名。inherent impl に同名の公開メソッドを置くと契約と並立する。
+const CONTRACT_METHOD: &str = "update_read_models";
 
 /// R1 の語彙所有者。この 1 ファイルだけは変種を列挙してよい (分類述語の実装本体)。
 /// b32 の 1 ファイル 1 公開型分割で `checkbox.rs` から `checkbox_state.rs` へ移った
@@ -131,6 +158,11 @@ aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md";
 const COMMAND_SIDE_IO_HELP: &str = "I/O は Repository 実装 (*_repository_impl.rs) へ移す。\
 正当な例外は `// amadeus-lint: allow(command-side-io) — 理由` で理由を明示する — \
 aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md";
+const READ_MODEL_UPDATER_CONTRACT_HELP: &str = "RMU の更新器は共通契約 ReadModelUpdater を実装し \
+(`impl ReadModelUpdater for XxxReadModelUpdater`)、更新の入口は update_read_models 1 つにする。\
+対象は構築時に束ね、契約の外に catch_up* 等の更新メソッドを並べない。契約を実装する型は \
+…ReadModelUpdater を名乗る。正当な例外は `// amadeus-lint: allow(read-model-updater-contract) — 理由` \
+で理由を明示する — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md (規則 3)";
 
 /// 1 件の所見。`line` は 1 始まり。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,6 +221,11 @@ pub(crate) fn check_source(path: &str, source: &str) -> Result<Vec<Finding>, syn
     visitor
         .findings
         .extend(crate::domain_packaging::check(&path, &file));
+    if path.starts_with(RMU_SCOPE) {
+        visitor
+            .findings
+            .extend(read_model_updater_contract_findings(&file));
+    }
 
     let lines: Vec<&str> = source.lines().collect();
     let mut findings: Vec<Finding> = visitor
@@ -328,6 +365,179 @@ fn public_type_file_name_findings(path: &str, file: &syn::File) -> Vec<Finding> 
         format!("公開型 `{name}` のファイル名が `{stem}.rs` — `{expected}.rs` であるべき"),
         PUBLIC_TYPE_FILE_NAME_HELP,
     )]
+}
+
+/// R10: RMU の更新器の名前と共通契約の実装の対応を 3 つの形で検査する
+/// ([`RULE_READ_MODEL_UPDATER_CONTRACT`] の検出境界を参照)。
+fn read_model_updater_contract_findings(file: &syn::File) -> Vec<Finding> {
+    let mut impls = ImplCollector { impls: Vec::new() };
+    impls.visit_file(file);
+    let mut findings = Vec::new();
+
+    // (a) 名乗っているのに契約を実装していない。
+    for item in &file.items {
+        if has_cfg_test(item_attrs(item)) {
+            continue;
+        }
+        let (vis, ident, kind) = match item {
+            syn::Item::Struct(i) => (&i.vis, &i.ident, "struct"),
+            syn::Item::Enum(i) => (&i.vis, &i.ident, "enum"),
+            _ => continue,
+        };
+        if !matches!(vis, syn::Visibility::Public(_)) {
+            continue;
+        }
+        let name = ident.unraw().to_string();
+        if !name.ends_with(READ_MODEL_UPDATER_SUFFIX) {
+            continue;
+        }
+        let implemented = impls
+            .impls
+            .iter()
+            .any(|found| found.is_contract() && found.self_name.as_deref() == Some(name.as_str()));
+        if !implemented {
+            findings.push(Finding::new(
+                RULE_READ_MODEL_UPDATER_CONTRACT,
+                vis.span().start().line,
+                format!(
+                    "pub {kind} `{name}` が共通契約 ReadModelUpdater を実装していない \
+(同じファイルに `impl ReadModelUpdater for {name}` が無い)"
+                ),
+                READ_MODEL_UPDATER_CONTRACT_HELP,
+            ));
+        }
+    }
+
+    for found in &impls.impls {
+        // (b) 契約を実装しているのに名乗っていない。
+        if found.is_contract() {
+            let named = found
+                .self_name
+                .as_deref()
+                .is_some_and(|name| name.ends_with(READ_MODEL_UPDATER_SUFFIX));
+            if !named {
+                let shown = found.self_name.as_deref().unwrap_or("(パスではない型)");
+                findings.push(Finding::new(
+                    RULE_READ_MODEL_UPDATER_CONTRACT,
+                    found.line,
+                    format!(
+                        "共通契約 ReadModelUpdater を実装する型 `{shown}` の名前が \
+`{READ_MODEL_UPDATER_SUFFIX}` で終わらない"
+                    ),
+                    READ_MODEL_UPDATER_CONTRACT_HELP,
+                ));
+            }
+            continue;
+        }
+        // (c) 更新器の inherent impl が契約の外に更新入口を並べている。
+        let is_updater = found.trait_name.is_none()
+            && found
+                .self_name
+                .as_deref()
+                .is_some_and(|name| name.ends_with(READ_MODEL_UPDATER_SUFFIX));
+        if !is_updater {
+            continue;
+        }
+        let owner = found.self_name.as_deref().unwrap_or_default();
+        for (line, method) in &found.visible_methods {
+            if method == CONTRACT_METHOD || method.starts_with(LEGACY_UPDATE_PREFIX) {
+                findings.push(Finding::new(
+                    RULE_READ_MODEL_UPDATER_CONTRACT,
+                    *line,
+                    format!(
+                        "`{owner}` の inherent impl に公開の更新入口 `{method}` がある — \
+更新の入口は共通契約の update_read_models 1 つ"
+                    ),
+                    READ_MODEL_UPDATER_CONTRACT_HELP,
+                ));
+            }
+        }
+    }
+    findings
+}
+
+/// R10 が照合する impl 1 つ分の材料。
+struct ImplFacts {
+    /// trait impl なら trait パスの末尾の名前 (`super::ReadModelUpdater` → `ReadModelUpdater`)。
+    trait_name: Option<String>,
+    /// 否定 impl (`impl !Trait for X`)。契約の実装とは数えない。
+    negative: bool,
+    /// 自己型のパス末尾の名前 (参照・括弧は剥がす)。パス型でなければ `None`。
+    self_name: Option<String>,
+    /// `impl` トークンの行。
+    line: usize,
+    /// 可視性付き (`pub` / `pub(..)`) メソッドの (可視性の行, 名前)。
+    visible_methods: Vec<(usize, String)>,
+}
+
+impl ImplFacts {
+    /// 共通契約 `ReadModelUpdater` の (肯定の) 実装か。
+    fn is_contract(&self) -> bool {
+        !self.negative && self.trait_name.as_deref() == Some(READ_MODEL_UPDATER_SUFFIX)
+    }
+}
+
+/// ファイル中の impl を (入れ子の mod も含めて) 集める。`#[cfg(test)]` の中は数えない。
+struct ImplCollector {
+    impls: Vec<ImplFacts>,
+}
+
+impl<'ast> Visit<'ast> for ImplCollector {
+    fn visit_item(&mut self, node: &'ast syn::Item) {
+        if has_cfg_test(item_attrs(node)) {
+            return;
+        }
+        syn::visit::visit_item(self, node);
+    }
+
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        let (trait_name, negative) = match &node.trait_ {
+            Some((bang, path, _)) => (
+                path.segments
+                    .last()
+                    .map(|segment| segment.ident.unraw().to_string()),
+                bang.is_some(),
+            ),
+            None => (None, false),
+        };
+        let visible_methods = node
+            .items
+            .iter()
+            .filter(|item| !has_cfg_test(impl_item_attrs(item)))
+            .filter_map(|item| match item {
+                syn::ImplItem::Fn(method) if !matches!(method.vis, syn::Visibility::Inherited) => {
+                    Some((
+                        method.vis.span().start().line,
+                        method.sig.ident.unraw().to_string(),
+                    ))
+                }
+                _ => None,
+            })
+            .collect();
+        self.impls.push(ImplFacts {
+            trait_name,
+            negative,
+            self_name: type_name(&node.self_ty),
+            line: node.impl_token.span().start().line,
+            visible_methods,
+        });
+        syn::visit::visit_item_impl(self, node);
+    }
+}
+
+/// 型のパス末尾の名前 (`Foo<R>` → `Foo`、`&mut a::Foo<'_>` → `Foo`)。パス型でなければ `None`。
+fn type_name(ty: &syn::Type) -> Option<String> {
+    match ty {
+        syn::Type::Path(path) => path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.unraw().to_string()),
+        syn::Type::Reference(reference) => type_name(&reference.elem),
+        syn::Type::Paren(paren) => type_name(&paren.elem),
+        syn::Type::Group(group) => type_name(&group.elem),
+        _ => None,
+    }
 }
 
 /// R9 の対象外 — ファサード (`mod.rs`) とクレート・ビルドの入口。
@@ -1575,10 +1785,13 @@ pub struct Companion;
     #[test]
     fn r9_detects_a_file_named_apart_from_its_only_public_type() {
         // 実在した形: hook_health_reader.rs に HookHealthReadModelUpdater だけがあった。
+        // 共通契約の実装も置き、R10 (read-model-updater-contract) を鳴らさずに R9 だけを見る。
         let source = r#"
 struct EventWire;
 
 pub struct HookHealthReadModelUpdater;
+
+impl ReadModelUpdater for HookHealthReadModelUpdater {}
 "#;
         let findings = check_all(
             "modules/core/read-model-updater/src/orchestration/hook_health_reader.rs",
@@ -2375,6 +2588,257 @@ use std::fs;
         assert_eq!(
             rules(&check(COMMAND_USE_CASE_PATH, bare)),
             vec![RULE_COMMAND_SIDE_IO],
+            "理由の無い裸の allow は抑制しない"
+        );
+    }
+
+    // ---- R10 赤例 (2026-09-25 に実在した形) ---------------------------------
+
+    /// R10 の射程 (RMU クレート)。
+    const RMU_UPDATER_PATH: &str =
+        "modules/core/read-model-updater/src/orchestration/hook_health_read_model_updater.rs";
+
+    #[test]
+    fn r10_detects_an_updater_that_does_not_implement_the_contract() {
+        // 実在した形: 心拍の投影器は名前だけ …ReadModelUpdater で、共通契約を持たなかった。
+        let source = r#"
+/// 心拍の投影器。
+#[derive(Debug)]
+pub struct HookHealthReadModelUpdater {
+    path: PathBuf,
+}
+
+impl HookHealthReadModelUpdater {
+    pub fn open(path: &Path) -> Result<Self, JournalReadError> {
+        todo!()
+    }
+}
+"#;
+        let findings = check(RMU_UPDATER_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_READ_MODEL_UPDATER_CONTRACT]);
+        assert_eq!(findings[0].line, 4, "公開型の pub 行を指すこと");
+        assert!(
+            findings[0].message.contains("HookHealthReadModelUpdater"),
+            "型名を message に含めること: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn r10_detects_an_updater_whose_contract_impl_is_for_another_type() {
+        // 同じファイルの別の型への実装では、名乗った型の契約にはならない。
+        let source = r#"
+pub enum PlanApprovalReadModelUpdater<R> {
+    Idle(R),
+}
+
+impl<R: PlanApprovalJournalReader> ReadModelUpdater for OtherReadModelUpdater<R> {
+    type Error = JournalReadError;
+    async fn update_read_models(&mut self) -> Result<(), JournalReadError> {
+        Ok(())
+    }
+}
+"#;
+        let findings = check(RMU_UPDATER_PATH, source);
+        assert_eq!(rules(&findings), vec![RULE_READ_MODEL_UPDATER_CONTRACT]);
+        assert_eq!(findings[0].line, 2);
+    }
+
+    #[test]
+    fn r10_detects_a_contract_impl_for_a_type_not_named_as_an_updater() {
+        // 契約を実装するのに名乗らない型は、呼出側から更新器だと読めない。
+        let source = r#"
+pub struct HookHealthProjector;
+
+impl ReadModelUpdater for HookHealthProjector {
+    type Error = JournalReadError;
+    async fn update_read_models(&mut self) -> Result<(), JournalReadError> {
+        Ok(())
+    }
+}
+
+impl super::ReadModelUpdater for &mut Projector {
+    type Error = JournalReadError;
+    async fn update_read_models(&mut self) -> Result<(), JournalReadError> {
+        Ok(())
+    }
+}
+"#;
+        let findings = check(RMU_UPDATER_PATH, source);
+        assert_eq!(
+            rules(&findings),
+            vec![
+                RULE_READ_MODEL_UPDATER_CONTRACT,
+                RULE_READ_MODEL_UPDATER_CONTRACT
+            ]
+        );
+        assert_eq!(findings[0].line, 4, "impl トークンの行を指すこと");
+        assert!(findings[0].message.contains("HookHealthProjector"));
+        assert_eq!(findings[1].line, 11, "参照型も剥がして名前を見る");
+        assert!(findings[1].message.contains("`Projector`"));
+    }
+
+    #[test]
+    fn r10_detects_update_entry_points_beside_the_contract() {
+        // 実在した形: 取得ループ本体が catch_up と catch_up_structured / catch_up_testing … を
+        // 関連関数として並べていた。契約を実装していても、入口の並立は所見である。
+        let source = r#"
+pub struct OrchestrationReadModelUpdater<R> {
+    journal_reader: R,
+}
+
+impl<R: JournalReader> OrchestrationReadModelUpdater<R> {
+    pub async fn catch_up(&mut self) -> Result<GlobalSeqNr, ReadModelUpdateError> {
+        todo!()
+    }
+
+    pub(crate) async fn catch_up_structured(
+        journal_reader: &mut R,
+        projection: &ProjectionName,
+    ) -> Result<GlobalSeqNr, ReadModelUpdateError> {
+        todo!()
+    }
+
+    pub fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
+        todo!()
+    }
+}
+
+impl<R: JournalReader> ReadModelUpdater for OrchestrationReadModelUpdater<R> {
+    type Error = ReadModelUpdateError;
+    async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
+        Ok(())
+    }
+}
+"#;
+        let findings = check(RMU_UPDATER_PATH, source);
+        assert_eq!(
+            rules(&findings),
+            vec![
+                RULE_READ_MODEL_UPDATER_CONTRACT,
+                RULE_READ_MODEL_UPDATER_CONTRACT,
+                RULE_READ_MODEL_UPDATER_CONTRACT
+            ]
+        );
+        let lines: Vec<usize> = findings.iter().map(|finding| finding.line).collect();
+        assert_eq!(lines, vec![7, 11, 18], "各メソッドの可視性の行を指すこと");
+        assert!(findings[1].message.contains("catch_up_structured"));
+    }
+
+    // ---- R10 緑例 --------------------------------------------------------
+
+    #[test]
+    fn r10_allows_updaters_that_implement_the_contract() {
+        // 借用する更新器 (ライフタイム付き) も、trait のパスが修飾されていても照合できる。
+        let borrowed = r#"
+pub struct StructuredReadModelUpdater<'a, R> {
+    journal_reader: &'a mut R,
+}
+
+impl<'a, R: JournalReader> StructuredReadModelUpdater<'a, R> {
+    pub const fn new(journal_reader: &'a mut R) -> Self {
+        Self { journal_reader }
+    }
+
+    /// 更新前の関門は更新入口ではない。
+    pub async fn require_unpublished(&self) -> Result<(), ReadModelUpdateError> {
+        Ok(())
+    }
+
+    /// private な補助は契約の外の入口ではない。
+    async fn catch_up_steering(&mut self) -> Result<(), ReadModelUpdateError> {
+        Ok(())
+    }
+}
+
+impl<R: JournalReader> super::ReadModelUpdater for StructuredReadModelUpdater<'_, R> {
+    type Error = ReadModelUpdateError;
+    async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
+        self.catch_up_steering().await
+    }
+}
+"#;
+        assert!(check(RMU_UPDATER_PATH, borrowed).is_empty());
+
+        // 契約の trait 定義そのもの、名乗らない private 型、pub(crate) の型は射程外。
+        let other = r#"
+pub trait ReadModelUpdater {
+    type Error: std::error::Error;
+    fn update_read_models(&mut self) -> impl Future<Output = Result<(), Self::Error>>;
+}
+
+struct DraftReadModelUpdater;
+
+pub(crate) struct InternalReadModelUpdater;
+"#;
+        assert!(
+            check(
+                "modules/core/read-model-updater/src/orchestration/read_model_updater.rs",
+                other
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn r10_is_scoped_to_the_read_model_updater_crate_outside_tests() {
+        let red = r#"
+pub struct HookHealthReadModelUpdater;
+
+impl HookHealthReadModelUpdater {
+    pub fn catch_up(&mut self) {}
+}
+"#;
+        assert!(check("modules/app/aidlc/src/runtime/hook_health.rs", red).is_empty());
+        assert!(
+            check(
+                "modules/core/read-model-updater/tests/hook_health_projection_contract.rs",
+                red
+            )
+            .is_empty()
+        );
+        let in_cfg_test = r#"
+#[cfg(test)]
+mod tests {
+    pub struct FakeReadModelUpdater;
+
+    impl FakeReadModelUpdater {
+        pub fn catch_up(&mut self) {}
+    }
+
+    impl ReadModelUpdater for Fake {
+        type Error = JournalReadError;
+        async fn update_read_models(&mut self) -> Result<(), JournalReadError> {
+            Ok(())
+        }
+    }
+}
+"#;
+        assert!(check(RMU_UPDATER_PATH, in_cfg_test).is_empty());
+        assert_eq!(
+            rules(&check(RMU_UPDATER_PATH, red)),
+            vec![
+                RULE_READ_MODEL_UPDATER_CONTRACT,
+                RULE_READ_MODEL_UPDATER_CONTRACT
+            ],
+            "同じソースが射程内では (a) と (c) の両方で鳴ること"
+        );
+    }
+
+    #[test]
+    fn r10_is_suppressed_only_with_a_reason() {
+        let reasoned = r#"
+// amadeus-lint: allow(read-model-updater-contract) — 移行途中の暫定 (次 Bolt で契約へ載せる)
+pub struct HookHealthReadModelUpdater;
+"#;
+        assert!(check(RMU_UPDATER_PATH, reasoned).is_empty());
+        let bare = r#"
+// amadeus-lint: allow(read-model-updater-contract)
+pub struct HookHealthReadModelUpdater;
+"#;
+        assert_eq!(
+            rules(&check(RMU_UPDATER_PATH, bare)),
+            vec![RULE_READ_MODEL_UPDATER_CONTRACT],
             "理由の無い裸の allow は抑制しない"
         );
     }
