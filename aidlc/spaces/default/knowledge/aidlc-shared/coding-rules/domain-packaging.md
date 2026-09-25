@@ -44,7 +44,8 @@ domain/src/
 `entities` / `entity` / `value_objects` / `value_object` / `vo` / `aggregates` / `aggregate` /
 `domain_events` / `events` / `services` / `service` / `domain_services` / `repositories` / `repository` /
 `factories` / `factory` / `models` / `model` / `types` / `common` / `shared` / `utils` / `util` /
-`helpers` / `helper` / `misc`（`cargo lint` の検出対象と同じ一覧）。
+`helpers` / `helper` / `misc`（`cargo lint` の検出対象と同じ一覧。`value-objects` のようにハイフンで綴っても同じ名前として扱う —
+`#[path]` を使えばハイフンのディレクトリにもモジュールを置ける）。
 
 `intent_execution_event/` のように**特定の型名**が `_event` などで終わるのは禁止の対象ではない。
 禁止されるのは、種類そのものを名前にして複数の概念を束ねるディレクトリである。

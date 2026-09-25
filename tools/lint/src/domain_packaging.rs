@@ -82,8 +82,11 @@ pub(crate) fn check(path: &str, file: &syn::File) -> Vec<Finding> {
     findings
 }
 
+/// 区間名が種類・役割の名前か。`#[path]` でハイフンを含むディレクトリ (`value-objects/`) にも
+/// モジュールを置けるので、`-` を `_` に揃えてから比べる。
 fn is_technical(name: &str) -> bool {
-    TECHNICAL_NAMES.contains(&name.strip_prefix("r#").unwrap_or(name))
+    let name = name.strip_prefix("r#").unwrap_or(name).replace('-', "_");
+    TECHNICAL_NAMES.contains(&name.as_str())
 }
 
 #[cfg(test)]
@@ -118,6 +121,17 @@ mod tests {
             "pub struct StageSlug;\n",
         );
         assert_eq!(nested.len(), 1, "コンテキストの内側の種類別区切りも鳴らす");
+        // オーナー裁定の綴りそのもの (`value-objects/`)。`#[path]` でハイフンのディレクトリにも置ける。
+        let hyphen = findings(
+            "modules/core/command/domain/src/value-objects/stage_slug.rs",
+            "pub struct StageSlug;\n",
+        );
+        assert_eq!(hyphen.len(), 1);
+        assert!(
+            hyphen[0].message.contains("`value-objects`"),
+            "{}",
+            hyphen[0].message
+        );
     }
 
     #[test]
