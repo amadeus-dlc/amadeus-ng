@@ -42,6 +42,9 @@ const INSERT: &str = "INSERT INTO read_code_generation_approval
      (id, execution_id, target_id, ok, reason, unit, contract_hash, source_digest, as_of)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
 
+/// 表が在るか (`sqlite_master` を引くだけ — 書込ロックを取らない)。
+const TABLE_EXISTS: &str = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'read_code_generation_approval'";
+
 /// `read_code_generation_approval` 表の DAO の実装。状態を持たない。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CodeGenerationApprovalDaoImpl;
@@ -51,6 +54,13 @@ impl CodeGenerationApprovalDao for CodeGenerationApprovalDaoImpl {
         transaction
             .execute_batch(CREATE_TABLE)
             .at_connection(transaction)
+    }
+
+    fn table_exists(&self, connection: &Connection) -> Result<bool, JournalReadError> {
+        let found: i64 = connection
+            .query_row(TABLE_EXISTS, [], |row| row.get(0))
+            .at_connection(connection)?;
+        Ok(found > 0)
     }
 
     fn find_stamp(

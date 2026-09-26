@@ -485,10 +485,25 @@ impl JournalReaderImpl {
     /// その更新器がまだ一度も走っていないストアでも表を引く。読み面の表と同じく、開く段で
     /// 表だけは揃えておく。読み面の版が動いて落とされた ([`recreate_tables`]) 後も、ここで
     /// 空の表として作り直す (行は次の更新が保存済みの出所を `None` と見て描き直す)。
+    ///
+    /// 表が揃っているか (`table_exists`) は書込ロックを取らずに見る。揃っていれば書込
+    /// トランザクションを開かない。欠けているときだけ `BEGIN IMMEDIATE` で開いて作る
+    /// (DEFERRED で開くと、スキーマを読んでから書込へ昇格するときに busy timeout を待たずに
+    /// 即失敗しうる — #134)。
+    ///
+    /// 暫定である — 表の用意 (DDL・版による DROP) をどこが持つかは Issue #153 の PR4 で決める。
     fn ensure_reference_tables(
         connection: &mut Connection,
         path: &Path,
     ) -> Result<(), JournalReadError> {
+        let complete = SteeringPlanDaoImpl.table_exists(connection)?
+            && SteeringPartDaoImpl.table_exists(connection)?
+            && TestingContractDaoImpl.table_exists(connection)?
+            && PlanFingerprintDaoImpl.table_exists(connection)?
+            && CodeGenerationApprovalDaoImpl.table_exists(connection)?;
+        if complete {
+            return Ok(());
+        }
         let mut transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .at_store(path)?;
@@ -2765,5 +2780,59 @@ pub(super) mod tests {
             decode_cause(&DtoDecodeError::InvariantViolation),
             CorruptCause::InvariantViolation
         );
+    }
+
+    /// 参照入力由来の表が揃っていれば、開く段の用意は書込ロックを取らない。
+    ///
+    /// 別の接続が `BEGIN IMMEDIATE` で書込ロックを握っていても、busy timeout を待たずに
+    /// 返る (IMMEDIATE で開いていた頃は、表が在っても待たされ `WouldBlock` で落ちた)。
+    #[test]
+    fn preparing_existing_reference_tables_does_not_wait_for_a_write_lock() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let path = dir.path().join("store.sqlite");
+        let mut connection = Connection::open(&path).expect("接続");
+        connection
+            .busy_timeout(Duration::from_millis(2000))
+            .expect("待ち時間");
+        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("初回は作る");
+
+        let (locked_sender, locked_receiver) = std::sync::mpsc::channel::<()>();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
+        let holder_path = path.clone();
+        let holder = std::thread::spawn(move || {
+            let holder = Connection::open(&holder_path).expect("握る側の接続");
+            holder.execute_batch("BEGIN IMMEDIATE").expect("書込ロック");
+            locked_sender.send(()).expect("合図");
+            let _ = release_receiver.recv();
+            holder.execute_batch("END").expect("手放す");
+        });
+        locked_receiver.recv().expect("ロックを握った");
+
+        let started = std::time::Instant::now();
+        let result = JournalReaderImpl::ensure_reference_tables(&mut connection, &path);
+        let waited = started.elapsed();
+        drop(release_sender);
+        holder.join().expect("握る側が終わる");
+
+        assert_eq!(result, Ok(()));
+        assert!(
+            waited < Duration::from_millis(1000),
+            "書込ロックを待った (所要 {waited:?})"
+        );
+    }
+
+    /// 参照入力由来の表が 1 つでも欠けていれば、開く段で作り直す。
+    #[test]
+    fn a_missing_reference_table_is_created_again() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let path = dir.path().join("store.sqlite");
+        let mut connection = Connection::open(&path).expect("接続");
+        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("初回は作る");
+        connection
+            .execute_batch("DROP TABLE read_plan_fingerprint")
+            .expect("1 表を落とす");
+        assert!(!PlanFingerprintDaoImpl.table_exists(&connection).unwrap());
+        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("作り直す");
+        assert!(PlanFingerprintDaoImpl.table_exists(&connection).unwrap());
     }
 }

@@ -38,6 +38,10 @@ const INSERT: &str = "INSERT INTO read_plan_fingerprint
      (id, execution_id, target_id, fingerprint, error, source_digest, as_of)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)";
 
+/// 表が在るか (`sqlite_master` を引くだけ — 書込ロックを取らない)。
+const TABLE_EXISTS: &str =
+    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'read_plan_fingerprint'";
+
 /// `read_plan_fingerprint` 表の DAO の実装。状態を持たない。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PlanFingerprintDaoImpl;
@@ -47,6 +51,13 @@ impl PlanFingerprintDao for PlanFingerprintDaoImpl {
         transaction
             .execute_batch(CREATE_TABLE)
             .at_connection(transaction)
+    }
+
+    fn table_exists(&self, connection: &Connection) -> Result<bool, JournalReadError> {
+        let found: i64 = connection
+            .query_row(TABLE_EXISTS, [], |row| row.get(0))
+            .at_connection(connection)?;
+        Ok(found > 0)
     }
 
     fn find_stamp(

@@ -31,6 +31,13 @@
     各 DAO の `create_table` を呼ぶ暫定。開く段で 5 表を作るのは `JournalReaderImpl::open` が各表の DAO の
     `create_table` を呼んで行い（クエリ側は面ごとの更新器がまだ走っていないストアでも表を引くため）、読み面の版
     （`PRAGMA user_version`）が動いたときに 5 表を落とす処理は `read_tables` の `DROP` に残してある。
+  - **開く段の書込ロック**: 更新器の `open` と `JournalReaderImpl` の 5 表の用意は、各 DAO の `table_exists`
+    （`sqlite_master` の読取）で表が揃っているかを書込ロックを取らずに見て、揃っていれば書込トランザクションを
+    開かない。欠けているときだけ `BEGIN IMMEDIATE` で開いて `create_table` を呼ぶ（DEFERRED で開くとスキーマを
+    読んでから書込へ昇格するので #134 の即時 `SQLITE_BUSY` になりうる）。これで、表が揃っていて参照入力も
+    動いていない更新は、この 5 表について書込ロックを取らない。ただし `JournalReaderImpl::open` 全体としては、
+    PR2 の範囲外の既存の書込（`shared_projection::initialize` の `INSERT OR IGNORE` など）が今も書込ロックを
+    取る。これも PR4 の「表の用意をどこが持つか」と一緒に扱う。
 - **未移行**: 下表の 3 以降。`JournalReader` はまだ `prepare_read_model` / `publish` / `advance_checkpoint` /
   `replace_pipeline` / `pending_publication` を抱えている。
 

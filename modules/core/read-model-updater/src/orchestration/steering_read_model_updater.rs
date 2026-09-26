@@ -53,6 +53,11 @@ pub struct SteeringReadModelUpdater<P, Q> {
 impl SteeringReadModelUpdater<SteeringPlanDaoImpl, SteeringPartDaoImpl> {
     /// 既存の共有ストアへ接続し、2 表が無ければ作る。ストア自体は作らない。
     ///
+    /// 表が揃っているか (`table_exists`) は書込ロックを取らずに見る。揃っていれば書込
+    /// トランザクションを開かない — 別の書き手がいても開くだけで待たされない。欠けている
+    /// ときだけ `BEGIN IMMEDIATE` で開いて作る (DEFERRED で開くと、スキーマを読んでから
+    /// 書込へ昇格するときに busy timeout を待たずに即失敗しうる — #134)。
+    ///
     /// # Errors
     ///
     /// ストアへ接続できない、表を作れない場合。
@@ -60,12 +65,14 @@ impl SteeringReadModelUpdater<SteeringPlanDaoImpl, SteeringPartDaoImpl> {
         let mut connection = updater_connection::open(path)?;
         let plans = SteeringPlanDaoImpl;
         let parts = SteeringPartDaoImpl;
-        let mut transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path)?;
-        plans.create_table(&mut transaction)?;
-        parts.create_table(&mut transaction)?;
-        transaction.commit().at_store(path)?;
+        if !plans.table_exists(&connection)? || !parts.table_exists(&connection)? {
+            let mut transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .at_store(path)?;
+            plans.create_table(&mut transaction)?;
+            parts.create_table(&mut transaction)?;
+            transaction.commit().at_store(path)?;
+        }
         Ok(Self {
             connection,
             path: path.to_path_buf(),

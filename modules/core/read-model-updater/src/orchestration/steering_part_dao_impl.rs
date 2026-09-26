@@ -1,6 +1,6 @@
 //! `SteeringPartDao` の SQLite 実装 — `read_steering_part` 表 1 つだけを読み書きする。
 
-use rusqlite::{Transaction, params};
+use rusqlite::{Connection, Transaction, params};
 
 use super::journal_reader_impl::corrupt_error;
 use super::store_failure::SqliteResultExt;
@@ -32,6 +32,10 @@ const INSERT: &str = "INSERT INTO read_steering_part
      (id, steering_plan_id, phase, part_index, rules_content)
      VALUES (?1, ?2, ?3, ?4, ?5)";
 
+/// 表が在るか (`sqlite_master` を引くだけ — 書込ロックを取らない)。
+const TABLE_EXISTS: &str =
+    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'read_steering_part'";
+
 /// `read_steering_part` 表の DAO の実装。状態を持たない。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SteeringPartDaoImpl;
@@ -41,6 +45,13 @@ impl SteeringPartDao for SteeringPartDaoImpl {
         transaction
             .execute_batch(CREATE_TABLE)
             .at_connection(transaction)
+    }
+
+    fn table_exists(&self, connection: &Connection) -> Result<bool, JournalReadError> {
+        let found: i64 = connection
+            .query_row(TABLE_EXISTS, [], |row| row.get(0))
+            .at_connection(connection)?;
+        Ok(found > 0)
     }
 
     fn replace(

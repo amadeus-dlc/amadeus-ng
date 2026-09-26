@@ -174,6 +174,96 @@ fn plan_input(plan: &str) -> PlanApprovalInput {
     )
 }
 
+// ---- 開く段は、表が揃っていれば書込ロックを取らない ----
+
+/// 開く段が書込ロックを待ったと見なす所要時間 (busy timeout 5000ms より十分短い)。
+const PROMPT_OPEN: Duration = Duration::from_millis(1000);
+
+/// 別の接続で書込ロック (`BEGIN IMMEDIATE`) を握り続け、手放す合図を待つ。
+struct HeldLock {
+    handle: JoinHandle<()>,
+    release: Sender<()>,
+}
+
+impl HeldLock {
+    fn hold(path: &Path) -> HeldLock {
+        let (locked_sender, locked_receiver) = channel::<()>();
+        let (release, release_receiver) = channel::<()>();
+        let holder_path = path.to_path_buf();
+        let handle = std::thread::spawn(move || {
+            let connection = Connection::open(&holder_path).unwrap();
+            connection.execute_batch("BEGIN IMMEDIATE").unwrap();
+            locked_sender.send(()).unwrap();
+            let _ = release_receiver.recv();
+            connection.execute_batch("END").unwrap();
+        });
+        locked_receiver.recv().unwrap();
+        HeldLock { handle, release }
+    }
+
+    fn release(self) {
+        drop(self.release);
+        self.handle.join().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn opening_each_updater_does_not_wait_for_a_write_lock_when_its_tables_exist() {
+    // 読取だけの動詞も開く段を通る。表が在るのに書込ロックを取りに行くと、別の書き手が
+    // いる間は busy timeout まで待たされ、最後は `WouldBlock` で落ちる (CodeRabbit の指摘)。
+    let fixture = Fixture::seeded().await;
+    let mut reader = fixture.journal_reader();
+    let source = fixture.source();
+    let execution = execution_id();
+    let input = plan_input("# Plan\n");
+    let receipts = PlanReceipts::default();
+    let held = HeldLock::hold(fixture.store());
+
+    let started = Instant::now();
+    let steering = SteeringReadModelUpdater::open(fixture.store(), fixture.source()).map(drop);
+    let testing = TestingReadModelUpdater::open(&mut reader, fixture.store(), &source).map(drop);
+    let fingerprint =
+        PlanFingerprintReadModelUpdater::open(&mut reader, fixture.store(), &execution, &input)
+            .map(drop);
+    let approval = CodeGenerationApprovalReadModelUpdater::open(
+        &mut reader,
+        fixture.store(),
+        &execution,
+        &input,
+        &receipts,
+    )
+    .map(drop);
+    let waited = started.elapsed();
+    held.release();
+
+    assert_eq!(steering, Ok(()));
+    assert_eq!(testing, Ok(()));
+    assert_eq!(fingerprint, Ok(()));
+    assert_eq!(approval, Ok(()));
+    assert!(
+        waited < PROMPT_OPEN,
+        "開く段が書込ロックを待った (所要 {waited:?})"
+    );
+}
+
+#[tokio::test]
+async fn opening_an_updater_creates_its_table_again_when_it_is_missing() {
+    // 読み手は落とす前に開く (開く段の JournalReaderImpl も表を作り直すので、更新器が
+    // 自分で作ることを見るには、落とした後に読み手を開かない)。
+    let fixture = Fixture::seeded().await;
+    let mut reader = fixture.journal_reader();
+    fixture.execute("DROP TABLE read_testing_contract; DROP TABLE read_steering_part");
+    let source = fixture.source();
+    drop(TestingReadModelUpdater::open(&mut reader, fixture.store(), &source).unwrap());
+    drop(SteeringReadModelUpdater::open(fixture.store(), fixture.source()).unwrap());
+    assert_eq!(
+        fixture.count("read_testing_contract"),
+        0,
+        "空の表として在る"
+    );
+    assert_eq!(fixture.count("read_steering_part"), 0, "空の表として在る");
+}
+
 // ---- steering (`read_steering_plan` / `read_steering_part`) ----
 
 async fn update_steering(fixture: &Fixture) -> Result<(), ReadModelUpdateError> {

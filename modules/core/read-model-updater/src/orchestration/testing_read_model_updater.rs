@@ -49,6 +49,11 @@ impl<'a, R: JournalReader> TestingReadModelUpdater<'a, R, TestingContractDaoImpl
     /// 読み手と、テスト契約の規則を読む先を束ね、既存の共有ストアへ接続する。表が無ければ
     /// 作る。ストア自体は作らない。
     ///
+    /// 表が在るか (`table_exists`) は書込ロックを取らずに見る。在れば書込トランザクションを
+    /// 開かない — 別の書き手がいても開くだけで待たされない。無いときだけ `BEGIN IMMEDIATE` で
+    /// 開いて作る (DEFERRED で開くと、スキーマを読んでから書込へ昇格するときに busy timeout を
+    /// 待たずに即失敗しうる — #134)。
+    ///
     /// # Errors
     ///
     /// ストアへ接続できない、表を作れない場合。
@@ -59,11 +64,13 @@ impl<'a, R: JournalReader> TestingReadModelUpdater<'a, R, TestingContractDaoImpl
     ) -> Result<Self, ReadModelUpdateError> {
         let mut connection = updater_connection::open(path)?;
         let contracts = TestingContractDaoImpl;
-        let mut transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path)?;
-        contracts.create_table(&mut transaction)?;
-        transaction.commit().at_store(path)?;
+        if !contracts.table_exists(&connection)? {
+            let mut transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .at_store(path)?;
+            contracts.create_table(&mut transaction)?;
+            transaction.commit().at_store(path)?;
+        }
         Ok(Self {
             journal_reader,
             source,

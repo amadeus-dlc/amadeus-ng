@@ -21,6 +21,16 @@ pub trait CodeGenerationApprovalDao {
     /// 表を作れない場合 (`Io`)。
     fn create_table(&self, transaction: &mut Transaction<'_>) -> Result<(), JournalReadError>;
 
+    /// 表が在るか (`sqlite_master` の読取だけで、書込ロックを取らない)。
+    ///
+    /// 更新器は開く段でこれを見て、表が揃っていれば書込トランザクションを開かない。
+    /// 欠けているときだけ `BEGIN IMMEDIATE` の中で [`Self::create_table`] を呼ぶ。
+    ///
+    /// # Errors
+    ///
+    /// 読めない場合 (`Io`)。
+    fn table_exists(&self, connection: &Connection) -> Result<bool, JournalReadError>;
+
     /// 主キー `id` の行が名乗る出所。行が無ければ `None`。
     ///
     /// # Errors
