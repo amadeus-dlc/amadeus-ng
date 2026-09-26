@@ -9,8 +9,8 @@
 — C1（変わりやすい設計判断を隠す）、C2（同じ理由で変わるものを集める）、C4（依存に循環がない）、C8（ドメインの物語を語る）
 **機械強制**: レビュー基準
 **適用例**: Issue #153 の PR1 — `WorkspaceDoctorReadModelUpdater`、PR2 — `SteeringReadModelUpdater` /
-`TestingReadModelUpdater` / `PlanFingerprintReadModelUpdater` / `CodeGenerationApprovalReadModelUpdater`
-（いずれも `modules/core/read-model-updater/src/orchestration/`）
+`TestingReadModelUpdater` / `PlanFingerprintReadModelUpdater` / `CodeGenerationApprovalReadModelUpdater`、
+PR3 — `PipelineProgressReadModelUpdater`（いずれも `modules/core/read-model-updater/src/orchestration/`）
 
 ## 原則
 
@@ -153,8 +153,8 @@ DB トランザクションの受け渡しは次の形にそろえる。PR1（�
 - **射程**: `modules/core/read-model-updater`（RMU）の更新器と、そのポート・実装。
 - **移行中である**。2026-09-26 時点でこの形に移したのは、自己診断（`WorkspaceDoctorReadModelUpdater` — PR1）と、
   参照入力由来の単独面 — steering（`SteeringReadModelUpdater`）・テスト契約・計画指紋・Code Generation 開始可否
-  （PR2）である。ほかの更新器（取得ループ本体の構造化面と公開・Pipeline 面・runtime-graph・停止制御・心拍・
-  承認ランタイム）は旧来の形のまま残っている。移行の順序は
+  （PR2）と、Pipeline 面（`PipelineProgressReadModelUpdater` — PR3）である。ほかの更新器（取得ループ本体の
+  構造化面と公開・runtime-graph・停止制御・心拍・承認ランタイム）は旧来の形のまま残っている。移行の順序は
   [rmu-dao-migration-plan-20260926.md](../../rmu-dao-migration-plan-20260926.md)。移行が済むまで、既存の更新器を
   この規則で「違反」として止めない（新規に書く更新器と、手を入れる更新器には適用する）。
 - **対象外**: コマンド側の Repository（[gateway-taxonomy.md](gateway-taxonomy.md) §1・§2）と、クエリ側の DAO

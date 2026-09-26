@@ -50,6 +50,6 @@ HTTP / gRPC の外部 API は無い。外から見える面は **CLI とその�
 | --- | --- | --- | --- |
 | `IntentExecutionRepository` | `core-command-use-case` | `find_by_id`、`store(event, aggregate)` | `RepositoryError<Id>`（`Conflict` は楽観 version の不一致、`Io { kind, path }`、`Corrupt`） |
 | `IntentRepository` / `WorkflowDefinitionRepository` | `core-command-use-case` | `find_by_id`、`store` | 同上 |
-| `JournalReader` | `core-read-model-updater` | `prepare_read_model`、`pending_publication`、`events_through`、`events_after`、`publish`、`checkpoint`、`advance_checkpoint`、`replace_steering`、`replace_testing`、`replace_plan_fingerprint`、`replace_code_generation_approval`、`replace_pipeline` | `JournalReadError`（`Io { kind, path }` ほか）。`catch_up` では `CatchUpError::Read` に包まれる |
+| `JournalReader` | `core-read-model-updater` | `prepare_read_model`、`pending_publication`、`events_through`、`events_after`、`publish`、`checkpoint`、`advance_checkpoint`（`replace_steering` / `replace_testing` / `replace_plan_fingerprint` / `replace_code_generation_approval` は Issue #153 の PR2、`replace_pipeline` は PR3 で表の DAO へ移り、この trait から消えた） | `JournalReadError`（`Io { kind, path }` ほか）。`catch_up` では `CatchUpError::Read` に包まれる |
 
 `ReadModelUpdater::catch_up(&mut self) -> Result<GlobalSeqNr, CatchUpError>` が RMU の公開面である。`CatchUpError` の変種は `Read` / `Projection` / `StateFileRead` / `StateFileWrite` / `PublicationIo` / `PublicationConflict` / `ReadTables` / `SteeringRead` / `SteeringPack` ほか。
