@@ -2,8 +2,8 @@
 
 use rusqlite::{Connection, Transaction};
 
+use super::SteeringPlanRow;
 use crate::orchestration::JournalReadError;
-use crate::read_tables::SteeringPlanRow;
 
 /// `read_steering_plan` 表の DAO。
 ///

@@ -1,16 +1,18 @@
 //! `CodeGenerationApprovalDao` の SQLite 実装 — `read_code_generation_approval` 表 1 つだけを
 //! 読み書きする。
 //!
-//! 行を書いて読み戻す試験は `tests/reference_surface_updater_contract.rs` にある — 行
-//! ([`CodeGenerationApprovalRow`]) は実行と intent の履歴からしか組めないので、実ストアの
-//! 履歴を用意できる結合試験の側で見る。
+//! 行を書いて読み戻す試験は `tests/reference_surface_updater_contract.rs` にある — 実際の
+//! 投影 ([`crate::read_tables::CodeGenerationApprovalTables`]) が組んだ行を実ストアの履歴から
+//! 用意できる結合試験の側で見る。
 
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
 
 use super::journal_reader_impl::corrupt_error;
 use super::store_failure::SqliteResultExt;
-use super::{CodeGenerationApprovalDao, CorruptCause, GlobalSeqNr, JournalReadError, SourceStamp};
-use crate::read_tables::CodeGenerationApprovalRow;
+use super::{
+    CodeGenerationApprovalDao, CodeGenerationApprovalRow, CorruptCause, GlobalSeqNr,
+    JournalReadError, SourceStamp,
+};
 
 /// 表の DDL (冪等)。主キーは (`execution_id`, `target_id`) から導いた代理キーで、自然キーの
 /// 重複は UNIQUE 制約が止める。

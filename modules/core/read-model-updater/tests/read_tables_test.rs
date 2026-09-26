@@ -2017,10 +2017,10 @@ fn empty_plan_input() -> core_command_domain::orchestration::PlanApprovalInput {
 
 #[test]
 fn a_plan_fingerprint_row_names_the_missing_execution_or_intent() {
-    use core_read_model_updater::read_tables::PlanFingerprintRow;
+    use core_read_model_updater::read_tables::PlanFingerprintTables;
     let unknown = IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0777").expect("UUIDv7");
     assert_eq!(
-        PlanFingerprintRow::project(&history(), &unknown, &empty_plan_input()),
+        PlanFingerprintTables::project(&history(), &unknown, &empty_plan_input()),
         Err(ReadTablesError::IntentUnavailable {
             execution_id: unknown.as_str().to_string(),
             intent_id: String::new(),
@@ -2043,7 +2043,7 @@ fn a_plan_fingerprint_row_names_the_missing_execution_or_intent() {
     let without_intent =
         JournalBatch::new(entries, Vec::new(), Vec::new(), Some(GlobalSeqNr::new(3)));
     assert_eq!(
-        PlanFingerprintRow::project(&without_intent, &execution_a(), &empty_plan_input()),
+        PlanFingerprintTables::project(&without_intent, &execution_a(), &empty_plan_input()),
         Err(ReadTablesError::IntentUnavailable {
             execution_id: EXECUTION_A.to_string(),
             intent_id: INTENT.to_string(),
@@ -2053,9 +2053,10 @@ fn a_plan_fingerprint_row_names_the_missing_execution_or_intent() {
 
 #[test]
 fn a_plan_fingerprint_row_carries_the_refusal_instead_of_a_fingerprint() {
-    use core_read_model_updater::read_tables::PlanFingerprintRow;
-    let row = PlanFingerprintRow::project(&history(), &execution_a(), &empty_plan_input())
+    use core_read_model_updater::read_tables::PlanFingerprintTables;
+    let tables = PlanFingerprintTables::project(&history(), &execution_a(), &empty_plan_input())
         .expect("実行と intent がある");
+    let row = tables.row();
     assert_eq!(row.execution_id(), EXECUTION_A);
     assert_eq!(row.target_id(), "stage:code-generation");
     assert_eq!(row.fingerprint(), None, "空の計画から指紋は出ない");
@@ -2066,10 +2067,10 @@ fn a_plan_fingerprint_row_carries_the_refusal_instead_of_a_fingerprint() {
 #[test]
 fn a_code_generation_approval_row_names_the_missing_execution_or_intent() {
     use core_command_domain::orchestration::PlanReceipts;
-    use core_read_model_updater::read_tables::CodeGenerationApprovalRow;
+    use core_read_model_updater::read_tables::CodeGenerationApprovalTables;
     let unknown = IntentExecutionId::parse("0190aaaa-bbbb-7ccc-9ddd-eeeeffff0777").expect("UUIDv7");
     assert_eq!(
-        CodeGenerationApprovalRow::project(
+        CodeGenerationApprovalTables::project(
             &history(),
             &unknown,
             &empty_plan_input(),
@@ -2088,14 +2089,15 @@ fn a_code_generation_approval_row_names_the_missing_execution_or_intent() {
 #[test]
 fn a_code_generation_approval_row_carries_the_domain_refusal() {
     use core_command_domain::orchestration::PlanReceipts;
-    use core_read_model_updater::read_tables::CodeGenerationApprovalRow;
-    let row = CodeGenerationApprovalRow::project(
+    use core_read_model_updater::read_tables::CodeGenerationApprovalTables;
+    let tables = CodeGenerationApprovalTables::project(
         &history(),
         &execution_a(),
         &empty_plan_input(),
         &PlanReceipts::default(),
     )
     .expect("実行と intent がある");
+    let row = tables.row();
     assert_eq!(row.execution_id(), EXECUTION_A);
     assert_eq!(row.target_id(), "stage:code-generation");
     assert!(!row.ok(), "受領の無い履歴から開始できてはならない");
@@ -2112,9 +2114,9 @@ fn a_code_generation_approval_row_carries_the_domain_refusal() {
 #[test]
 fn a_code_generation_approval_row_is_reproducible_from_the_same_material() {
     use core_command_domain::orchestration::PlanReceipts;
-    use core_read_model_updater::read_tables::CodeGenerationApprovalRow;
+    use core_read_model_updater::read_tables::CodeGenerationApprovalTables;
     let project = || {
-        CodeGenerationApprovalRow::project(
+        CodeGenerationApprovalTables::project(
             &history(),
             &execution_a(),
             &empty_plan_input(),

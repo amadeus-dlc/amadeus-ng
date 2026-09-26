@@ -4,8 +4,7 @@ use rusqlite::{Transaction, params};
 
 use super::journal_reader_impl::corrupt_error;
 use super::store_failure::SqliteResultExt;
-use super::{CorruptCause, JournalReadError, SteeringPartDao};
-use crate::read_tables::SteeringPartRow;
+use super::{CorruptCause, JournalReadError, SteeringPartDao, SteeringPartRow};
 
 /// 表と索引の DDL (冪等)。
 ///

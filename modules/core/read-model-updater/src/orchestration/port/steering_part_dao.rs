@@ -2,8 +2,8 @@
 
 use rusqlite::Transaction;
 
+use super::SteeringPartRow;
 use crate::orchestration::JournalReadError;
-use crate::read_tables::SteeringPartRow;
 
 /// `read_steering_part` 表の DAO。
 ///

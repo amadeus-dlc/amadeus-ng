@@ -43,24 +43,34 @@ mod doctor_report_dao;
 mod doctor_report_row;
 mod workspace_doctor_projection_checkpoint_dao;
 
-// 参照入力由来の面の表の DAO と、それが読む出所 (行そのものは `read_tables` の投影の値)
+// 参照入力由来の面の表の DAO と、それが書く行・読む出所 (行を組む投影は `read_tables`)
 mod code_generation_approval_dao;
+mod code_generation_approval_row;
 mod plan_fingerprint_dao;
+mod plan_fingerprint_row;
 mod source_stamp;
 mod steering_part_dao;
+mod steering_part_row;
 mod steering_plan_dao;
+mod steering_plan_row;
 mod testing_contract_dao;
+mod testing_contract_row;
 
 pub use code_generation_approval_dao::CodeGenerationApprovalDao;
+pub use code_generation_approval_row::CodeGenerationApprovalRow;
 pub use doctor_check_dao::DoctorCheckDao;
 pub use doctor_check_row::DoctorCheckRow;
 pub use doctor_report_dao::DoctorReportDao;
 pub use doctor_report_row::DoctorReportRow;
 pub use plan_fingerprint_dao::PlanFingerprintDao;
+pub use plan_fingerprint_row::PlanFingerprintRow;
 pub use source_stamp::SourceStamp;
 pub use steering_part_dao::SteeringPartDao;
+pub use steering_part_row::SteeringPartRow;
 pub use steering_plan_dao::SteeringPlanDao;
+pub use steering_plan_row::SteeringPlanRow;
 pub use testing_contract_dao::TestingContractDao;
+pub use testing_contract_row::TestingContractRow;
 pub use workspace_doctor_journal_entry::WorkspaceDoctorJournalEntry;
 pub use workspace_doctor_journal_reader::WorkspaceDoctorJournalReader;
 pub use workspace_doctor_projection_checkpoint_dao::WorkspaceDoctorProjectionCheckpointDao;

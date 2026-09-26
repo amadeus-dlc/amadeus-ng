@@ -4,8 +4,10 @@ use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
 
 use super::journal_reader_impl::corrupt_error;
 use super::store_failure::SqliteResultExt;
-use super::{CorruptCause, GlobalSeqNr, JournalReadError, SourceStamp, TestingContractDao};
-use crate::read_tables::TestingTables;
+use super::{
+    CorruptCause, GlobalSeqNr, JournalReadError, SourceStamp, TestingContractDao,
+    TestingContractRow,
+};
 
 /// 表の DDL (冪等)。主キーは依頼 ID (依頼前の既定行は `bare-space`)。
 const CREATE_TABLE: &str = "\
@@ -61,19 +63,16 @@ impl TestingContractDao for TestingContractDaoImpl {
     fn replace(
         &self,
         transaction: &mut Transaction<'_>,
-        tables: &TestingTables,
+        rows: &[TestingContractRow],
+        source_digest: &str,
+        as_of: GlobalSeqNr,
     ) -> Result<(), JournalReadError> {
-        let as_of = i64::try_from(tables.as_of().to_u64()).map_err(|_| {
-            corrupt_error(
-                tables.source_digest(),
-                None,
-                CorruptCause::InvariantViolation,
-            )
-        })?;
+        let as_of = i64::try_from(as_of.to_u64())
+            .map_err(|_| corrupt_error(source_digest, None, CorruptCause::InvariantViolation))?;
         transaction
             .execute(DELETE_ALL, [])
             .at_connection(transaction)?;
-        for row in tables.rows() {
+        for row in rows {
             transaction
                 .execute(
                     INSERT,
@@ -82,7 +81,7 @@ impl TestingContractDao for TestingContractDaoImpl {
                         row.contract(),
                         row.rendered(),
                         row.error(),
-                        tables.source_digest(),
+                        source_digest,
                         as_of,
                     ],
                 )
@@ -96,6 +95,7 @@ impl TestingContractDao for TestingContractDaoImpl {
 mod tests {
     use super::*;
     use crate::orchestration::JournalBatch;
+    use crate::read_tables::TestingTables;
     use core_command_domain::orchestration::TestingSections;
 
     fn tables(org: &str, scanned_to: Option<u64>) -> TestingTables {
@@ -116,7 +116,12 @@ mod tests {
             .create_table(&mut transaction)
             .unwrap();
         TestingContractDaoImpl
-            .replace(&mut transaction, tables)
+            .replace(
+                &mut transaction,
+                tables.rows(),
+                tables.source_digest(),
+                tables.as_of(),
+            )
             .unwrap();
         transaction.commit().unwrap();
     }
@@ -235,7 +240,12 @@ mod tests {
             .unwrap();
         let huge = tables("", Some(u64::MAX));
         assert!(matches!(
-            TestingContractDaoImpl.replace(&mut transaction, &huge),
+            TestingContractDaoImpl.replace(
+                &mut transaction,
+                huge.rows(),
+                huge.source_digest(),
+                huge.as_of()
+            ),
             Err(JournalReadError::Corrupt { .. })
         ));
     }

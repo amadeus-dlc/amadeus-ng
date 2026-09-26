@@ -128,9 +128,10 @@ pub use dto::SingleStageRunStartedDto;
 // 参照入力由来の単独面 — steering・テスト契約・計画指紋・Code Generation 開始可否 (PR2)。
 mod port;
 pub use port::{
-    CodeGenerationApprovalDao, DoctorCheckDao, DoctorCheckRow, DoctorReportDao, DoctorReportRow,
-    PlanFingerprintDao, SourceStamp, SteeringPartDao, SteeringPlanDao, TestingContractDao,
-    WorkspaceDoctorJournalEntry, WorkspaceDoctorJournalReader,
+    CodeGenerationApprovalDao, CodeGenerationApprovalRow, DoctorCheckDao, DoctorCheckRow,
+    DoctorReportDao, DoctorReportRow, PlanFingerprintDao, PlanFingerprintRow, SourceStamp,
+    SteeringPartDao, SteeringPartRow, SteeringPlanDao, SteeringPlanRow, TestingContractDao,
+    TestingContractRow, WorkspaceDoctorJournalEntry, WorkspaceDoctorJournalReader,
     WorkspaceDoctorProjectionCheckpointDao,
 };
 

@@ -2,9 +2,8 @@
 
 use rusqlite::{Connection, Transaction};
 
-use super::SourceStamp;
-use crate::orchestration::JournalReadError;
-use crate::read_tables::TestingTables;
+use super::{SourceStamp, TestingContractRow};
+use crate::orchestration::{GlobalSeqNr, JournalReadError};
 
 /// `read_testing_contract` 表の DAO。
 ///
@@ -33,8 +32,8 @@ pub trait TestingContractDao {
         id: &str,
     ) -> Result<Option<SourceStamp>, JournalReadError>;
 
-    /// 表の行をすべて `tables` の行に差し替える。`source_digest` と `as_of` は全行へ同じ値を
-    /// 書く (どちらも `tables` 全体の性質である)。
+    /// 表の行をすべて `rows` に差し替える。`source_digest` と `as_of` は全行へ同じ値を
+    /// 書く (どちらも断面全体の性質であり、行型には持たせない)。
     ///
     /// # Errors
     ///
@@ -42,6 +41,8 @@ pub trait TestingContractDao {
     fn replace(
         &self,
         transaction: &mut Transaction<'_>,
-        tables: &TestingTables,
+        rows: &[TestingContractRow],
+        source_digest: &str,
+        as_of: GlobalSeqNr,
     ) -> Result<(), JournalReadError>;
 }

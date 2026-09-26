@@ -2,9 +2,8 @@
 
 use rusqlite::{Connection, Transaction};
 
-use super::SourceStamp;
+use super::{CodeGenerationApprovalRow, SourceStamp};
 use crate::orchestration::JournalReadError;
-use crate::read_tables::CodeGenerationApprovalRow;
 
 /// `read_code_generation_approval` 表の DAO。
 ///

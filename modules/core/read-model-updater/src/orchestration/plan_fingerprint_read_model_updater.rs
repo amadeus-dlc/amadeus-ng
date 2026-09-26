@@ -5,7 +5,7 @@
 //! なので、冪等の鍵は処理したシーケンス番号ではなく行の `source_digest` である。
 //!
 //! ```text
-//! JournalReader.events_after(0) → 投影: PlanFingerprintRow::project
+//! JournalReader.events_after(0) → 投影: PlanFingerprintTables::project
 //!   BEGIN IMMEDIATE ─────────────────────────────────────────────── COMMIT
 //!     fingerprint DAO.find_stamp ── 描き直す必要が無ければ何も書かない
 //!     fingerprint DAO.save
@@ -88,11 +88,12 @@ impl<R: JournalReader, F: PlanFingerprintDao> ReadModelUpdater
     async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
         self.journal_reader.prepare_read_model()?;
         let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
-        let row = crate::read_tables::PlanFingerprintRow::project(
+        let tables = crate::read_tables::PlanFingerprintTables::project(
             &history,
             self.execution_id,
             self.input,
         )?;
+        let row = tables.row();
         let mut transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -101,7 +102,7 @@ impl<R: JournalReader, F: PlanFingerprintDao> ReadModelUpdater
         if already_projected(stamp.as_ref(), row.source_digest(), row.as_of()) {
             return Ok(());
         }
-        self.fingerprints.save(&mut transaction, &row)?;
+        self.fingerprints.save(&mut transaction, row)?;
         transaction.commit().at_store(&self.path)?;
         Ok(())
     }

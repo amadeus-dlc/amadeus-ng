@@ -2,9 +2,8 @@
 
 use rusqlite::{Connection, Transaction};
 
-use super::SourceStamp;
+use super::{PlanFingerprintRow, SourceStamp};
 use crate::orchestration::JournalReadError;
-use crate::read_tables::PlanFingerprintRow;
 
 /// `read_plan_fingerprint` 表の DAO。
 ///

@@ -5,7 +5,7 @@
 //! 冪等の鍵は処理したシーケンス番号ではなく行の `source_digest` である。
 //!
 //! ```text
-//! JournalReader.events_after(0) + 受領 → 投影: CodeGenerationApprovalRow::project
+//! JournalReader.events_after(0) + 受領 → 投影: CodeGenerationApprovalTables::project
 //!   BEGIN IMMEDIATE ─────────────────────────────────────────────── COMMIT
 //!     approval DAO.find_stamp ── 描き直す必要が無ければ何も書かない
 //!     approval DAO.save
@@ -30,7 +30,7 @@ use super::{
 /// 判断の材料は 2 つのジャーナルにまたがる — 空間側の集約（`IntentExecution` /
 /// `Intent`）はここで `replay` し、共有ランタイム側の受領は
 /// [`super::plan_approval_receipts`] が読んだものを受け取る。投影核
-/// （[`crate::read_tables::CodeGenerationApprovalRow::project`]）はどちらの読み手も
+/// （[`crate::read_tables::CodeGenerationApprovalTables::project`]）はどちらの読み手も
 /// 知らず、材料だけを受け取る。
 ///
 /// 読み手・実行・承認入力・受領は**借りる**。承認入力は呼出側が開始可否の判定後も
@@ -101,12 +101,13 @@ impl<R: JournalReader, A: CodeGenerationApprovalDao> ReadModelUpdater
     async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
         self.journal_reader.prepare_read_model()?;
         let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
-        let row = crate::read_tables::CodeGenerationApprovalRow::project(
+        let tables = crate::read_tables::CodeGenerationApprovalTables::project(
             &history,
             self.execution_id,
             self.input,
             self.receipts,
         )?;
+        let row = tables.row();
         let mut transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -115,7 +116,7 @@ impl<R: JournalReader, A: CodeGenerationApprovalDao> ReadModelUpdater
         if already_projected(stamp.as_ref(), row.source_digest(), row.as_of()) {
             return Ok(());
         }
-        self.approvals.save(&mut transaction, &row)?;
+        self.approvals.save(&mut transaction, row)?;
         transaction.commit().at_store(&self.path)?;
         Ok(())
     }

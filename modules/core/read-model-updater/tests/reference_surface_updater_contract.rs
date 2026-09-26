@@ -30,12 +30,13 @@ use core_command_domain::orchestration::{
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
     CodeGenerationApprovalDao as _, CodeGenerationApprovalDaoImpl,
-    CodeGenerationApprovalReadModelUpdater, GlobalSeqNr, JournalReadError, JournalReader as _,
-    JournalReaderImpl, PlanFingerprintDao as _, PlanFingerprintDaoImpl,
-    PlanFingerprintReadModelUpdater, ReadModelUpdateError, ReadModelUpdater, SourceStamp,
-    SteeringReadModelUpdater, SteeringSource, TestingReadModelUpdater,
+    CodeGenerationApprovalReadModelUpdater, CodeGenerationApprovalRow, GlobalSeqNr,
+    JournalReadError, JournalReader as _, JournalReaderImpl, PlanFingerprintDao as _,
+    PlanFingerprintDaoImpl, PlanFingerprintReadModelUpdater, PlanFingerprintRow,
+    ReadModelUpdateError, ReadModelUpdater, SourceStamp, SteeringReadModelUpdater, SteeringSource,
+    TestingReadModelUpdater,
 };
-use core_read_model_updater::read_tables::{CodeGenerationApprovalRow, PlanFingerprintRow};
+use core_read_model_updater::read_tables::{CodeGenerationApprovalTables, PlanFingerprintTables};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -527,7 +528,10 @@ async fn fingerprint_row(fixture: &Fixture, plan: &str) -> PlanFingerprintRow {
         .events_after(GlobalSeqNr::ZERO)
         .await
         .unwrap();
-    PlanFingerprintRow::project(&history, &execution_id(), &plan_input(plan)).unwrap()
+    PlanFingerprintTables::project(&history, &execution_id(), &plan_input(plan))
+        .unwrap()
+        .row()
+        .clone()
 }
 
 #[tokio::test]
@@ -702,13 +706,15 @@ async fn approval_row(fixture: &Fixture, plan: &str) -> CodeGenerationApprovalRo
         .events_after(GlobalSeqNr::ZERO)
         .await
         .unwrap();
-    CodeGenerationApprovalRow::project(
+    CodeGenerationApprovalTables::project(
         &history,
         &execution_id(),
         &plan_input(plan),
         &PlanReceipts::default(),
     )
     .unwrap()
+    .row()
+    .clone()
 }
 
 #[tokio::test]

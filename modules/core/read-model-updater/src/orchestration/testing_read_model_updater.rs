@@ -107,7 +107,12 @@ impl<R: JournalReader, T: TestingContractDao> ReadModelUpdater
         if current(self.contracts.find_stamp(&transaction, BARE_SPACE)?) {
             return Ok(());
         }
-        self.contracts.replace(&mut transaction, &tables)?;
+        self.contracts.replace(
+            &mut transaction,
+            tables.rows(),
+            tables.source_digest(),
+            tables.as_of(),
+        )?;
         transaction.commit().at_store(&self.path)?;
         Ok(())
     }
