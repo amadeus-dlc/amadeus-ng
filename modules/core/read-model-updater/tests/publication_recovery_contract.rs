@@ -894,7 +894,7 @@ async fn restoration_refuses_a_checkpoint_behind_its_saved_snapshot() {
 #[tokio::test]
 async fn update_refuses_a_saved_plan_for_different_targets_before_publication() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     let fixture = Fixture::new();
     let mut reader = fixture.reader();
@@ -917,7 +917,11 @@ async fn update_refuses_a_saved_plan_for_different_targets_before_publication() 
         reader,
         projection(),
         targets,
-        SteeringSource::new(fixture.root.path().join("memory")),
+        SteeringReadModelUpdater::open(
+            fixture.store.as_path(),
+            SteeringSource::new(fixture.root.path().join("memory")),
+        )
+        .unwrap(),
     );
 
     assert_eq!(
@@ -937,7 +941,7 @@ async fn update_refuses_a_saved_plan_for_different_targets_before_publication() 
 #[tokio::test]
 async fn update_refuses_a_saved_cut_that_has_disappeared_from_history() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     let fixture = Fixture::new();
     let mut reader = fixture.reader();
@@ -967,7 +971,11 @@ async fn update_refuses_a_saved_cut_that_has_disappeared_from_history() {
         reader,
         projection(),
         fixture.targets(),
-        SteeringSource::new(fixture.root.path().join("memory")),
+        SteeringReadModelUpdater::open(
+            fixture.store.as_path(),
+            SteeringSource::new(fixture.root.path().join("memory")),
+        )
+        .unwrap(),
     );
 
     assert_eq!(
@@ -1418,7 +1426,8 @@ async fn resolution_refuses_corrupt_history_before_replacing_the_saved_plan() {
 #[tokio::test]
 async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringSource, StructuredReadModelUpdater,
+        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
+        StructuredReadModelUpdater,
     };
     for reopen in [false, true] {
         for structured in [false, true] {
@@ -1449,7 +1458,11 @@ async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
                     reader,
                     projection(),
                     fixture.targets(),
-                    SteeringSource::new(fixture.root.path().join("memory")),
+                    SteeringReadModelUpdater::open(
+                        fixture.store.as_path(),
+                        SteeringSource::new(fixture.root.path().join("memory")),
+                    )
+                    .unwrap(),
                 );
                 updater.update_read_models().await.unwrap();
                 assert_eq!(updater.checkpoint().await.unwrap(), last);
@@ -1472,7 +1485,7 @@ async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
 #[tokio::test]
 async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     for with_state in [false, true] {
         let fixture = Fixture::new();
@@ -1517,7 +1530,11 @@ async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
             reader,
             projection(),
             targets,
-            SteeringSource::new(fixture.root.path().join("other-memory")),
+            SteeringReadModelUpdater::open(
+                fixture.store.as_path(),
+                SteeringSource::new(fixture.root.path().join("other-memory")),
+            )
+            .unwrap(),
         );
         assert!(matches!(
             updater.update_read_models().await,

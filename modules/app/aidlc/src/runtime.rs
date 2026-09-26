@@ -90,7 +90,8 @@ use core_query_use_case::orchestration::{
 };
 use core_read_model_updater::orchestration::{
     HookHealthReadModelUpdater, JournalReaderImpl, OrchestrationReadModelUpdater, ProjectionName,
-    ProjectionTargets, ReadModelUpdater, SteeringSource, StructuredReadModelUpdater,
+    ProjectionTargets, ReadModelUpdater, SteeringPartDaoImpl, SteeringPlanDaoImpl,
+    SteeringReadModelUpdater, SteeringSource, StructuredReadModelUpdater,
 };
 
 use crate::cli::{EngineRoute, Face, IntentCreateArgs, Invocation, Request, parse};
@@ -3098,14 +3099,18 @@ async fn update_read_models_with(layout: &Layout, restore_missing: bool) -> Resu
         .map_or_else(|| PROJECTION.to_string(), |id| format!("{PROJECTION}-{id}"));
     let projection =
         ProjectionName::parse(&name).map_err(|error| format!("projection name: {error:?}"))?;
-    let mut journal_reader = JournalReaderImpl::open(&store_path(layout)?)
-        .map_err(|error| format!("journal: {error}"))?;
+    let store = store_path(layout)?;
+    let mut journal_reader =
+        JournalReaderImpl::open(&store).map_err(|error| format!("journal: {error}"))?;
     if execution_id.is_some() {
         let legacy = ProjectionName::parse(PROJECTION)
             .map_err(|error| format!("projection name: {error:?}"))?;
-        OrchestrationReadModelUpdater::require_unpublished(&journal_reader, &legacy)
-            .await
-            .map_err(|error| format!("projection: {error}"))?;
+        OrchestrationReadModelUpdater::<
+            JournalReaderImpl,
+            SteeringReadModelUpdater<SteeringPlanDaoImpl, SteeringPartDaoImpl>,
+        >::require_unpublished(&journal_reader, &legacy)
+        .await
+        .map_err(|error| format!("projection: {error}"))?;
     }
     let clone_id = crate::clone_identity::load_or_mint(&layout.aidlc_root())
         .map_err(|error| format!("clone id: {error}"))?;
@@ -3130,9 +3135,12 @@ async fn update_read_models_with(layout: &Layout, restore_missing: bool) -> Resu
             .map_err(|error| format!("projection restoration: {error}"))?;
     }
     // 参照入力 (memory 層) はジャーナルとは別の入口である — 規則の編集はイベントを
-    // 伴わないので、読取先を明示的に渡す。
-    let steering =
-        SteeringSource::new(layout.memory_dir()).relative_to(layout.project_dir().to_path_buf());
+    // 伴わないので、読取先を明示的に渡す。steering の面は自分の表の DAO で書く更新器が描く。
+    let steering = SteeringReadModelUpdater::open(
+        store.as_path(),
+        SteeringSource::new(layout.memory_dir()).relative_to(layout.project_dir().to_path_buf()),
+    )
+    .map_err(|error| format!("projection: {error}"))?;
     let updater = OrchestrationReadModelUpdater::new(journal_reader, projection, targets, steering)
         .with_pipeline_handoff(pipeline_link::current(layout));
     let mut updater = match execution_id {

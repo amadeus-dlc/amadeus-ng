@@ -49,7 +49,8 @@ pub(super) async fn load(layout: &Layout) -> Result<TestingContractView, String>
     let store = store_path(layout)?;
     let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
     let source = SteeringSource::new(layout.memory_dir());
-    TestingReadModelUpdater::new(&mut reader, &source)
+    TestingReadModelUpdater::open(&mut reader, store.as_path(), &source)
+        .map_err(|error| error.to_string())?
         .update_read_models()
         .await
         .map_err(|error| error.to_string())?;
@@ -122,10 +123,16 @@ async fn fingerprint(layout: &Layout, args: &[String]) -> Result<String, String>
     .map_err(|error| error.to_string())?;
     let store = store_path(layout)?;
     let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
-    PlanFingerprintReadModelUpdater::new(&mut reader, cursor.execution_id(), &input)
-        .update_read_models()
-        .await
-        .map_err(|error| error.to_string())?;
+    PlanFingerprintReadModelUpdater::open(
+        &mut reader,
+        store.as_path(),
+        cursor.execution_id(),
+        &input,
+    )
+    .map_err(|error| error.to_string())?
+    .update_read_models()
+    .await
+    .map_err(|error| error.to_string())?;
     let daos = ReadModelDaos::open(store.as_path()).map_err(|error| error.to_string())?;
     let view = FindPlanFingerprintUseCase::new(daos.plan_fingerprint())
         .execute(cursor.execution_id().as_str(), &target.id())
@@ -263,12 +270,14 @@ pub(super) async fn approval(
     };
     let store = store_path(layout)?;
     let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
-    CodeGenerationApprovalReadModelUpdater::new(
+    CodeGenerationApprovalReadModelUpdater::open(
         &mut reader,
+        store.as_path(),
         cursor.execution_id(),
         &input,
         &receipts,
     )
+    .map_err(|error| error.to_string())?
     .update_read_models()
     .await
     .map_err(|error| error.to_string())?;

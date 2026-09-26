@@ -25,7 +25,6 @@
 use rusqlite::{Connection, Transaction, params};
 
 use super::ReadTables;
-use super::steering_tables::SteeringTables;
 
 /// 数を SQLite の `INTEGER` (i64) へ写す。
 ///
@@ -41,7 +40,13 @@ fn optional_integer(value: Option<usize>) -> Result<Option<i64>, rusqlite::Error
     value.map(integer).transpose()
 }
 
-/// 21 表の DDL (ジャーナル由来 17 + 参照入力由来 4)。
+/// ジャーナル由来の表の DDL。
+///
+/// 参照入力由来の表 (`read_steering_plan` / `read_steering_part` / `read_testing_contract` /
+/// `read_plan_fingerprint` / `read_code_generation_approval`) の DDL はここに無い — 表の DDL は
+/// その表の DAO が持つ (`coding-rules/read-model-updater-structure.md` 原則 3。
+/// `orchestration::SteeringPlanDaoImpl` ほか)。開く段でそれらを作るのは
+/// `JournalReaderImpl` がそれぞれの DAO を呼んで行う。
 ///
 /// **主キーはどの表も 1 列 `id`** である (オーナー裁定 2026-09-03 — 基本的な関係
 /// モデリング)。集約そのものを表す 3 表 (`read_definition` / `read_intent` /
@@ -55,36 +60,6 @@ fn optional_integer(value: Option<usize>) -> Result<Option<i64>, rusqlite::Error
 const CREATE_TABLES: &str = "
 CREATE TABLE IF NOT EXISTS read_session_audit (id TEXT PRIMARY KEY,aggregate_id TEXT NOT NULL,target TEXT NOT NULL,kind TEXT NOT NULL,as_of INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS read_artifact_audit (id TEXT PRIMARY KEY,target TEXT NOT NULL,file TEXT NOT NULL,tool TEXT NOT NULL,context TEXT NOT NULL,created INTEGER NOT NULL,occurred_at TEXT NOT NULL,as_of INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS read_plan_fingerprint (
-    id TEXT PRIMARY KEY,
-    execution_id TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    fingerprint TEXT,
-    error TEXT,
-    source_digest TEXT NOT NULL,
-    as_of INTEGER NOT NULL,
-    UNIQUE(execution_id,target_id)
-);
-CREATE TABLE IF NOT EXISTS read_code_generation_approval (
-    id TEXT PRIMARY KEY,
-    execution_id TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    ok INTEGER NOT NULL,
-    reason TEXT NOT NULL,
-    unit TEXT,
-    contract_hash TEXT,
-    source_digest TEXT NOT NULL,
-    as_of INTEGER NOT NULL,
-    UNIQUE(execution_id,target_id)
-);
-CREATE TABLE IF NOT EXISTS read_testing_contract (
-    id TEXT PRIMARY KEY,
-    contract TEXT,
-    rendered TEXT,
-    error TEXT,
-    source_digest TEXT NOT NULL,
-    as_of INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS read_answer_result (
     id TEXT PRIMARY KEY,
     answer_id TEXT NOT NULL UNIQUE,
@@ -331,21 +306,6 @@ CREATE TABLE IF NOT EXISTS read_scope_change (
   kind         TEXT    NOT NULL,
   as_of        INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS read_steering_plan (
-  id              TEXT PRIMARY KEY,
-  phase           TEXT    NOT NULL,
-  bundle_digest   TEXT    NOT NULL,
-  part_count      INTEGER NOT NULL,
-  delivered_paths TEXT    NOT NULL,
-  source_digest   TEXT    NOT NULL
-);
-CREATE TABLE IF NOT EXISTS read_steering_part (
-  id               TEXT    PRIMARY KEY,
-  steering_plan_id TEXT    NOT NULL,
-  phase            TEXT    NOT NULL,
-  part_index       INTEGER NOT NULL,
-  rules_content    TEXT    NOT NULL
-);
 ";
 
 /// 索引 — 自然キーの UNIQUE と、クエリ側が `WHERE` に置く列のセカンダリ。
@@ -382,10 +342,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS read_run_stage_key
   ON read_run_stage(definition_id, scope, stage_slug);
 CREATE UNIQUE INDEX IF NOT EXISTS read_scope_change_key
   ON read_scope_change(execution_id, scope);
-CREATE UNIQUE INDEX IF NOT EXISTS read_steering_plan_key
-  ON read_steering_plan(phase);
-CREATE UNIQUE INDEX IF NOT EXISTS read_steering_part_key
-  ON read_steering_part(phase, part_index);
 CREATE INDEX IF NOT EXISTS read_intent_definition_id
   ON read_intent(definition_id);
 CREATE INDEX IF NOT EXISTS read_execution_intent_id
@@ -396,10 +352,6 @@ CREATE INDEX IF NOT EXISTS read_run_stage_digests
   ON read_run_stage(route_digest, directive_digest);
 CREATE INDEX IF NOT EXISTS read_next_jump_target_slug
   ON read_next_jump(execution_id, target_slug);
-CREATE INDEX IF NOT EXISTS read_steering_plan_bundle_digest
-  ON read_steering_plan(bundle_digest);
-CREATE INDEX IF NOT EXISTS read_steering_part_plan
-  ON read_steering_part(steering_plan_id, part_index);
 ";
 
 /// ジャーナル由来 15 表の全差し替えの `DELETE` (DDL と同じ順)。
@@ -428,12 +380,6 @@ const JOURNAL_TABLES: &[&str] = &[
     "read_scope_change",
 ];
 
-/// 参照入力由来 2 表の全差し替えの `DELETE`。
-const DELETE_STEERING_TABLES: &str = "
-DELETE FROM read_steering_plan;
-DELETE FROM read_steering_part;
-";
-
 /// 読み面スキーマの版 (`PRAGMA user_version` に保存する値)。
 ///
 /// **列の形を変えたら必ず 1 つ上げる。** `CREATE TABLE IF NOT EXISTS` は既存の表には
@@ -447,6 +393,10 @@ DELETE FROM read_steering_part;
 pub(crate) const READ_SCHEMA_VERSION: i64 = 7;
 
 /// 17 表の `DROP` (版が動いたときだけ打つ — 索引は表と一緒に落ちる)。
+///
+/// 参照入力由来の表もここで落とす — 版は読み面全体の性質であり、その扱いは構造化面の移行
+/// (Issue #153 の PR4) で決める。落とした参照入力由来の表を作り直すのは、それぞれの表の
+/// DAO である (`JournalReaderImpl` が開く段で呼ぶ)。
 ///
 /// 落とすのは `read_*` 17 表**だけ**である。ジャーナル (`journal`) とスナップショット
 /// (`snapshot`) は本家の表であり、チェックポイント表 (`amadeus_projection_checkpoint`) は
@@ -939,60 +889,6 @@ pub(crate) fn replace_all(
     Ok(())
 }
 
-/// steering の 2 表の行を全部差し替える。
-///
-/// **ジャーナル由来の差し替えとは別のトランザクションである** — 参照入力はジャーナルの
-/// 走査位置と無関係に変わるので、チェックポイントの前進と束ねる理由が無い。整合性の鍵は
-/// `source_digest` であり、行と一緒に書かれる (設計 §3)。
-///
-/// トランザクションは**呼出側が持つ** (ジャーナル側と同じ流儀)。
-///
-/// # Errors
-///
-/// SQLite の失敗をそのまま返す (呼出側が I/O の失敗へ写す)。
-pub(crate) fn replace_steering(
-    transaction: &Transaction<'_>,
-    tables: &SteeringTables,
-) -> Result<(), rusqlite::Error> {
-    transaction.execute_batch(DELETE_STEERING_TABLES)?;
-    // 素になった参照入力はスナップショット全体の性質なので、全行に同じ値を書く
-    // (`as_of` と同じ流儀)。
-    let source_digest = tables.source_digest();
-
-    for row in tables.plans() {
-        transaction.execute(
-            "INSERT INTO read_steering_plan
-             (id, phase, bundle_digest, part_count, delivered_paths, source_digest)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                row.id(),
-                row.phase(),
-                row.bundle_digest(),
-                integer(row.part_count())?,
-                row.delivered_paths(),
-                source_digest
-            ],
-        )?;
-    }
-
-    for row in tables.parts() {
-        transaction.execute(
-            "INSERT INTO read_steering_part
-             (id, steering_plan_id, phase, part_index, rules_content)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                row.id(),
-                row.steering_plan_id(),
-                row.phase(),
-                integer(row.part_index())?,
-                row.rules_content()
-            ],
-        )?;
-    }
-
-    Ok(())
-}
-
 /// 同じ公開位置の候補が現在の行集合と一致するかを、外部へ公開せず比較する。
 pub(crate) fn matches_rows(
     transaction: &Transaction<'_>,
@@ -1056,77 +952,6 @@ fn read_row_values(connection: &rusqlite::Connection) -> Result<Vec<TableValues>
     Ok(tables)
 }
 
-pub(crate) fn replace_testing(
-    transaction: &Transaction<'_>,
-    tables: &super::TestingTables,
-) -> Result<(), rusqlite::Error> {
-    use rusqlite::OptionalExtension as _;
-    let prior: Option<i64> = transaction
-        .query_row(
-            "SELECT as_of FROM read_testing_contract WHERE id='bare-space'",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?;
-    let as_of = i64::try_from(tables.as_of().to_u64())
-        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    if prior.is_some_and(|prior| prior > as_of) {
-        return Ok(());
-    }
-    transaction.execute("DELETE FROM read_testing_contract", [])?;
-    for row in tables.rows() {
-        transaction.execute("INSERT INTO read_testing_contract (id,contract,rendered,error,source_digest,as_of) VALUES (?1,?2,?3,?4,?5,?6)", params![row.id(), row.contract(), row.rendered(), row.error(), tables.source_digest(), as_of])?;
-    }
-    Ok(())
-}
-
-pub(crate) fn replace_code_generation_approval(
-    transaction: &Transaction<'_>,
-    row: &super::CodeGenerationApprovalRow,
-) -> Result<(), rusqlite::Error> {
-    use rusqlite::OptionalExtension as _;
-    let previous: Option<(i64, String)> = transaction
-        .query_row(
-            "SELECT as_of,source_digest FROM read_code_generation_approval WHERE id=?1",
-            [row.id()],
-            |record| Ok((record.get(0)?, record.get(1)?)),
-        )
-        .optional()?;
-    let as_of = i64::try_from(row.as_of().to_u64())
-        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    if previous.is_some_and(|(prior, digest)| prior > as_of || digest == row.source_digest()) {
-        return Ok(());
-    }
-    transaction.execute(
-        "DELETE FROM read_code_generation_approval WHERE id=?1",
-        [row.id()],
-    )?;
-    transaction.execute("INSERT INTO read_code_generation_approval (id,execution_id,target_id,ok,reason,unit,contract_hash,source_digest,as_of) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![row.id(), row.execution_id(), row.target_id(), i64::from(row.ok()), row.reason(), row.unit(), row.contract_hash(), row.source_digest(), as_of])?;
-    Ok(())
-}
-
-pub(crate) fn replace_plan_fingerprint(
-    transaction: &Transaction<'_>,
-    row: &super::PlanFingerprintRow,
-) -> Result<(), rusqlite::Error> {
-    use rusqlite::OptionalExtension as _;
-    let previous: Option<(i64, String)> = transaction
-        .query_row(
-            "SELECT as_of,source_digest FROM read_plan_fingerprint WHERE id=?1",
-            [row.id()],
-            |record| Ok((record.get(0)?, record.get(1)?)),
-        )
-        .optional()?;
-    let as_of = i64::try_from(row.as_of().to_u64())
-        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    if previous.is_some_and(|(prior, digest)| prior > as_of || digest == row.source_digest()) {
-        return Ok(());
-    }
-    transaction.execute("DELETE FROM read_plan_fingerprint WHERE id=?1", [row.id()])?;
-    transaction.execute("INSERT INTO read_plan_fingerprint (id,execution_id,target_id,fingerprint,error,source_digest,as_of) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![row.id(), row.execution_id(), row.target_id(), row.fingerprint(), row.error(), row.source_digest(), as_of])?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     // 想定外ケースの即時失敗はテストの検証手段である (house style)。
@@ -1136,8 +961,12 @@ mod tests {
     )]
 
     use super::*;
-    use crate::orchestration::JournalBatch;
-    use crate::read_tables::{MemoryRules, RuleContent};
+    use crate::orchestration::{
+        JournalBatch, PlanFingerprintDao as _, PlanFingerprintDaoImpl, SteeringPartDao as _,
+        SteeringPartDaoImpl, SteeringPlanDao as _, SteeringPlanDaoImpl, TestingContractDao as _,
+        TestingContractDaoImpl,
+    };
+    use crate::read_tables::{MemoryRules, RuleContent, SteeringTables};
     use std::collections::BTreeMap;
 
     #[test]
@@ -1247,15 +1076,12 @@ mod tests {
         "read_artifact_audit",
     ];
 
-    /// 参照入力由来の表の名前 (別 Tx で差し替わる — `as_of` を持たない)。
-    const STEERING_TABLES: [&str; 2] = ["read_steering_plan", "read_steering_part"];
-
     /// 自然キーの UNIQUE インデックス (表・索引名・列)。
     ///
     /// 主キーは代理キー `id` なので、**自然キーの重複を止めるのはこの索引だけ**である。
     /// 集約そのものを表す 3 表 (`read_definition` / `read_intent` / `read_execution`) は
     /// 自然キー = 主キーなので、ここには載らない。
-    const NATURAL_KEY_INDEXES: [(&str, &str, &[&str]); 14] = [
+    const NATURAL_KEY_INDEXES: [(&str, &str, &[&str]); 12] = [
         (
             "read_definition_stage",
             "read_definition_stage_key",
@@ -1316,19 +1142,13 @@ mod tests {
             "read_scope_change_key",
             &["execution_id", "scope"],
         ),
-        ("read_steering_plan", "read_steering_plan_key", &["phase"]),
-        (
-            "read_steering_part",
-            "read_steering_part_key",
-            &["phase", "part_index"],
-        ),
     ];
 
     /// クエリ側が `WHERE` に置く列のセカンダリ索引 (表・索引名・列)。
     ///
     /// 自然キーの UNIQUE 索引が左端前置で使える引当 (例 `read_execution_stage` を
     /// `execution_id` で引く) はここに重ねない。
-    const LOOKUP_INDEXES: [(&str, &str, &[&str]); 7] = [
+    const LOOKUP_INDEXES: [(&str, &str, &[&str]); 5] = [
         (
             "read_intent",
             "read_intent_definition_id",
@@ -1349,16 +1169,6 @@ mod tests {
             "read_next_jump",
             "read_next_jump_target_slug",
             &["execution_id", "target_slug"],
-        ),
-        (
-            "read_steering_plan",
-            "read_steering_plan_bundle_digest",
-            &["bundle_digest"],
-        ),
-        (
-            "read_steering_part",
-            "read_steering_part_plan",
-            &["steering_plan_id", "part_index"],
         ),
     ];
 
@@ -1407,7 +1217,7 @@ mod tests {
         // 複合主キーにしない (オーナー裁定 2026-09-03)。関連行は FK 列 1 つで指せる。
         let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
         ensure_tables(&connection).expect("DDL");
-        for name in TABLES.into_iter().chain(STEERING_TABLES) {
+        for name in TABLES {
             assert_eq!(primary_key(&connection, name), ["id"], "{name}");
         }
     }
@@ -1461,7 +1271,7 @@ mod tests {
         let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
         ensure_tables(&connection).expect("初回の DDL");
         ensure_tables(&connection).expect("2 回目も通る (IF NOT EXISTS)");
-        for name in TABLES.into_iter().chain(STEERING_TABLES) {
+        for name in TABLES {
             let found: String = connection
                 .query_row(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -1471,86 +1281,6 @@ mod tests {
                 .unwrap_or_else(|_| panic!("{name} が作られている"));
             assert_eq!(found, name);
         }
-    }
-
-    /// 表の列の有無 (`pragma_table_info` の 1 行検索)。
-    fn has_column(connection: &Connection, table: &str, column: &str) -> bool {
-        let count: i64 = connection
-            .query_row(
-                &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
-                params![column],
-                |row| row.get(0),
-            )
-            .expect("pragma は引ける");
-        count == 1
-    }
-
-    #[test]
-    fn the_steering_tables_carry_no_scan_position_and_name_their_source_instead() {
-        // steering の面は参照入力由来である — ジャーナルの走査位置とは無関係なので
-        // `as_of` を持たない。いつ時点かを名乗るのは `source_digest` である。
-        let connection = Connection::open_in_memory().expect("メモリ DB は開ける");
-        ensure_tables(&connection).expect("DDL");
-        for name in STEERING_TABLES {
-            assert!(!has_column(&connection, name, "as_of"), "{name}");
-        }
-        assert!(has_column(
-            &connection,
-            "read_steering_plan",
-            "source_digest"
-        ));
-    }
-
-    #[test]
-    fn the_steering_rows_replace_wholesale_and_report_the_source_they_came_from() {
-        let mut connection = Connection::open_in_memory().expect("メモリ DB は開ける");
-        ensure_tables(&connection).expect("DDL");
-
-        let big = "x".repeat(12 * 1024);
-        let rules = MemoryRules::new(
-            vec![RuleContent::new(
-                "org.md".to_string(),
-                format!("# A\n{big}\n# B\n{big}\n"),
-            )],
-            BTreeMap::new(),
-        );
-        let tables = SteeringTables::pack(&rules).expect("パックできる");
-        let transaction = connection.transaction().expect("Tx は張れる");
-        replace_steering(&transaction, &tables).expect("書ける");
-        transaction.commit().expect("commit");
-
-        let plans: i64 = connection
-            .query_row("SELECT COUNT(*) FROM read_steering_plan", [], |row| {
-                row.get(0)
-            })
-            .expect("引ける");
-        assert_eq!(plans, 5, "5 フェーズすべてに計画の行が立つ");
-        let parts: i64 = connection
-            .query_row("SELECT COUNT(*) FROM read_steering_part", [], |row| {
-                row.get(0)
-            })
-            .expect("引ける");
-        assert_eq!(parts, 10, "2 部 × 5 フェーズ");
-        let digest: String = connection
-            .query_row(
-                "SELECT source_digest FROM read_steering_plan ORDER BY phase LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .expect("引ける");
-        assert_eq!(digest, tables.source_digest());
-
-        // 2 度目は全差し替え — 前の行が残らない。
-        let smaller = SteeringTables::pack(&MemoryRules::default()).expect("空も計画できる");
-        let transaction = connection.transaction().expect("Tx は張れる");
-        replace_steering(&transaction, &smaller).expect("書ける");
-        transaction.commit().expect("commit");
-        let parts: i64 = connection
-            .query_row("SELECT COUNT(*) FROM read_steering_part", [], |row| {
-                row.get(0)
-            })
-            .expect("引ける");
-        assert_eq!(parts, 0, "古い部が残らない");
     }
 
     #[test]
@@ -1567,8 +1297,19 @@ mod tests {
             BTreeMap::new(),
         ))
         .expect("パックできる");
-        let transaction = connection.transaction().expect("Tx は張れる");
-        replace_steering(&transaction, &steering).expect("書ける");
+        let mut transaction = connection.transaction().expect("Tx は張れる");
+        SteeringPlanDaoImpl
+            .create_table(&mut transaction)
+            .expect("DDL");
+        SteeringPartDaoImpl
+            .create_table(&mut transaction)
+            .expect("DDL");
+        SteeringPlanDaoImpl
+            .replace(&mut transaction, steering.plans(), steering.source_digest())
+            .expect("書ける");
+        SteeringPartDaoImpl
+            .replace(&mut transaction, steering.parts())
+            .expect("書ける");
         transaction.commit().expect("commit");
 
         let transaction = connection.transaction().expect("Tx は張れる");
@@ -1646,11 +1387,24 @@ mod tests {
     }
     #[test]
     fn rebuilding_the_schema_discards_testing_and_plan_reference_rows() {
-        let connection = Connection::open_in_memory().unwrap();
+        let mut connection = Connection::open_in_memory().unwrap();
         ensure_tables(&connection).unwrap();
+        let reference_tables = |connection: &mut Connection| {
+            let mut transaction = connection.transaction().unwrap();
+            TestingContractDaoImpl
+                .create_table(&mut transaction)
+                .unwrap();
+            PlanFingerprintDaoImpl
+                .create_table(&mut transaction)
+                .unwrap();
+            transaction.commit().unwrap();
+        };
+        reference_tables(&mut connection);
         connection.execute("INSERT INTO read_testing_contract (id,contract,rendered,error,source_digest,as_of) VALUES ('bare-space','old','old',NULL,'old',1)", []).unwrap();
         connection.execute("INSERT INTO read_plan_fingerprint (id,execution_id,target_id,fingerprint,error,source_digest,as_of) VALUES ('old','execution','stage:code-generation','old',NULL,'old',1)", []).unwrap();
         recreate_tables(&connection).unwrap();
+        // 落とした参照入力由来の表を作り直すのは、それぞれの表の DAO である。
+        reference_tables(&mut connection);
         for table in ["read_testing_contract", "read_plan_fingerprint"] {
             let count: i64 = connection
                 .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {

@@ -22,11 +22,13 @@
 
 use core_command_domain::workflow_definition::PhaseId;
 
+use super::digest;
+use super::json_column;
 use super::memory_rules::MemoryRules;
+use super::row_id;
 use super::rule_content::RuleContent;
-use super::steering_part_row::SteeringPartRow;
-use super::steering_plan_row::SteeringPlanRow;
 use super::unsplittable_section::UnsplittableSection;
+use crate::orchestration::{SteeringPartRow, SteeringPlanRow};
 
 /// チャンクのテキスト目標 (`STEERING_TEXT_TARGET_BYTES = 20 * 1024` — 02 §10)。
 const STEERING_TEXT_TARGET_BYTES: usize = 20 * 1024;
@@ -63,9 +65,9 @@ impl SteeringTables {
         for phase in phases() {
             let files = rules.files_for(phase);
             let chunks = pack_files(&files)?;
-            plans.push(SteeringPlanRow::of(phase, &files, &chunks));
+            plans.push(Self::plan_row(phase, &files, &chunks));
             for (position, chunk) in chunks.iter().enumerate() {
-                parts.push(SteeringPartRow::of(phase, position + 1, chunk));
+                parts.push(Self::part_row(phase, position + 1, chunk));
             }
             chunks_by_phase.push((phase, chunks));
         }
@@ -75,6 +77,36 @@ impl SteeringTables {
             chunks: chunks_by_phase,
             source_digest,
         })
+    }
+
+    /// フェーズ 1 つぶんの規則ファイル列とパック済みチャンク列を計画の 1 行へ写す。
+    ///
+    /// `bundle_digest` の素材は分割前の `files` (upstream `loaded.content`)、部数と台帳の素材は
+    /// 分割後の `chunks` である。
+    fn plan_row(
+        phase: PhaseId,
+        files: &[RuleContent],
+        chunks: &[Vec<RuleContent>],
+    ) -> SteeringPlanRow {
+        SteeringPlanRow::new(
+            row_id::steering_plan(phase.as_str()),
+            phase.as_str().to_string(),
+            digest::bundle(files),
+            chunks.len(),
+            json_column::strings(&delivered_paths(chunks)),
+        )
+    }
+
+    /// 1 部のチャンクを部の 1 行へ写す。`part_index` は呼び手が 1 始まりで採番する
+    /// (チャンク列の位置 + 1)。
+    fn part_row(phase: PhaseId, part_index: usize, chunk: &[RuleContent]) -> SteeringPartRow {
+        SteeringPartRow::new(
+            row_id::steering_part(phase.as_str(), part_index),
+            row_id::steering_plan(phase.as_str()),
+            phase.as_str().to_string(),
+            part_index,
+            json_column::rule_contents(chunk),
+        )
     }
 
     /// `read_steering_plan` の行 (フェーズ番号順)。
@@ -103,6 +135,20 @@ impl SteeringTables {
             .find(|(candidate, _)| *candidate == phase)
             .map_or(&[], |(_, chunks)| chunks.as_slice())
     }
+}
+
+/// パス台帳 — 読み順のまま、同じパスは 1 度だけ。
+///
+/// 1 ファイルが複数の piece へ割れても台帳の 1 行である。並べ替えも整列もしない
+/// (台帳は配信の順序そのものである)。
+fn delivered_paths(chunks: &[Vec<RuleContent>]) -> Vec<String> {
+    let mut paths: Vec<String> = Vec::new();
+    for piece in chunks.iter().flatten() {
+        if !paths.iter().any(|path| path == piece.path()) {
+            paths.push(piece.path().to_string());
+        }
+    }
+    paths
 }
 
 /// フェーズの全列挙 (番号順)。
@@ -426,5 +472,54 @@ mod tests {
             .find(|row| row.phase() == "ideation")
             .expect("ideation の行");
         assert_eq!(row.delivered_paths(), r#"["org.md","team.md"]"#);
+    }
+
+    #[test]
+    fn an_empty_plan_rows_zero_parts_and_an_empty_ledger() {
+        let row = SteeringTables::plan_row(PhaseId::Initialization, &[], &[]);
+        assert_eq!(row.phase(), "initialization");
+        assert_eq!(row.part_count(), 0);
+        assert_eq!(row.delivered_paths(), "[]");
+        assert!(
+            row.bundle_digest().starts_with("sha256:"),
+            "upstream の綴り"
+        );
+        assert_eq!(row.bundle_digest().len(), "sha256:".len() + 64);
+    }
+
+    #[test]
+    fn the_ledger_deduplicates_in_reading_order_across_chunk_boundaries() {
+        let files = vec![content("a.md", "124"), content("b.md", "3")];
+        let chunks = vec![
+            vec![content("a.md", "1"), content("a.md", "2")],
+            vec![content("b.md", "3"), content("a.md", "4")],
+        ];
+        let row = SteeringTables::plan_row(PhaseId::Inception, &files, &chunks);
+        assert_eq!(
+            row.delivered_paths(),
+            r#"["a.md","b.md"]"#,
+            "並べ替えず、同じパスは 1 度だけ"
+        );
+        assert_eq!(row.part_count(), 2);
+    }
+
+    #[test]
+    fn the_part_carries_its_pieces_as_a_path_and_text_array() {
+        let chunk = [content("org.md", "# Org\n")];
+        let row = SteeringTables::part_row(PhaseId::Ideation, 1, &chunk);
+        assert_eq!(row.phase(), "ideation");
+        assert_eq!(row.part_index(), 1);
+        assert_eq!(
+            row.rules_content(),
+            r##"[{"path":"org.md","text":"# Org\n"}]"##
+        );
+    }
+
+    #[test]
+    fn an_empty_chunk_is_an_empty_array_not_null() {
+        assert_eq!(
+            SteeringTables::part_row(PhaseId::Operation, 3, &[]).rules_content(),
+            "[]"
+        );
     }
 }

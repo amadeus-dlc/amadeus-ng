@@ -64,6 +64,11 @@ use super::journal_read_error::JournalReadError;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
 use super::store_failure::SqliteResultExt;
+use super::{
+    CodeGenerationApprovalDao as _, CodeGenerationApprovalDaoImpl, PlanFingerprintDao as _,
+    PlanFingerprintDaoImpl, SteeringPartDao as _, SteeringPartDaoImpl, SteeringPlanDao as _,
+    SteeringPlanDaoImpl, TestingContractDao as _, TestingContractDaoImpl,
+};
 use core_command_domain::orchestration::{
     Intent, IntentExecutionEvent, IntentExecutionId, IntentId,
 };
@@ -78,8 +83,8 @@ use super::dto::{
     DtoDecodeError, IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
 };
 use crate::read_tables::{
-    READ_SCHEMA_VERSION, ReadTables, SteeringTables, ensure_tables, read_schema_version,
-    recreate_tables, replace_all, replace_steering, set_schema_version,
+    READ_SCHEMA_VERSION, ReadTables, ensure_tables, read_schema_version, recreate_tables,
+    replace_all, set_schema_version,
 };
 use core_command_domain::workspace::StorePath;
 
@@ -111,10 +116,6 @@ const SELECT_CHECKPOINT: &str = "SELECT last_global_seq, anchor_aid, anchor_seq_
 
 /// チェックポイント位置の journal 行の識別子 (アンカーの記録・照合の両方が使う)。
 const SELECT_ANCHOR_ROW: &str = "SELECT aid, seq_nr FROM journal WHERE rowid = ?1";
-
-/// 保存済み steering 面の出所 (全行に同じ値が書かれているので 1 行で足りる)。
-const SELECT_STEERING_SOURCE: &str =
-    "SELECT source_digest FROM read_steering_plan ORDER BY phase LIMIT 1";
 
 /// チェックポイントの前進 (未登録なら登録)。
 const UPSERT_CHECKPOINT: &str =
@@ -231,12 +232,14 @@ impl JournalReaderImpl {
         connection
             .execute_batch(CREATE_CHECKPOINT_TABLE)
             .at_store(path.as_path())?;
-        // 構造化リードモデルの 21 表も我々の表である (本家の DDL とは衝突しない
+        // 構造化リードモデルの表も我々の表である (本家の DDL とは衝突しない
         // `read_` 接頭)。版が一致していれば冪等な `CREATE TABLE IF NOT EXISTS` だけ、
-        // 動いていれば落として作り直しジャーナルから描き直す。
+        // 動いていれば落として作り直しジャーナルから描き直す。参照入力由来の 5 表は、
+        // DDL の正本であるそれぞれの表の DAO に作らせる。
         let schema_changed =
             read_schema_version(&connection).at_store(path.as_path())? != READ_SCHEMA_VERSION;
         JournalReaderImpl::ensure_read_schema(&mut connection, path.as_path())?;
+        JournalReaderImpl::ensure_reference_tables(&mut connection, path.as_path())?;
         super::publication_store::initialize(&connection, path.as_path())?;
         super::shared_projection::initialize(&connection, path.as_path())?;
         if schema_changed {
@@ -472,6 +475,43 @@ impl JournalReaderImpl {
             .at_store(path)?;
         replace_all(&transaction, &tables).at_store(path)?;
         set_schema_version(&transaction, READ_SCHEMA_VERSION).at_store(path)?;
+        transaction.commit().at_store(path)
+    }
+
+    /// 参照入力由来の 5 表 (steering 2 表・テスト契約・計画指紋・Code Generation 開始可否) を
+    /// 無ければ作る。DDL の正本はそれぞれの表の DAO である。
+    ///
+    /// 表を書くのは面ごとの更新器 ([`super::SteeringReadModelUpdater`] ほか) だが、クエリ側は
+    /// その更新器がまだ一度も走っていないストアでも表を引く。読み面の表と同じく、開く段で
+    /// 表だけは揃えておく。読み面の版が動いて落とされた ([`recreate_tables`]) 後も、ここで
+    /// 空の表として作り直す (行は次の更新が保存済みの出所を `None` と見て描き直す)。
+    ///
+    /// 表が揃っているか (`table_exists`) は書込ロックを取らずに見る。揃っていれば書込
+    /// トランザクションを開かない。欠けているときだけ `BEGIN IMMEDIATE` で開いて作る
+    /// (DEFERRED で開くと、スキーマを読んでから書込へ昇格するときに busy timeout を待たずに
+    /// 即失敗しうる — #134)。
+    ///
+    /// 暫定である — 表の用意 (DDL・版による DROP) をどこが持つかは Issue #153 の PR4 で決める。
+    fn ensure_reference_tables(
+        connection: &mut Connection,
+        path: &Path,
+    ) -> Result<(), JournalReadError> {
+        let complete = SteeringPlanDaoImpl.table_exists(connection)?
+            && SteeringPartDaoImpl.table_exists(connection)?
+            && TestingContractDaoImpl.table_exists(connection)?
+            && PlanFingerprintDaoImpl.table_exists(connection)?
+            && CodeGenerationApprovalDaoImpl.table_exists(connection)?;
+        if complete {
+            return Ok(());
+        }
+        let mut transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .at_store(path)?;
+        SteeringPlanDaoImpl.create_table(&mut transaction)?;
+        SteeringPartDaoImpl.create_table(&mut transaction)?;
+        TestingContractDaoImpl.create_table(&mut transaction)?;
+        PlanFingerprintDaoImpl.create_table(&mut transaction)?;
+        CodeGenerationApprovalDaoImpl.create_table(&mut transaction)?;
         transaction.commit().at_store(path)
     }
 
@@ -1070,33 +1110,6 @@ impl JournalReader for JournalReaderImpl {
         transaction.commit().at_store(path.as_path())
     }
 
-    async fn replace_plan_fingerprint(
-        &mut self,
-        row: &crate::read_tables::PlanFingerprintRow,
-    ) -> Result<(), JournalReadError> {
-        let path = self.path.clone();
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path.as_path())?;
-        crate::read_tables::replace_plan_fingerprint(&transaction, row).at_store(path.as_path())?;
-        transaction.commit().at_store(path.as_path())
-    }
-
-    async fn replace_code_generation_approval(
-        &mut self,
-        row: &crate::read_tables::CodeGenerationApprovalRow,
-    ) -> Result<(), JournalReadError> {
-        let path = self.path.clone();
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path.as_path())?;
-        crate::read_tables::replace_code_generation_approval(&transaction, row)
-            .at_store(path.as_path())?;
-        transaction.commit().at_store(path.as_path())
-    }
-
     async fn replace_pipeline(
         &mut self,
         tables: &crate::read_tables::PipelineTables,
@@ -1129,50 +1142,6 @@ impl JournalReader for JournalReaderImpl {
         }
         transaction.commit().at_store(path.as_path())?;
         Ok(())
-    }
-
-    async fn testing_source_digest(&self) -> Result<Option<String>, JournalReadError> {
-        self.connection
-            .query_row(
-                "SELECT source_digest FROM read_testing_contract WHERE id='bare-space'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .at_store(self.path.as_path())
-    }
-    async fn replace_testing(
-        &mut self,
-        tables: &crate::read_tables::TestingTables,
-    ) -> Result<(), JournalReadError> {
-        let path = self.path.clone();
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path.as_path())?;
-        crate::read_tables::replace_testing(&transaction, tables).at_store(path.as_path())?;
-        transaction.commit().at_store(path.as_path())
-    }
-
-    async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError> {
-        self.connection
-            .query_row(SELECT_STEERING_SOURCE, [], |row| row.get(0))
-            .optional()
-            .at_store(self.path.as_path())
-    }
-
-    async fn replace_steering(&mut self, tables: &SteeringTables) -> Result<(), JournalReadError> {
-        let path = self.path.clone();
-        // 読み取ってから書くので `BEGIN IMMEDIATE` で書込ロックを最初に取る (BR2.3)。
-        // チェックポイントの前進とは**別の Tx** である — 参照入力はジャーナルの走査位置と
-        // 無関係に変わるので束ねる理由が無く、束ねると規則を 1 文字直すたびにチェック
-        // ポイントの書込ロックを取り合うことになる。
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path.as_path())?;
-        replace_steering(&transaction, tables).at_store(path.as_path())?;
-        transaction.commit().at_store(path.as_path())
     }
 }
 
@@ -2811,5 +2780,59 @@ pub(super) mod tests {
             decode_cause(&DtoDecodeError::InvariantViolation),
             CorruptCause::InvariantViolation
         );
+    }
+
+    /// 参照入力由来の表が揃っていれば、開く段の用意は書込ロックを取らない。
+    ///
+    /// 別の接続が `BEGIN IMMEDIATE` で書込ロックを握っていても、busy timeout を待たずに
+    /// 返る (IMMEDIATE で開いていた頃は、表が在っても待たされ `WouldBlock` で落ちた)。
+    #[test]
+    fn preparing_existing_reference_tables_does_not_wait_for_a_write_lock() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let path = dir.path().join("store.sqlite");
+        let mut connection = Connection::open(&path).expect("接続");
+        connection
+            .busy_timeout(Duration::from_millis(2000))
+            .expect("待ち時間");
+        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("初回は作る");
+
+        let (locked_sender, locked_receiver) = std::sync::mpsc::channel::<()>();
+        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
+        let holder_path = path.clone();
+        let holder = std::thread::spawn(move || {
+            let holder = Connection::open(&holder_path).expect("握る側の接続");
+            holder.execute_batch("BEGIN IMMEDIATE").expect("書込ロック");
+            locked_sender.send(()).expect("合図");
+            let _ = release_receiver.recv();
+            holder.execute_batch("END").expect("手放す");
+        });
+        locked_receiver.recv().expect("ロックを握った");
+
+        let started = std::time::Instant::now();
+        let result = JournalReaderImpl::ensure_reference_tables(&mut connection, &path);
+        let waited = started.elapsed();
+        drop(release_sender);
+        holder.join().expect("握る側が終わる");
+
+        assert_eq!(result, Ok(()));
+        assert!(
+            waited < Duration::from_millis(1000),
+            "書込ロックを待った (所要 {waited:?})"
+        );
+    }
+
+    /// 参照入力由来の表が 1 つでも欠けていれば、開く段で作り直す。
+    #[test]
+    fn a_missing_reference_table_is_created_again() {
+        let dir = tempfile::tempdir().expect("一時 dir");
+        let path = dir.path().join("store.sqlite");
+        let mut connection = Connection::open(&path).expect("接続");
+        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("初回は作る");
+        connection
+            .execute_batch("DROP TABLE read_plan_fingerprint")
+            .expect("1 表を落とす");
+        assert!(!PlanFingerprintDaoImpl.table_exists(&connection).unwrap());
+        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("作り直す");
+        assert!(PlanFingerprintDaoImpl.table_exists(&connection).unwrap());
     }
 }

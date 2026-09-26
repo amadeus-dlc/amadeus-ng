@@ -4,13 +4,42 @@
 [read-model-updater-structure.md](aidlc-shared/coding-rules/read-model-updater-structure.md)（オーナー裁定 2026-09-26）。
 この文書は規則ではなく、順序と残作業の記録である。
 
-## 現状（PR1 の後）
+## 現状（PR2 の後）
 
-- **移行済み**: 自己診断（`WorkspaceDoctorReadModelUpdater`）。表の DAO 3 本（`DoctorReportDao` /
+- **移行済み（PR1）**: 自己診断（`WorkspaceDoctorReadModelUpdater`）。表の DAO 3 本（`DoctorReportDao` /
   `DoctorCheckDao` / `WorkspaceDoctorProjectionCheckpointDao`）と、ジャーナルの読み手 `WorkspaceDoctorJournalReader`。
   処理したシーケンス番号（ジャーナル上の位置）より後だけを読み、2 表と番号を 1 つの IMMEDIATE トランザクションで確定する。
-- **未移行**: 下表のすべて。`JournalReader` はまだ `prepare_read_model` / `publish` / `advance_checkpoint` /
-  `replace_*` / `pending_publication` / `*_source_digest` を抱えている。
+- **移行済み（PR2）**: 参照入力由来の単独面。表の DAO 5 本（`SteeringPlanDao` / `SteeringPartDao` /
+  `TestingContractDao` / `PlanFingerprintDao` / `CodeGenerationApprovalDao`、各表の DDL は各 DAO が持つ）と、
+  DAO が運ぶ行（`SteeringPlanRow` / `SteeringPartRow` / `TestingContractRow` / `PlanFingerprintRow` /
+  `CodeGenerationApprovalRow`）と読む出所 `SourceStamp`（`source_digest` 列 + `as_of` 列）を `orchestration/port/` に
+  置いた。行は完全コンストラクタ `new` だけを持つ値であり、材料から行を組む投影は `read_tables` 側の投影単位の
+  結果型が持つ（`SteeringTables::pack` / `TestingTables::project` / `PlanFingerprintTables::project` /
+  `CodeGenerationApprovalTables::project`）。
+  - steering は新しい更新器 `SteeringReadModelUpdater` が描く。取得ループ（`OrchestrationReadModelUpdater`）は
+    steering の更新器を型引数で持ち、ジャーナル差分の探りより前に起動するだけになった。2 表は 1 つの IMMEDIATE
+    トランザクションで差し替える。
+  - `TestingReadModelUpdater` / `PlanFingerprintReadModelUpdater` / `CodeGenerationApprovalReadModelUpdater` は
+    接続を 1 本所有し（`open`）、表の DAO へトランザクションを渡す。履歴の読取と `prepare_read_model` は、まだ
+    移していないので借りた `JournalReader` に残る。
+  - 冪等は番号ではなく行の `source_digest` で取る（今までどおり）。「同じ照合子か、保存済みの行のほうが新しい
+    履歴位置（`as_of`）なら書かない」判断は更新器が持つ。steering とテスト契約は、今までどおり書込ロックを取らずに
+    比べてから、動いていれば IMMEDIATE で開いて比べ直す（計画指紋と開始可否は今までどおり IMMEDIATE の中で比べる）。
+  - `JournalReader` から `steering_source_digest` / `replace_steering` / `testing_source_digest` / `replace_testing` /
+    `replace_plan_fingerprint` / `replace_code_generation_approval` を消した（互換の口は残していない）。
+  - **暫定**: 表の用意（DDL・版による DROP）をどこが持つかは PR4 で決める — それまで `JournalReaderImpl` が
+    各 DAO の `create_table` を呼ぶ暫定。開く段で 5 表を作るのは `JournalReaderImpl::open` が各表の DAO の
+    `create_table` を呼んで行い（クエリ側は面ごとの更新器がまだ走っていないストアでも表を引くため）、読み面の版
+    （`PRAGMA user_version`）が動いたときに 5 表を落とす処理は `read_tables` の `DROP` に残してある。
+  - **開く段の書込ロック**: 更新器の `open` と `JournalReaderImpl` の 5 表の用意は、各 DAO の `table_exists`
+    （`sqlite_master` の読取）で表が揃っているかを書込ロックを取らずに見て、揃っていれば書込トランザクションを
+    開かない。欠けているときだけ `BEGIN IMMEDIATE` で開いて `create_table` を呼ぶ（DEFERRED で開くとスキーマを
+    読んでから書込へ昇格するので #134 の即時 `SQLITE_BUSY` になりうる）。これで、表が揃っていて参照入力も
+    動いていない更新は、この 5 表について書込ロックを取らない。ただし `JournalReaderImpl::open` 全体としては、
+    PR2 の範囲外の既存の書込（`shared_projection::initialize` の `INSERT OR IGNORE` など）が今も書込ロックを
+    取る。これも PR4 の「表の用意をどこが持つか」と一緒に扱う。
+- **未移行**: 下表の 3 以降。`JournalReader` はまだ `prepare_read_model` / `publish` / `advance_checkpoint` /
+  `replace_pipeline` / `pending_publication` を抱えている。
 
 ## PR の順序
 
@@ -20,10 +49,10 @@
 
 | PR | 対象 | 移す書込 | 表・ファイル（DAO 1 本ずつ） | 要点 |
 | --- | --- | --- | --- | --- |
-| 1 | 自己診断 | 済 | `read_doctor_report` / `read_doctor_check` / `workspace_doctor_projection_checkpoint` | 本 PR |
-| 2 | 参照入力由来の単独面 | `replace_steering` / `replace_testing` / `replace_plan_fingerprint` / `replace_code_generation_approval` と対の `*_source_digest` 読取 | `read_steering_plan` / `read_steering_part` / `read_testing_contract` / `read_plan_fingerprint` / `read_code_generation_approval` | もともとチェックポイントと別の Tx。ジャーナルではなく参照入力由来なので、番号ではなく `source_digest`（行の列）で冪等。steering は 2 表を 1 Tx で書く |
+| 1 | 自己診断 | 済 | `read_doctor_report` / `read_doctor_check` / `workspace_doctor_projection_checkpoint` | 済（#161） |
+| 2 | 参照入力由来の単独面（済） | `replace_steering` / `replace_testing` / `replace_plan_fingerprint` / `replace_code_generation_approval` と対の `*_source_digest` 読取 | `read_steering_plan` / `read_steering_part` / `read_testing_contract` / `read_plan_fingerprint` / `read_code_generation_approval` | もともとチェックポイントと別の Tx。ジャーナルではなく参照入力由来なので、番号ではなく `source_digest`（行の列）で冪等。steering は 2 表を 1 Tx で書く |
 | 3 | Pipeline 面 | `replace_pipeline` | `read_pipeline_progress` | #134 の IMMEDIATE をそのまま DAO の呼び手（更新器）へ移す。「保存済みの位置より古ければ書かない」判定は更新器へ（DAO は 1 表の I/O だけ） |
-| 4 | 構造化面 17 表 | `advance_checkpoint`（`replace_all` + チェックポイント前進 + アンカー照合）と `prepare_read_model` / `rebuild_read_model` | `read_*` 17 表を表ごとの DAO に、`amadeus_projection_checkpoint` を DAO に、`shared_projection` の表を DAO に | 最大の PR。17 表 + 番号を 1 IMMEDIATE Tx。アンカー照合（位置の行の `aid`/`seq_nr`）は番号の表 + ジャーナルをまたぐ検査なので、DAO ではなく更新器（ジャーナルの読み手で読んだ行と、番号の DAO で読んだ値を比べる）に置く。スキーマ版（`PRAGMA user_version`）の扱いも決める |
+| 4 | 構造化面 17 表 | `advance_checkpoint`（`replace_all` + チェックポイント前進 + アンカー照合）と `prepare_read_model` / `rebuild_read_model` | `read_*` 17 表を表ごとの DAO に、`amadeus_projection_checkpoint` を DAO に、`shared_projection` の表を DAO に | 最大の PR。17 表 + 番号を 1 IMMEDIATE Tx。アンカー照合（位置の行の `aid`/`seq_nr`）は番号の表 + ジャーナルをまたぐ検査なので、DAO ではなく更新器（ジャーナルの読み手で読んだ行と、番号の DAO で読んだ値を比べる）に置く。スキーマ版（`PRAGMA user_version`）の扱いも決める。**表の用意（DDL・版による DROP）をどこが持つかもここで決める** — それまで `JournalReaderImpl` が各 DAO の `create_table` を呼ぶ暫定（PR2 で入れた） |
 | 5 | 公開（Markdown 面） | `publish` / `pending_publication` / `restore_missing_files` / `resolve_publication` | `aidlc-state.md`・監査シャード・規則ファイル（ファイル 1 本 = DAO 1 本）、公開計画の表（`amadeus_publication*` 6 表） | 下記「ファイルと表の原子性」。監査シャード（追記）はファイルごとの反映済み番号で冪等にする |
 | 6 | 承認ランタイム | `PlanApprovalJournalReader::replace` | `read_plan_operation` / `read_plan_answer` / `read_plan_generation` / `amadeus_plan_projection_checkpoint`、承認ファイル群 | `PlanApprovalJournalReader` を読むだけに縮める。ファイルの公開を Tx の外へ出す（下記） |
 | 7 | 心拍 | `HookHealthReadModelUpdater` の生 SQL とファイル書込 | `read_hook_health` / `hook_health_projection_checkpoint`、`<hook>.last`（置換）/ `<hook>.drops`（追記） | 番号が今は `MAX(seq_nr)`（集約内の通番）で、差分読取に使われていない。ジャーナル上の位置へ直す。`.drops` の冪等を「末尾一致の推測」からファイルごとの反映済み番号へ置き換える |

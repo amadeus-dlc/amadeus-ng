@@ -22,7 +22,12 @@
 //! | [`ReadTables`] | ジャーナルの全履歴 | 17 表 | `as_of` (走査位置) | チェックポイントと同一 |
 //! | [`SteeringTables`] | 参照入力 (memory 層の規則ファイル) | 2 表 | `source_digest` | 別 Tx |
 //! | [`TestingTables`] | memory と依頼条件 | 1 表 | `source_digest` | 別 Tx |
-//! | [`PlanFingerprintRow`] | 計画文書・規則・現在の発行 | 1 表 | `source_digest` | 別 Tx |
+//! | [`PlanFingerprintTables`] | 計画文書・規則・現在の発行 | 1 表 | `source_digest` | 別 Tx |
+//! | [`CodeGenerationApprovalTables`] | 計画文書・規則・共有側の受領 | 1 表 | `source_digest` | 別 Tx |
+//!
+//! 参照入力由来の表の**行の型**は、表の DAO が運ぶ値として RMU のポート
+//! ([`crate::orchestration`] の `SteeringPlanRow` ほか) に置く。ここに在るのは材料から
+//! 行を組む投影だけである。
 //!
 //! 分けるのは、規則ファイルの編集がイベントを 1 件も伴わないからである。ジャーナルの走査
 //! 位置と無関係に変わるものを `as_of` で名乗らせると、「進んでいないのに行が動いた」という
@@ -87,8 +92,6 @@ mod scope_change_row;
 mod spelling;
 mod sql;
 mod stage_lookup;
-mod steering_part_row;
-mod steering_plan_row;
 mod steering_tables;
 mod unsplittable_section;
 
@@ -111,8 +114,6 @@ pub use request_kind::RequestKind;
 pub use rule_content::RuleContent;
 pub use run_stage_row::RunStageRow;
 pub use scope_change_row::ScopeChangeRow;
-pub use steering_part_row::SteeringPartRow;
-pub use steering_plan_row::SteeringPlanRow;
 pub use steering_tables::SteeringTables;
 pub use unsplittable_section::UnsplittableSection;
 
@@ -123,7 +124,7 @@ pub(crate) use row_id::doctor_check;
 
 pub(crate) use sql::{
     READ_SCHEMA_VERSION, content_digest, ensure_tables, matches_rows, read_schema_version,
-    recreate_tables, replace_all, replace_steering, set_schema_version,
+    recreate_tables, replace_all, set_schema_version,
 };
 
 /// 1 回の投影で作った `read_*` 表の全行。
@@ -596,19 +597,14 @@ fn replay_executions(history: &JournalBatch) -> Result<Vec<IntentExecution>, Rea
     }
     Ok(replayed)
 }
-mod testing_contract_row;
-pub use testing_contract_row::TestingContractRow;
 mod testing_tables;
 pub use testing_tables::TestingTables;
 
-pub(crate) use sql::replace_testing;
-mod plan_fingerprint_row;
-pub use plan_fingerprint_row::PlanFingerprintRow;
-pub(crate) use sql::replace_plan_fingerprint;
+mod plan_fingerprint_tables;
+pub use plan_fingerprint_tables::PlanFingerprintTables;
 
-mod code_generation_approval_row;
-pub use code_generation_approval_row::CodeGenerationApprovalRow;
-pub(crate) use sql::replace_code_generation_approval;
+mod code_generation_approval_tables;
+pub use code_generation_approval_tables::CodeGenerationApprovalTables;
 
 mod plan_approval_tables;
 pub use plan_approval_tables::PlanApprovalTables;
