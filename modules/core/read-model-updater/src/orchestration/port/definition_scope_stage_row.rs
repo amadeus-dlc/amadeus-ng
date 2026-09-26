@@ -1,9 +1,5 @@
 //! `DefinitionScopeStageRow` — `read_definition_scope_stage` の 1 行 (スコープ × ステージの計画)。
 
-use core_command_domain::workflow_definition::{PlanAction, StageSlug, WorkflowDefinitionId};
-
-use super::row_id;
-
 /// `read_definition_scope_stage` の 1 行。主キーは 1 列 `id` (自然キー
 /// (`definition_id`, `scope`, `stage_slug`) から導いた代理キー)。`definition_id` は
 /// `read_definition.id` を指す FK である。
@@ -13,6 +9,9 @@ use super::row_id;
 /// ときは答えが無いので、行も NULL にする。**「答えが無い」を EXECUTE や SKIP へ丸めない**。
 ///
 /// `in_scope_order` は EXECUTE の行にだけ付く文書順の連番 (0 始まり) である。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
 ///
 /// [`WorkflowDefinition::stages_in_scope`]: core_command_domain::workflow_definition::WorkflowDefinition::stages_in_scope
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,21 +25,22 @@ pub struct DefinitionScopeStageRow {
 }
 
 impl DefinitionScopeStageRow {
-    /// スコープ × ステージの 1 セルを 1 行へ写す (**この型の唯一の構築経路**)。
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(
-        definition_id: &WorkflowDefinitionId,
-        scope: &str,
-        stage_slug: &StageSlug,
-        action: Option<PlanAction>,
+    pub const fn new(
+        id: String,
+        definition_id: String,
+        scope: String,
+        stage_slug: String,
+        action: Option<String>,
         in_scope_order: Option<usize>,
-    ) -> DefinitionScopeStageRow {
-        DefinitionScopeStageRow {
-            id: row_id::definition_scope_stage(definition_id.as_str(), scope, stage_slug.as_str()),
-            definition_id: definition_id.as_str().to_string(),
-            scope: scope.to_string(),
-            stage_slug: stage_slug.as_str().to_string(),
-            action: action.map(PlanAction::as_str).map(str::to_string),
+    ) -> Self {
+        Self {
+            id,
+            definition_id,
+            scope,
+            stage_slug,
+            action,
             in_scope_order,
         }
     }

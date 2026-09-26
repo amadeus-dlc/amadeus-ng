@@ -33,11 +33,11 @@ use core_command_domain::workflow_definition::{
 };
 use core_command_domain::workspace::HumanTurns;
 use core_read_model_updater::orchestration::{
-    DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry,
+    DefinitionEntry, ExecutionRow, GlobalSeqNr, JournalBatch, JournalEntry, NextAnswerRow,
+    RunStageRow,
 };
 use core_read_model_updater::read_tables::{
-    ExecutionRow, MemoryRules, NextAnswerRow, ReadTables, ReadTablesError, RequestKind,
-    RunStageRow, SteeringTables,
+    MemoryRules, ReadTables, ReadTablesError, RequestKind, SteeringTables,
 };
 
 const DEFINITION: &str = "claude";
@@ -1261,43 +1261,6 @@ fn bare_answer(tables: &ReadTables) -> &NextAnswerRow {
                 && row.request_kind() == RequestKind::Bare.as_str()
         })
         .expect("素の要求の行が在る")
-}
-
-/// 別 intent を渡した行の組み立ては答えを持たず、材料不足として `Err` を返す。
-///
-/// 集約のクエリ `next_decision` は 2026-09-06 の切替で取り違えガード (BR2.6) を持ち
-/// `Err(IntentMismatch)` を返すようになった。RMU はその `Err` を握り潰して部分的な行を
-/// 書かず、既存の材料不足 (`IntentUnavailable`) にそのまま写して上へ流す。
-#[test]
-fn a_foreign_intent_yields_no_answer_row_but_a_missing_material_error() {
-    let (execution, _) = running_events();
-    // 同じ計画で別 ID の intent を起こす (照合だけが違う)。
-    let foreign = Intent::from((
-        Created::new(
-            IntentEventId::parse("0191aaaa-bbbb-7ccc-9ddd-eeeeffff0009").expect("UUIDv7"),
-            IntentId::parse("01a02785-1bd8-76eb-aeea-5aa303ebd5b7").expect("UUIDv7"),
-            definition_id(),
-            revision('1'),
-            StartRequest::new("classic", "build the thing")
-                .with_depth("standard")
-                .with_test_strategy("standard")
-                .with_review("adversarial"),
-            stages(),
-            scan(),
-        ),
-        at(),
-    ));
-    let error = NextAnswerRow::of(&execution, &foreign, RequestKind::Bare, &BTreeSet::new())
-        .expect_err("取り違えは行にならない");
-    assert_eq!(
-        error,
-        ReadTablesError::IntentUnavailable {
-            execution_id: execution_a().as_str().to_string(),
-            intent_id: intent_id().as_str().to_string(),
-        }
-    );
-    // 自分の intent なら従来どおり行になる (照合は行の前段のガードにすぎない)。
-    assert!(NextAnswerRow::of(&execution, &intent(), RequestKind::Bare, &BTreeSet::new()).is_ok());
 }
 
 #[test]

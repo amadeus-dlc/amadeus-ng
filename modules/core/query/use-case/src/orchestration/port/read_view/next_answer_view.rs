@@ -18,8 +18,8 @@ use super::super::super::gate_field::GateField;
 /// `coding-rules/cqrs-boundaries.md` 規則 6)。
 ///
 /// `run_stage_id` が `None` なのは **RMU が「材料は無い」と書いた**ということである
-/// (`NextAnswerRow::of` — 決定が run-stage のとき、かつ指す先が同じスナップショットに在る
-/// ときだけ値を持つ)。`stage_slug` が非 NULL でも `run_stage_id` が NULL なことはある
+/// (RMU の `next_answer_projection::row` — 決定が run-stage のとき、かつ指す先が
+/// 同じスナップショットに在るときだけ値を持つ)。`stage_slug` が非 NULL でも `run_stage_id` が NULL なことはある
 /// (park の答えは位置を名乗るが run-stage ではない) ので、**slug から材料を引き直しては
 /// ならない** — それは行に無い事実を作ることである。
 #[derive(Debug, Clone, PartialEq, Eq)]

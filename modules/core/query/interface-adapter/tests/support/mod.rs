@@ -233,8 +233,8 @@ fn intent() -> Intent {
 ///
 /// `park` が真なら続けて park マーカーを置く。park 中の実行は素の `next` に対して
 /// 集約が `Parked` を返すので、`read_next_answer` の `bare` 行は **`stage_slug` を持つのに
-/// `run_stage_id` は NULL** という形になる (`NextAnswerRow::of` — FK は決定が run-stage の
-/// ときだけ書かれる)。同じ実行の `reentry` 行は park ガードを外して `RunStage` になるので
+/// `run_stage_id` は NULL** という形になる (RMU の `next_answer_projection::row` — FK は
+/// 決定が run-stage のときだけ書かれる)。同じ実行の `reentry` 行は park ガードを外して `RunStage` になるので
 /// FK を持つ。この対が「FK をたどる」と「自然キーで結合し直す」の違いを見分ける。
 fn execution_events(park: bool) -> Vec<(usize, IntentExecutionEvent)> {
     let intent = intent();

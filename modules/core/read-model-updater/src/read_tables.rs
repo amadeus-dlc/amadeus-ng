@@ -26,9 +26,11 @@
 //! | [`CodeGenerationApprovalTables`] | 計画文書・規則・共有側の受領 | 1 表 | `source_digest` | 別 Tx |
 //! | [`PipelineTables`] | 全履歴と外部 handoff の観測 | 1 表 | `source_digest` | 別 Tx |
 //!
-//! 参照入力由来の表の**行の型**は、表の DAO が運ぶ値として RMU のポート
-//! ([`crate::orchestration`] の `SteeringPlanRow`・`PipelineProgressRow` ほか) に置く。ここに在るのは材料から
-//! 行を組む投影だけである。
+//! 表の**行の型**は、表の DAO が運ぶ値として RMU のポート ([`crate::orchestration`] の
+//! `DefinitionStageRow`・`RunStageRow`・`SteeringPlanRow`・`PipelineProgressRow` ほか) に置く。
+//! ジャーナル由来の構造化面の行も参照入力由来の行も同じである。ここに在るのは材料から
+//! 行を組む投影だけであり、構造化面の行ごとの投影は `<表>_projection` モジュールの自由関数
+//! (`row` / `rows`) として [`ReadTables::project`] が呼ぶ。
 //!
 //! 分けるのは、規則ファイルの編集がイベントを 1 件も伴わないからである。ジャーナルの走査
 //! 位置と無関係に変わるものを `as_of` で名乗らせると、「進んでいないのに行が動いた」という
@@ -50,71 +52,62 @@
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_read_model_updater::read_tables::<型>` で安定する
 //! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
+//! 行の型のパスは `core_read_model_updater::orchestration::<型>` である。
 
 use std::collections::{BTreeMap, BTreeSet};
-
-mod artifact_audit_row;
-pub use artifact_audit_row::ArtifactAuditRow;
-
-mod answer_result_row;
-pub use answer_result_row::AnswerResultRow;
 
 use core_command_domain::orchestration::{IntentExecution, IntentExecutionEvent};
 use core_command_domain::workflow_definition::{
     PhaseId, PlanAction, StageNode, WorkflowDefinition, WorkflowDefinitionEvent,
 };
 
-use crate::orchestration::{DefinitionEntry, GlobalSeqNr, JournalBatch, JournalEntry};
+use crate::orchestration::{
+    AnswerResultRow, ArtifactAuditRow, DefinitionEntry, DefinitionRow, DefinitionScopeKeywordRow,
+    DefinitionScopePhaseEntryRow, DefinitionScopeRow, DefinitionScopeStageRow, DefinitionStageRow,
+    ExecutionRow, ExecutionStageRow, GlobalSeqNr, IntentRow, IntentStageRow, JournalBatch,
+    JournalEntry, JumpResultRow, NextAnswerRow, NextJumpPhaseRow, NextJumpRow, ReportResultRow,
+    RunStageRow, ScopeChangeRow, SessionAuditRow,
+};
 
-mod definition_row;
-mod definition_scope_keyword_row;
-mod definition_scope_phase_entry_row;
-mod definition_scope_row;
-mod definition_scope_stage_row;
-mod definition_stage_row;
+// 構造化面の行を組む投影 (行の型は `orchestration` のポート側に在る)。
+mod answer_result_projection;
+mod artifact_audit_projection;
+mod definition_projection;
+mod definition_scope_keyword_projection;
+mod definition_scope_phase_entry_projection;
+mod definition_scope_projection;
+mod definition_scope_stage_projection;
+mod definition_stage_projection;
+mod execution_projection;
+mod execution_stage_projection;
+mod intent_projection;
+mod intent_stage_projection;
+mod jump_result_projection;
+mod next_answer_projection;
+mod next_jump_phase_projection;
+mod next_jump_projection;
+mod report_result_projection;
+mod run_stage_projection;
+mod scope_change_projection;
+mod session_audit_projection;
+
 mod digest;
-mod execution_row;
-mod execution_stage_row;
-mod intent_row;
-mod intent_stage_row;
 mod json_column;
 mod memory_rules;
-mod next_answer_row;
-mod next_jump_phase_row;
-mod next_jump_row;
 mod read_tables_error;
-mod report_result_row;
 mod request_kind;
 mod row_id;
 mod rule_content;
-pub use report_result_row::ReportResultRow;
-mod run_stage_row;
-mod scope_change_row;
 mod spelling;
 mod sql;
 mod stage_lookup;
 mod steering_tables;
 mod unsplittable_section;
 
-pub use definition_row::DefinitionRow;
-pub use definition_scope_keyword_row::DefinitionScopeKeywordRow;
-pub use definition_scope_phase_entry_row::DefinitionScopePhaseEntryRow;
-pub use definition_scope_row::DefinitionScopeRow;
-pub use definition_scope_stage_row::DefinitionScopeStageRow;
-pub use definition_stage_row::DefinitionStageRow;
-pub use execution_row::ExecutionRow;
-pub use execution_stage_row::ExecutionStageRow;
-pub use intent_row::IntentRow;
-pub use intent_stage_row::IntentStageRow;
 pub use memory_rules::MemoryRules;
-pub use next_answer_row::NextAnswerRow;
-pub use next_jump_phase_row::NextJumpPhaseRow;
-pub use next_jump_row::NextJumpRow;
 pub use read_tables_error::ReadTablesError;
 pub use request_kind::RequestKind;
 pub use rule_content::RuleContent;
-pub use run_stage_row::RunStageRow;
-pub use scope_change_row::ScopeChangeRow;
 pub use steering_tables::SteeringTables;
 pub use unsplittable_section::UnsplittableSection;
 
@@ -196,15 +189,17 @@ impl ReadTables {
         let definitions = replay_definitions(history)?;
         for definition in &definitions {
             let id = definition.id();
-            definitions_rows.push(DefinitionRow::of(definition));
+            definitions_rows.push(definition_projection::row(definition));
             for (position, node) in definition.graph().nodes().iter().enumerate() {
-                definition_stages.push(DefinitionStageRow::of(id, position, node));
+                definition_stages.push(definition_stage_projection::row(id, position, node));
             }
             // 語 → スコープの逆引き。`scopes()` は辞書順なので `or_insert` が「辞書順の
             // 先着」になる (選択ではなく決定的な畳み込み)。
             let mut first_scope_of_keyword: BTreeMap<&str, &str> = BTreeMap::new();
             for (scope, metadata) in definition.scopes() {
-                definition_scopes.push(DefinitionScopeRow::of(definition, scope, metadata));
+                definition_scopes.push(definition_scope_projection::row(
+                    definition, scope, metadata,
+                ));
                 for keyword in metadata.keywords() {
                     first_scope_of_keyword
                         .entry(keyword.as_str())
@@ -226,20 +221,22 @@ impl ReadTables {
                     } else {
                         None
                     };
-                    definition_scope_stages
-                        .push(DefinitionScopeStageRow::of(id, scope, slug, action, order));
+                    definition_scope_stages.push(definition_scope_stage_projection::row(
+                        id, scope, slug, action, order,
+                    ));
                 }
                 for phase in phases() {
                     if let Some(first) = definition.first_in_scope_stage_of_phase(phase, scope) {
-                        definition_scope_phase_entries
-                            .push(DefinitionScopePhaseEntryRow::of(id, scope, phase, first));
+                        definition_scope_phase_entries.push(
+                            definition_scope_phase_entry_projection::row(id, scope, phase, first),
+                        );
                     }
                 }
                 // run-stage の材料は定義 × scope × 全ステージ。EXECUTE で絞らないのは、
                 // SKIP のステージにも「--stage で名指しされたら何を出すか」があるからで
                 // ある (計画は実行が畳む)。
                 for node in definition.graph().nodes() {
-                    run_stages.push(RunStageRow::of(
+                    run_stages.push(run_stage_projection::row(
                         id,
                         scope,
                         node,
@@ -250,17 +247,18 @@ impl ReadTables {
                 }
             }
             for (keyword, scope) in first_scope_of_keyword {
-                definition_scope_keywords.push(DefinitionScopeKeywordRow::of(id, keyword, scope));
+                definition_scope_keywords
+                    .push(definition_scope_keyword_projection::row(id, keyword, scope));
             }
         }
 
         let mut intents = Vec::new();
         let mut intent_stages = Vec::new();
         for intent in history.intents() {
-            intents.push(IntentRow::of(intent));
+            intents.push(intent_projection::row(intent));
             intent_stages = intent.stages().fold_left(intent_stages, |mut rows, entry| {
                 let index = rows.len();
-                rows.push(IntentStageRow::of(intent.id(), index, entry));
+                rows.push(intent_stage_projection::row(intent.id(), index, entry));
                 rows
             });
         }
@@ -285,7 +283,7 @@ impl ReadTables {
                     execution_id: execution.id().as_str().to_string(),
                     intent_id: execution.intent_id().as_str().to_string(),
                 })?;
-            executions.push(ExecutionRow::of(&execution, intent));
+            executions.push(execution_projection::row(&execution, intent));
             // 要求されうる scope の照合。有効 scope の権威は定義なので、その定義が履歴に
             // 無ければ 1 行も立たない — 「どれが有効か」を知らないまま行を書くと、読み手は
             // 無効な scope を有効だと読む。
@@ -294,7 +292,7 @@ impl ReadTables {
                 .find(|definition| definition.id() == intent.definition_id())
             {
                 for scope in definition.valid_scopes() {
-                    scope_changes.push(ScopeChangeRow::of(
+                    scope_changes.push(scope_change_projection::row(
                         execution.id(),
                         scope,
                         scope == intent.scope(),
@@ -309,30 +307,48 @@ impl ReadTables {
                 (execution_stages, next_jumps),
                 |(mut stages, mut jumps), slot| {
                     if let Some(stage) = execution.stage_index(position) {
-                        stages.push(ExecutionStageRow::of(&execution, intent, stage, slot.key()));
-                        jumps.push(NextJumpRow::of(&execution, intent, stage, slot.key()));
+                        stages.push(execution_stage_projection::row(
+                            &execution,
+                            intent,
+                            stage,
+                            slot.key(),
+                        ));
+                        jumps.push(next_jump_projection::row(
+                            &execution,
+                            intent,
+                            stage,
+                            slot.key(),
+                        ));
                     }
                     position = position.saturating_add(1);
                     (stages, jumps)
                 },
             );
             for kind in RequestKind::ALL {
-                next_answers.push(NextAnswerRow::of(&execution, intent, kind, &run_stage_ids)?);
+                next_answers.push(next_answer_projection::row(
+                    &execution,
+                    intent,
+                    kind,
+                    &run_stage_ids,
+                )?);
             }
             for phase in phases() {
                 if let Some(target) = execution.first_in_scope_of_phase(phase) {
-                    next_jump_phases.push(NextJumpPhaseRow::of(&execution, phase, target));
+                    next_jump_phases
+                        .push(next_jump_phase_projection::row(&execution, phase, target));
                 }
             }
         }
 
-        let session_audits = SessionAuditRow::project(history.sessions())?;
-        let artifact_audits = ArtifactAuditRow::project(history.artifacts())?;
+        let session_audits = session_audit_projection::rows(history.sessions())?;
+        let artifact_audits = artifact_audit_projection::rows(history.artifacts())?;
         let answer_results = history
             .executions()
             .iter()
             .filter_map(|entry| match entry.event() {
-                IntentExecutionEvent::AnswerRecorded(answer) => Some(AnswerResultRow::of(answer)),
+                IntentExecutionEvent::AnswerRecorded(answer) => {
+                    Some(answer_result_projection::row(answer))
+                }
                 _ => None,
             })
             .collect();
@@ -340,7 +356,9 @@ impl ReadTables {
             .executions()
             .iter()
             .filter_map(|entry| match entry.event() {
-                IntentExecutionEvent::Reported(reported) => Some(ReportResultRow::of(reported)),
+                IntentExecutionEvent::Reported(reported) => {
+                    Some(report_result_projection::row(reported))
+                }
                 _ => None,
             })
             .collect();
@@ -349,7 +367,7 @@ impl ReadTables {
             session_audits,
             answer_results,
             report_results,
-            jump_results: JumpResultRow::project(history)?,
+            jump_results: jump_result_projection::rows(history)?,
             definitions: definitions_rows,
             definition_stages,
             definition_scopes,
@@ -623,11 +641,5 @@ pub use plan_answer_row::PlanAnswerRow;
 mod plan_generation_row;
 pub use plan_generation_row::PlanGenerationRow;
 
-mod session_audit_row;
-pub use session_audit_row::SessionAuditRow;
-
 mod pipeline_tables;
 pub use pipeline_tables::PipelineTables;
-
-mod jump_result_row;
-pub use jump_result_row::JumpResultRow;

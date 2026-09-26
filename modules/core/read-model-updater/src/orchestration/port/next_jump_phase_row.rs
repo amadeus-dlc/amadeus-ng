@@ -1,11 +1,5 @@
 //! `NextJumpPhaseRow` — `read_next_jump_phase` の 1 行 (`--phase` ジャンプの目的地)。
 
-use core_command_domain::orchestration::{IntentExecution, StageIndex};
-use core_command_domain::workflow_definition::PhaseId;
-
-use super::row_id;
-use super::stage_lookup::slug_of;
-
 /// `read_next_jump_phase` の 1 行。主キーは 1 列 `id` (自然キー
 /// (`execution_id`, `phase`) から導いた代理キー)。`execution_id` は `read_execution.id` を
 /// 指す FK である。
@@ -16,6 +10,11 @@ use super::stage_lookup::slug_of;
 /// 理由で変わる。
 ///
 /// 答えが `None` のフェーズには行を作らない。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
+///
+/// [`IntentExecution::first_in_scope_of_phase`]: core_command_domain::orchestration::IntentExecution::first_in_scope_of_phase
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NextJumpPhaseRow {
     id: String,
@@ -26,15 +25,21 @@ pub struct NextJumpPhaseRow {
 }
 
 impl NextJumpPhaseRow {
-    /// 1 つのフェーズの目的地を 1 行へ写す (**この型の唯一の構築経路**)。
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(execution: &IntentExecution, phase: PhaseId, target: StageIndex) -> NextJumpPhaseRow {
-        NextJumpPhaseRow {
-            id: row_id::next_jump_phase(execution.id().as_str(), phase.as_str()),
-            execution_id: execution.id().as_str().to_string(),
-            phase: phase.as_str().to_string(),
-            target_index: target.to_usize(),
-            target_slug: slug_of(execution, target.to_usize()),
+    pub const fn new(
+        id: String,
+        execution_id: String,
+        phase: String,
+        target_index: usize,
+        target_slug: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            execution_id,
+            phase,
+            target_index,
+            target_slug,
         }
     }
 

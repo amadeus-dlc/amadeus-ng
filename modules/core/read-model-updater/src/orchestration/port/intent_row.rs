@@ -1,8 +1,5 @@
 //! `IntentRow` — `read_intent` の 1 行 (intent 1 件の静的な材料)。
 
-use chrono::SecondsFormat;
-use core_command_domain::orchestration::Intent;
-
 /// `read_intent` の 1 行。主キーは 1 列 `id` = intent の識別子 (集約そのものの表なので
 /// 代理キーを作らない)。`definition_id` は `read_definition.id` を指す FK である。
 ///
@@ -10,6 +7,11 @@ use core_command_domain::orchestration::Intent;
 /// (`project_type` は状態ファイル面の `Greenfield` / `Brownfield`、`project_kind` は
 /// `stage-graph.json` 面の小文字) ので、**両方を列にする** — どちらか一方に寄せると、
 /// 読取側がもう一方の綴りを組み直すことになる。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
+///
+/// [`Intent`]: core_command_domain::orchestration::Intent
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentRow {
     id: String,
@@ -32,33 +34,49 @@ pub struct IntentRow {
 }
 
 impl IntentRow {
-    /// intent 集約を 1 行へ写す (**この型の唯一の構築経路**)。
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(intent: &Intent) -> IntentRow {
-        let scan = intent.scan();
-        let first = intent.first_post_initialization();
-        IntentRow {
-            id: intent.id().as_str().to_string(),
-            execute_count: intent.in_scope_count(),
-            first_stage: first.as_ref().map(|entry| entry.slug().to_string()),
-            first_phase: first
-                .as_ref()
-                .map(|entry| entry.phase().as_str().to_uppercase()),
-            definition_id: intent.definition_id().as_str().to_string(),
-            definition_revision: intent.definition_revision().as_str().to_string(),
-            scope: intent.scope().to_string(),
-            request: intent.request().to_string(),
-            depth: intent.depth().map(str::to_string),
-            test_strategy: intent.test_strategy().map(str::to_string),
-            review: intent.review().map(str::to_string),
-            created_at: intent
-                .created_at()
-                .to_rfc3339_opts(SecondsFormat::Secs, true),
-            project_type: scan.project_type().to_string(),
-            project_kind: scan.project_kind().as_str().to_string(),
-            languages: scan.languages().to_string(),
-            frameworks: scan.frameworks().to_string(),
-            build_system: scan.build_system().to_string(),
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "表の 1 行の全列を唯一の構築口へ渡す — 列と引数の対応を一覧で読めることを優先する"
+    )]
+    pub const fn new(
+        id: String,
+        execute_count: usize,
+        first_stage: Option<String>,
+        first_phase: Option<String>,
+        definition_id: String,
+        definition_revision: String,
+        scope: String,
+        request: String,
+        depth: Option<String>,
+        test_strategy: Option<String>,
+        review: Option<String>,
+        created_at: String,
+        project_type: String,
+        project_kind: String,
+        languages: String,
+        frameworks: String,
+        build_system: String,
+    ) -> Self {
+        Self {
+            id,
+            execute_count,
+            first_stage,
+            first_phase,
+            definition_id,
+            definition_revision,
+            scope,
+            request,
+            depth,
+            test_strategy,
+            review,
+            created_at,
+            project_type,
+            project_kind,
+            languages,
+            frameworks,
+            build_system,
         }
     }
 
@@ -67,11 +85,13 @@ impl IntentRow {
     pub const fn execute_count(&self) -> usize {
         self.execute_count
     }
+
     /// 初期化後の最初のステージ。
     #[must_use]
     pub fn first_stage(&self) -> Option<&str> {
         self.first_stage.as_deref()
     }
+
     /// 初期化後のフェーズ。
     #[must_use]
     pub fn first_phase(&self) -> Option<&str> {

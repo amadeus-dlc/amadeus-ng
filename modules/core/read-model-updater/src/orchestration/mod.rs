@@ -129,9 +129,13 @@ pub use dto::SingleStageRunStartedDto;
 // Pipeline 面 (PR3)。
 mod port;
 pub use port::{
-    CodeGenerationApprovalDao, CodeGenerationApprovalRow, DoctorCheckDao, DoctorCheckRow,
-    DoctorReportDao, DoctorReportRow, PipelineProgressDao, PipelineProgressRow, PlanFingerprintDao,
-    PlanFingerprintRow, SourceStamp, SteeringPartDao, SteeringPartRow, SteeringPlanDao,
+    AnswerResultRow, ArtifactAuditRow, CodeGenerationApprovalDao, CodeGenerationApprovalRow,
+    DefinitionRow, DefinitionScopeKeywordRow, DefinitionScopePhaseEntryRow, DefinitionScopeRow,
+    DefinitionScopeStageRow, DefinitionStageRow, DoctorCheckDao, DoctorCheckRow, DoctorReportDao,
+    DoctorReportRow, ExecutionRow, ExecutionStageRow, IntentRow, IntentStageRow, JumpResultRow,
+    NextAnswerRow, NextJumpPhaseRow, NextJumpRow, PipelineProgressDao, PipelineProgressRow,
+    PlanFingerprintDao, PlanFingerprintRow, ReportResultRow, RunStageRow, ScopeChangeRow,
+    SessionAuditRow, SourceStamp, SteeringPartDao, SteeringPartRow, SteeringPlanDao,
     SteeringPlanRow, TestingContractDao, TestingContractRow, WorkspaceDoctorJournalEntry,
     WorkspaceDoctorJournalReader, WorkspaceDoctorProjectionCheckpointDao,
 };

@@ -1,12 +1,15 @@
 //! `DefinitionRow` — `read_definition` の 1 行 (定義 1 件の要約)。
 
-use core_command_domain::workflow_definition::WorkflowDefinition;
-
 /// `read_definition` の 1 行。主キーは 1 列 `id` = 定義の系譜 ID。
 ///
 /// 集約そのものを表す表なので代理キーを作らない — 集約 id が既に 1 列の主キーである
 /// (関係モデリングの裁定 2026-09-03)。値はすべて再生した [`WorkflowDefinition`] の
 /// クエリの答えの写しである。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
+///
+/// [`WorkflowDefinition`]: core_command_domain::workflow_definition::WorkflowDefinition
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionRow {
     id: String,
@@ -16,14 +19,14 @@ pub struct DefinitionRow {
 }
 
 impl DefinitionRow {
-    /// 再生した定義を 1 行へ写す (**この型の唯一の構築経路**)。
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(definition: &WorkflowDefinition) -> DefinitionRow {
-        DefinitionRow {
-            id: definition.id().as_str().to_string(),
-            revision: definition.revision().as_str().to_string(),
-            stage_count: definition.graph().len(),
-            scope_count: definition.scopes().len(),
+    pub const fn new(id: String, revision: String, stage_count: usize, scope_count: usize) -> Self {
+        Self {
+            id,
+            revision,
+            stage_count,
+            scope_count,
         }
     }
 

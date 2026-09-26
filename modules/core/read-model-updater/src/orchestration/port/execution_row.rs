@@ -1,17 +1,16 @@
 //! `ExecutionRow` — `read_execution` の 1 行 (実行 1 本の現在状態)。
 
-use chrono::SecondsFormat;
-use core_command_domain::orchestration::{Intent, IntentExecution, SkeletonStance, StageIndex};
-
-use super::spelling;
-use super::stage_lookup::slug_at;
-
 /// `read_execution` の 1 行。主キーは 1 列 `id` = 実行の識別子 (集約そのものの表なので
 /// 代理キーを作らない)。`intent_id` は `read_intent.id` を指す FK である。
 ///
 /// 値はすべて再生した [`IntentExecution`] のクエリの答えの写しである。`parked_active` と
 /// `accepts_commands` は集約の**導出述語**であり、読取側が `status` と `parked_at` から
 /// 組み直さなくてよいように列にしてある (裁定 §10-1 の非正規化)。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
+///
+/// [`IntentExecution`]: core_command_domain::orchestration::IntentExecution
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionRow {
     id: String,
@@ -34,55 +33,56 @@ pub struct ExecutionRow {
 }
 
 impl ExecutionRow {
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
+    #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "表の 1 行の全列を唯一の構築口へ渡す — 列と引数の対応を一覧で読めることを優先する"
+    )]
+    pub const fn new(
+        id: String,
+        first_substantive_run: bool,
+        continuation_wait: Option<String>,
+        intent_id: String,
+        scope: String,
+        status: String,
+        cursor_index: Option<usize>,
+        cursor_slug: Option<String>,
+        parked_at_index: Option<usize>,
+        parked_at_slug: Option<String>,
+        parked_active: bool,
+        accepts_commands: bool,
+        autonomy: String,
+        skeleton_stance: Option<String>,
+        seq_nr: usize,
+        last_updated_at: String,
+        state_binding: String,
+    ) -> Self {
+        Self {
+            id,
+            first_substantive_run,
+            continuation_wait,
+            intent_id,
+            scope,
+            status,
+            cursor_index,
+            cursor_slug,
+            parked_at_index,
+            parked_at_slug,
+            parked_active,
+            accepts_commands,
+            autonomy,
+            skeleton_stance,
+            seq_nr,
+            last_updated_at,
+            state_binding,
+        }
+    }
+
     /// 集約が判定した人間待ち。
     #[must_use]
     pub fn continuation_wait(&self) -> Option<&str> {
         self.continuation_wait.as_deref()
-    }
-    /// 実行の集約を 1 行へ写す (**この型の唯一の構築経路**)。
-    ///
-    /// `scope` だけは実行が持たない — 選ばれた scope は静的な intent の持ち物なので、
-    /// この実行が指す intent から**非正規化して**載せる。読取コマンドは scope で分岐する
-    /// たびに intent の行を引き直さずに済む (裁定 §10-1)。
-    #[must_use]
-    pub fn of(execution: &IntentExecution, intent: &Intent) -> ExecutionRow {
-        let cursor = execution.cursor();
-        ExecutionRow {
-            id: execution.id().as_str().to_string(),
-            first_substantive_run: execution.is_first_substantive_run(),
-            continuation_wait: execution.continuation_wait().map(|reason| {
-                match reason {
-                    core_command_domain::orchestration::ContinuationWait::GateOrRevision => {
-                        "gate-or-revision"
-                    }
-                    core_command_domain::orchestration::ContinuationWait::Decision => "decision",
-                    core_command_domain::orchestration::ContinuationWait::Question => "question",
-                    core_command_domain::orchestration::ContinuationWait::Conversation => {
-                        "conversation"
-                    }
-                    core_command_domain::orchestration::ContinuationWait::Resume => "resume",
-                }
-                .to_string()
-            }),
-            intent_id: execution.intent_id().as_str().to_string(),
-            scope: intent.scope().to_string(),
-            status: spelling::status(execution.status()).to_string(),
-            cursor_index: Some(cursor.to_usize()),
-            cursor_slug: slug_at(execution, cursor),
-            parked_at_index: execution.parked_at().map(StageIndex::to_usize),
-            parked_at_slug: execution.parked_at().and_then(|at| slug_at(execution, at)),
-            parked_active: execution.parked_active(),
-            accepts_commands: execution.accepts_commands(),
-            autonomy: execution.autonomy().as_state_field().to_string(),
-            skeleton_stance: execution
-                .skeleton_stance()
-                .map(|stance| SkeletonStance::as_str(stance).to_string()),
-            seq_nr: execution.seq_nr(),
-            last_updated_at: execution
-                .last_updated_at()
-                .to_rfc3339_opts(SecondsFormat::Secs, true),
-            state_binding: execution.state_binding().as_str().to_string(),
-        }
     }
 
     /// 最初の実作業か（集約の判断結果）。
@@ -161,6 +161,8 @@ impl ExecutionRow {
     ///
     /// 綴りはドメインの [`SkeletonStance::as_str`] — 状態ファイルの `Skeleton Stance` 欄と
     /// **同じ面**の値なので、綴りもそちらに揃える (`on` / `off` / `scope-dependent`)。
+    ///
+    /// [`SkeletonStance::as_str`]: core_command_domain::orchestration::SkeletonStance::as_str
     #[must_use]
     pub fn skeleton_stance(&self) -> Option<&str> {
         self.skeleton_stance.as_deref()

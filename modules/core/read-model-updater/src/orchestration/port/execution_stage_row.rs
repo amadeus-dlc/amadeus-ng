@@ -1,11 +1,5 @@
 //! `ExecutionStageRow` — `read_execution_stage` の 1 行 (実行 × ステージの実行時状態)。
 
-use core_command_domain::orchestration::{Intent, IntentExecution, StageIndex, StageKey};
-use core_command_domain::workflow_definition::PlanAction;
-
-use super::row_id;
-use super::spelling;
-
 /// `read_execution_stage` の 1 行。主キーは 1 列 `id` (自然キー
 /// (`execution_id`, `stage_index`) から導いた代理キー)。`execution_id` は
 /// `read_execution.id` を指す FK である。
@@ -13,6 +7,9 @@ use super::spelling;
 /// 値はすべて集約のステージ単位クエリの答えである — `checkbox` / `effective_plan` /
 /// `approved` / `revision_count` / `gated`。**実効プランは静的グリッドではない**
 /// (recompose のオーバレイが勝つ) ので、`read_intent_stage.plan_action` とは別の列である。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionStageRow {
     id: String,
@@ -28,34 +25,35 @@ pub struct ExecutionStageRow {
 }
 
 impl ExecutionStageRow {
-    /// 実行 × ステージの 1 セルを 1 行へ写す (**この型の唯一の構築経路**)。
-    ///
-    /// `key` は集約の添字帳から引いたそのステージの鍵である (位置と鍵の対応を行の側で
-    /// 組み直さない)。
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(
-        execution: &IntentExecution,
-        intent: &Intent,
-        stage: StageIndex,
-        key: &StageKey,
-    ) -> ExecutionStageRow {
-        ExecutionStageRow {
-            id: row_id::execution_stage(execution.id().as_str(), stage.to_usize()),
-            execution_id: execution.id().as_str().to_string(),
-            stage_index: stage.to_usize(),
-            slug: key.slug().as_str().to_string(),
-            phase: key.phase().as_str().to_string(),
-            checkbox: execution
-                .checkbox(stage)
-                .map(spelling::checkbox)
-                .map(str::to_string),
-            effective_plan: execution
-                .effective_plan(stage)
-                .map(PlanAction::as_str)
-                .map(str::to_string),
-            approved: execution.approved(stage),
-            revision_count: execution.revision_count(stage),
-            gated: execution.gated(intent, stage),
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "表の 1 行の全列を唯一の構築口へ渡す — 列と引数の対応を一覧で読めることを優先する"
+    )]
+    pub const fn new(
+        id: String,
+        execution_id: String,
+        stage_index: usize,
+        slug: String,
+        phase: String,
+        checkbox: Option<String>,
+        effective_plan: Option<String>,
+        approved: Option<bool>,
+        revision_count: Option<u32>,
+        gated: Option<bool>,
+    ) -> Self {
+        Self {
+            id,
+            execution_id,
+            stage_index,
+            slug,
+            phase,
+            checkbox,
+            effective_plan,
+            approved,
+            revision_count,
+            gated,
         }
     }
 

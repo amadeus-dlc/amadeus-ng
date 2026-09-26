@@ -1,11 +1,5 @@
 //! `DefinitionStageRow` — `read_definition_stage` の 1 行 (グラフのノード 1 件を全列で写す)。
 
-use core_command_domain::orchestration::StageKey;
-use core_command_domain::workflow_definition::{ReviewClass, StageNode, WorkflowDefinitionId};
-
-use super::json_column;
-use super::row_id;
-
 /// `read_definition_stage` の 1 行。主キーは 1 列 `id` (自然キー
 /// (`definition_id`, `stage_slug`) から導いた代理キー)。`definition_id` は
 /// `read_definition.id` を指す FK である。
@@ -13,6 +7,11 @@ use super::row_id;
 /// [`StageNode`] の 29 アクセサを 1 行に平らに写す。配列・構造は `ContractCompact` の
 /// 1 行 JSON にする — 読取コマンドが 1 回の引当で全属性を得るための非正規化である
 /// (裁定 §10-1)。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
+///
+/// [`StageNode`]: core_command_domain::workflow_definition::StageNode
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionStageRow {
     id: String,
@@ -50,54 +49,79 @@ pub struct DefinitionStageRow {
 }
 
 impl DefinitionStageRow {
-    /// グラフのノード 1 件を 1 行へ写す (**この型の唯一の構築経路**)。
-    ///
-    /// `position` は文書順 (グラフの並びそのもの)。`gated` はドメインの述語
-    /// [`StageKey::is_gated`] に問う — 「initialization だけが非ゲート」という規則を
-    /// ここで書き直さない。
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(
-        definition_id: &WorkflowDefinitionId,
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "表の 1 行の全列を唯一の構築口へ渡す — 列と引数の対応を一覧で読めることを優先する"
+    )]
+    pub const fn new(
+        id: String,
+        definition_id: String,
+        stage_slug: String,
         position: usize,
-        node: &StageNode,
-    ) -> DefinitionStageRow {
-        let key = StageKey::new(node.slug().clone(), node.phase());
-        DefinitionStageRow {
-            id: row_id::definition_stage(definition_id.as_str(), node.slug().as_str()),
-            definition_id: definition_id.as_str().to_string(),
-            stage_slug: node.slug().as_str().to_string(),
+        number: String,
+        name: String,
+        phase: String,
+        execution: String,
+        condition: String,
+        lead_agent: String,
+        support_agents: String,
+        mode: String,
+        for_each: Option<String>,
+        workspace_requires: bool,
+        produces: String,
+        optional_produces: String,
+        produces_kinds: String,
+        consumes: String,
+        requires_stage: String,
+        sensors: String,
+        scopes: String,
+        reviewer: Option<String>,
+        reviewer_max_iterations: Option<u32>,
+        review_class: Option<String>,
+        summary_confirmation: Option<String>,
+        plugin: Option<String>,
+        enabled: Option<bool>,
+        gated: bool,
+        inputs: String,
+        outputs: String,
+        rules_in_context: String,
+        sensors_applicable: String,
+    ) -> Self {
+        Self {
+            id,
+            definition_id,
+            stage_slug,
             position,
-            number: node.number().as_str().to_string(),
-            name: node.name().to_string(),
-            phase: node.phase().as_str().to_string(),
-            execution: node.execution().as_str().to_string(),
-            condition: node.condition().to_string(),
-            lead_agent: node.lead_agent().to_string(),
-            support_agents: json_column::strings(node.support_agents()),
-            mode: node.mode().as_str().to_string(),
-            for_each: node.for_each().map(str::to_string),
-            workspace_requires: node.workspace_requires(),
-            produces: json_column::strings(node.produces()),
-            optional_produces: json_column::strings(node.optional_produces()),
-            produces_kinds: json_column::produces_kinds(node.produces_kinds()),
-            consumes: json_column::consumes(node.consumes()),
-            requires_stage: json_column::slugs(node.requires_stage()),
-            sensors: json_column::strings(node.sensors()),
-            scopes: json_column::strings(node.scopes()),
-            reviewer: node.reviewer().map(str::to_string),
-            reviewer_max_iterations: node.reviewer_max_iterations(),
-            review_class: node
-                .review_class()
-                .map(ReviewClass::as_str)
-                .map(str::to_string),
-            summary_confirmation: node.summary_confirmation().map(str::to_string),
-            plugin: node.plugin().map(str::to_string),
-            enabled: node.enabled(),
-            gated: key.is_gated(),
-            inputs: node.inputs().to_string(),
-            outputs: node.outputs().to_string(),
-            rules_in_context: json_column::rules_in_context(node.rules_in_context()),
-            sensors_applicable: json_column::sensors_applicable(node.sensors_applicable()),
+            number,
+            name,
+            phase,
+            execution,
+            condition,
+            lead_agent,
+            support_agents,
+            mode,
+            for_each,
+            workspace_requires,
+            produces,
+            optional_produces,
+            produces_kinds,
+            consumes,
+            requires_stage,
+            sensors,
+            scopes,
+            reviewer,
+            reviewer_max_iterations,
+            review_class,
+            summary_confirmation,
+            plugin,
+            enabled,
+            gated,
+            inputs,
+            outputs,
+            rules_in_context,
+            sensors_applicable,
         }
     }
 

@@ -1,13 +1,5 @@
 //! `DefinitionScopeRow` — `read_definition_scope` の 1 行 (スコープ 1 件のメタデータと費用)。
 
-use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, ReviewCapValue, ScopeCost, ScopeMetadata, SkeletonDefault,
-    WorkflowDefinition,
-};
-
-use super::json_column;
-use super::row_id;
-
 /// `read_definition_scope` の 1 行。主キーは 1 列 `id` (自然キー
 /// (`definition_id`, `scope`) から導いた代理キー)。`definition_id` は `read_definition.id`
 /// を指す FK である。
@@ -17,6 +9,11 @@ use super::row_id;
 /// その理由を語る)。`greenfield_cost_*` の 4 列は同じ問いを greenfield のワークスペース向け
 /// (`reverse-engineering` を畳んだ実効値 — upstream `effectiveScopeCostSummary`) に答えた
 /// もので、読み手は観測したプロジェクト種別でどちらの列を読むかを選ぶだけである。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
+///
+/// [`WorkflowDefinition::scope_cost`]: core_command_domain::workflow_definition::WorkflowDefinition::scope_cost
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionScopeRow {
     id: String,
@@ -39,41 +36,49 @@ pub struct DefinitionScopeRow {
 }
 
 impl DefinitionScopeRow {
-    /// スコープ 1 件を 1 行へ写す (**この型の唯一の構築経路**)。
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(
-        definition: &WorkflowDefinition,
-        scope: &str,
-        metadata: &ScopeMetadata,
-    ) -> DefinitionScopeRow {
-        let cost = definition.scope_cost(scope, BrownfieldGreenfield::Brownfield);
-        let greenfield_cost = definition.scope_cost(scope, BrownfieldGreenfield::Greenfield);
-        DefinitionScopeRow {
-            id: row_id::definition_scope(definition.id().as_str(), scope),
-            definition_id: definition.id().as_str().to_string(),
-            scope: scope.to_string(),
-            depth: metadata.depth().map(str::to_string),
-            keywords: json_column::strings(metadata.keywords()),
-            skeleton: metadata
-                .skeleton()
-                .map(SkeletonDefault::as_str)
-                .map(str::to_string),
-            review_cap: metadata
-                .review_cap()
-                .map(ReviewCapValue::as_str)
-                .map(str::to_string),
-            freeform_default: metadata.freeform_default(),
-            has_grid_column: definition.grid().contains_scope(scope),
-            cost_total: cost.as_ref().map(ScopeCost::total),
-            cost_execute: cost.as_ref().map(ScopeCost::execute),
-            cost_gates: cost.as_ref().map(ScopeCost::gates),
-            cost_per_unit_stages: cost.as_ref().map(ScopeCost::per_unit_stages),
-            greenfield_cost_total: greenfield_cost.as_ref().map(ScopeCost::total),
-            greenfield_cost_execute: greenfield_cost.as_ref().map(ScopeCost::execute),
-            greenfield_cost_gates: greenfield_cost.as_ref().map(ScopeCost::gates),
-            greenfield_cost_per_unit_stages: greenfield_cost
-                .as_ref()
-                .map(ScopeCost::per_unit_stages),
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "表の 1 行の全列を唯一の構築口へ渡す — 列と引数の対応を一覧で読めることを優先する"
+    )]
+    pub const fn new(
+        id: String,
+        definition_id: String,
+        scope: String,
+        depth: Option<String>,
+        keywords: String,
+        skeleton: Option<String>,
+        review_cap: Option<String>,
+        freeform_default: bool,
+        has_grid_column: bool,
+        cost_total: Option<usize>,
+        cost_execute: Option<usize>,
+        cost_gates: Option<usize>,
+        cost_per_unit_stages: Option<usize>,
+        greenfield_cost_total: Option<usize>,
+        greenfield_cost_execute: Option<usize>,
+        greenfield_cost_gates: Option<usize>,
+        greenfield_cost_per_unit_stages: Option<usize>,
+    ) -> Self {
+        Self {
+            id,
+            definition_id,
+            scope,
+            depth,
+            keywords,
+            skeleton,
+            review_cap,
+            freeform_default,
+            has_grid_column,
+            cost_total,
+            cost_execute,
+            cost_gates,
+            cost_per_unit_stages,
+            greenfield_cost_total,
+            greenfield_cost_execute,
+            greenfield_cost_gates,
+            greenfield_cost_per_unit_stages,
         }
     }
 

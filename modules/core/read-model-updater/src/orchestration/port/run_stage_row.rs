@@ -1,15 +1,5 @@
 //! `RunStageRow` — `read_run_stage` の 1 行 (run-stage を組む材料一式)。
 
-use core_command_domain::orchestration::StageKey;
-use core_command_domain::workflow_definition::{
-    BrownfieldGreenfield, PhaseId, ReviewClass, StageMode, StageNode, StageRoute,
-    WorkflowDefinitionId,
-};
-
-use super::digest;
-use super::json_column;
-use super::row_id;
-
 /// `read_run_stage` の 1 行。主キーは 1 列 `id` (自然キー
 /// (`definition_id`, `scope`, `stage_slug`) から導いた代理キー)。`definition_id` は
 /// `read_definition.id` を、`steering_plan_id` は `read_steering_plan.id` を指す FK である
@@ -36,6 +26,9 @@ use super::row_id;
 /// | `consumes_greenfield_rel` | record | `{artifact}` (Greenfield で残る宣言) |
 /// | `produces_rel` | record | `{phase}/{slug}/{artifact}` |
 /// | `inline_context_paths_rel` | ハーネス根 | `agents/{agent}.md` |
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunStageRow {
     id: String,
@@ -67,78 +60,67 @@ pub struct RunStageRow {
 }
 
 impl RunStageRow {
-    /// 定義のノード 1 件を、あるスコープの run-stage 材料 1 行へ写す
-    /// (**この型の唯一の構築経路**)。
-    ///
-    /// `route` は集約のクエリ [`WorkflowDefinition::stage_route`] の答え、`next_stage_name` は
-    /// 呼出側が文書順の列から拾った表示名である。どちらもこの型は組み直さない。
-    ///
-    /// [`WorkflowDefinition::stage_route`]: core_command_domain::workflow_definition::WorkflowDefinition::stage_route
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(
-        definition_id: &WorkflowDefinitionId,
-        scope: &str,
-        node: &StageNode,
-        route: &StageRoute,
-        next_stage_name: Option<&str>,
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "表の 1 行の全列を唯一の構築口へ渡す — 列と引数の対応を一覧で読めることを優先する"
+    )]
+    pub const fn new(
+        id: String,
+        definition_id: String,
+        scope: String,
+        stage_slug: String,
+        phase: String,
+        steering_plan_id: String,
+        lead_agent: String,
+        support_agents: String,
+        mode: String,
+        gate_default: bool,
         in_scope: bool,
-    ) -> RunStageRow {
-        let phase_dir = node.phase().as_str();
-        let slug = node.slug().as_str();
-        let stage_file_rel = format!("{phase_dir}/{slug}.md");
-        let memory_path_rel = format!("{phase_dir}/{slug}/memory.md");
-        // reviewer / review_class / reviewer_max_iterations は**対で載る**。定義が
-        // reviewer だけを名乗って階級を欠くとき、クエリ側の組み立ては 3 つとも付けない —
-        // 階級の無いレビューは回せないので、片方だけ載せると行が嘘をつく。
-        let review = node.reviewer().zip(node.review_class());
-        RunStageRow {
-            id: row_id::run_stage(definition_id.as_str(), scope, slug),
-            definition_id: definition_id.as_str().to_string(),
-            scope: scope.to_string(),
-            stage_slug: slug.to_string(),
-            phase: phase_dir.to_string(),
-            steering_plan_id: row_id::steering_plan(phase_dir),
-            lead_agent: node.lead_agent().to_string(),
-            support_agents: json_column::strings(node.support_agents()),
-            mode: node.mode().as_str().to_string(),
-            gate_default: StageKey::new(node.slug().clone(), node.phase()).is_gated(),
+        inline_context_paths_rel: String,
+        stage_file_rel: String,
+        memory_path_rel: String,
+        consumes_rel: String,
+        consumes_brownfield_rel: String,
+        consumes_greenfield_rel: String,
+        produces_rel: String,
+        sensors_applicable: String,
+        reviewer: Option<String>,
+        reviewer_max_iterations: Option<u32>,
+        review_class: Option<String>,
+        protocol_modules: String,
+        next_stage_name: Option<String>,
+        route_digest: String,
+        directive_digest: String,
+    ) -> Self {
+        Self {
+            id,
+            definition_id,
+            scope,
+            stage_slug,
+            phase,
+            steering_plan_id,
+            lead_agent,
+            support_agents,
+            mode,
+            gate_default,
             in_scope,
-            inline_context_paths_rel: json_column::strings(&inline_context_paths(node)),
-            consumes_rel: consumes_for(node, None),
-            consumes_brownfield_rel: consumes_for(node, Some(BrownfieldGreenfield::Brownfield)),
-            consumes_greenfield_rel: consumes_for(node, Some(BrownfieldGreenfield::Greenfield)),
-            produces_rel: json_column::strings(
-                &node
-                    .produces()
-                    .iter()
-                    .map(|artifact| format!("{phase_dir}/{slug}/{}", artifact_filename(artifact)))
-                    .collect::<Vec<_>>(),
-            ),
-            // run-stageの公開面は参照のIDだけを運ぶ。定義表の完全な参照とは別の列である。
-            sensors_applicable: json_column::strings(
-                &node
-                    .sensors_applicable()
-                    .iter()
-                    .map(|sensor| sensor.id().to_string())
-                    .collect::<Vec<_>>(),
-            ),
-            reviewer: review.map(|(reviewer, _)| reviewer.to_string()),
-            reviewer_max_iterations: review.map(|_| {
-                node.reviewer_max_iterations()
-                    .unwrap_or(DEFAULT_REVIEW_ITERATIONS)
-            }),
-            review_class: review.map(|(_, class)| ReviewClass::as_str(class).to_string()),
-            protocol_modules: json_column::strings(&protocol_modules(node)),
-            next_stage_name: next_stage_name.map(str::to_string),
-            route_digest: digest::route(route.stage(), route.stages_in_scope()),
-            directive_digest: digest::directive(
-                node.slug(),
-                &stage_file_rel,
-                &memory_path_rel,
-                next_stage_name,
-            ),
+            inline_context_paths_rel,
             stage_file_rel,
             memory_path_rel,
+            consumes_rel,
+            consumes_brownfield_rel,
+            consumes_greenfield_rel,
+            produces_rel,
+            sensors_applicable,
+            reviewer,
+            reviewer_max_iterations,
+            review_class,
+            protocol_modules,
+            next_stage_name,
+            route_digest,
+            directive_digest,
         }
     }
 
@@ -197,6 +179,8 @@ impl RunStageRow {
     }
 
     /// 定義側の既定ゲート ([`StageKey::is_gated`] の答え — 要求の上書きは含まない)。
+    ///
+    /// [`StageKey::is_gated`]: core_command_domain::orchestration::StageKey::is_gated
     #[must_use]
     pub const fn gate_default(&self) -> bool {
         self.gate_default
@@ -304,71 +288,4 @@ impl RunStageRow {
     pub fn directive_digest(&self) -> &str {
         &self.directive_digest
     }
-}
-
-/// 本家の成果物語彙からファイル名への写像。
-fn artifact_filename(name: &str) -> String {
-    if name.ends_with(".md") || name.ends_with(".json") {
-        return name.to_string();
-    }
-    match name {
-        "build-test-results" | "load-test-results" => "test-results.md".to_string(),
-        "traceability" => "traceability.json".to_string(),
-        _ => format!("{name}.md"),
-    }
-}
-
-/// 定義が回数を宣言しないときのレビュー往復上限。
-const DEFAULT_REVIEW_ITERATIONS: u32 = 1;
-
-/// 会話にそのまま載せるエージェントペルソナ (ハーネス根からの相対)。
-///
-/// 様式ごとに誰の声が会話へ入るかが決まる — Inline は lead と support の全員、Mob は
-/// 統合役の lead だけ、残り (Subagent / Pipeline / AgentTeam) は別プロセスへ渡すので
-/// 会話には載らない。
-fn inline_context_paths(node: &StageNode) -> Vec<String> {
-    let persona = |agent: &str| format!("agents/{agent}.md");
-    match node.mode() {
-        StageMode::Inline => {
-            let mut paths = vec![persona(node.lead_agent())];
-            paths.extend(node.support_agents().iter().map(|agent| persona(agent)));
-            paths
-        }
-        StageMode::Mob => vec![persona(node.lead_agent())],
-        StageMode::Subagent | StageMode::Pipeline | StageMode::AgentTeam => Vec::new(),
-    }
-}
-
-/// 追加で読み込むプロトコルモジュール (宣言の写像 — 順序も宣言どおり)。
-fn protocol_modules(node: &StageNode) -> Vec<String> {
-    let mut modules = Vec::new();
-    if node.reviewer().is_some() {
-        modules.push("reviewer".to_string());
-    }
-    if node.mode() != StageMode::Inline || !node.support_agents().is_empty() {
-        modules.push("ensemble".to_string());
-    }
-    if node.phase() == PhaseId::Construction {
-        modules.push("construction".to_string());
-    }
-    modules
-}
-
-/// ある種別の作業で残る `consumes[]` の語彙名を 1 行 JSON 配列にする。
-///
-/// 本家 `resolveConsumes` (`aidlc-orchestrate.ts:2519-2534` @a277af21) は
-/// `conditional_on` が作業の種別と食い違う宣言を落とし、種別が不明 (`None`) なら全宣言を
-/// 残す。行は 3 通りすべてを持ち、どれを読むかは描く側が作業の種別で選ぶ。
-fn consumes_for(node: &StageNode, kind: Option<BrownfieldGreenfield>) -> String {
-    json_column::strings(
-        &node
-            .consumes()
-            .iter()
-            .filter(|consume| match (consume.conditional_on(), kind) {
-                (Some(condition), Some(kind)) => condition == kind,
-                _ => true,
-            })
-            .map(|consume| consume.artifact().to_string())
-            .collect::<Vec<_>>(),
-    )
 }

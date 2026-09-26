@@ -1,9 +1,5 @@
 //! `IntentStageRow` — `read_intent_stage` の 1 行 (解決済み計画のステージ 1 件)。
 
-use core_command_domain::orchestration::{IntentId, StageEntry};
-
-use super::row_id;
-
 /// `read_intent_stage` の 1 行。主キーは 1 列 `id` (自然キー
 /// (`intent_id`, `stage_index`) から導いた代理キー)。`intent_id` は `read_intent.id` を
 /// 指す FK である。
@@ -11,6 +7,11 @@ use super::row_id;
 /// 値は [`StageEntry`] とその表示属性 (`StageDisplay`) の写しである。**実行時に動く値
 /// (checkbox・実効プラン) はここには無い** — それは実行の表 (`read_execution_stage`) が
 /// 持つ。intent の計画は誕生時に確定して以後動かないので、2 つの表は別の理由で変わる。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
+///
+/// [`StageEntry`]: core_command_domain::orchestration::StageEntry
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentStageRow {
     id: String,
@@ -27,21 +28,37 @@ pub struct IntentStageRow {
 }
 
 impl IntentStageRow {
-    /// 計画のステージ 1 件を 1 行へ写す (**この型の唯一の構築経路**)。
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
     #[must_use]
-    pub fn of(intent_id: &IntentId, stage_index: usize, entry: &StageEntry) -> IntentStageRow {
-        IntentStageRow {
-            id: row_id::intent_stage(intent_id.as_str(), stage_index),
-            intent_id: intent_id.as_str().to_string(),
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "表の 1 行の全列を唯一の構築口へ渡す — 列と引数の対応を一覧で読めることを優先する"
+    )]
+    pub const fn new(
+        id: String,
+        intent_id: String,
+        stage_index: usize,
+        slug: String,
+        phase: String,
+        plan_action: String,
+        conditional: bool,
+        number: String,
+        name: String,
+        lead_agent: String,
+        gated: bool,
+    ) -> Self {
+        Self {
+            id,
+            intent_id,
             stage_index,
-            slug: entry.slug().as_str().to_string(),
-            phase: entry.phase().as_str().to_string(),
-            plan_action: entry.plan_action().as_str().to_string(),
-            conditional: entry.is_conditional(),
-            number: entry.display().number().as_str().to_string(),
-            name: entry.display().name().to_string(),
-            lead_agent: entry.display().lead_agent().to_string(),
-            gated: entry.is_gated(),
+            slug,
+            phase,
+            plan_action,
+            conditional,
+            number,
+            name,
+            lead_agent,
+            gated,
         }
     }
 
