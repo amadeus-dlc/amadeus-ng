@@ -1,9 +1,14 @@
 //! SQLiteに計画を先行保存し、同じDBの書込排他下で公開・確定する。
+//!
+//! 公開の確定の中の構造化面の書込 (20 表・共有面の記録・処理したシーケンス番号) と番号の
+//! 読取は、構造化面の手順 (`structured_surface` — 表の DAO の組) を同じトランザクションの上で
+//! 呼ぶ (Issue #153 の PR4)。公開そのものの移行は PR5 で行う。
 
-use super::store_failure::SqliteResultExt;
+use super::store_failure::{InStore as _, SqliteResultExt};
+use super::structured_surface::StructuredSurface;
 use super::{
-    GlobalSeqNr, JournalReadError, JournalReaderImpl, ProjectionName, PublicationBatch,
-    PublicationFile, ReadModelUpdateError,
+    GlobalSeqNr, JournalReadError, ProjectionName, PublicationBatch, PublicationFile,
+    ReadModelUpdateError,
 };
 use crate::read_tables::ReadTables;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -298,7 +303,10 @@ fn prepare(
     } else if replacing || candidate.generation() > 0 {
         return Err(conflict(path));
     }
-    let current = JournalReaderImpl::read_checkpoint(&transaction, projection, path)?;
+    let surface: StructuredSurface = StructuredSurface::default();
+    let current = surface
+        .checkpoint(&transaction, projection)
+        .in_store(path)?;
     if !candidate.is_rebuild() && current >= candidate.to() && candidate.to() > GlobalSeqNr::ZERO {
         return Ok(None);
     }
@@ -393,7 +401,8 @@ fn publish_prepared(
     tables: &ReadTables,
 ) -> Result<(), ReadModelUpdateError> {
     // 計画は耐久化済み。比較開始から確定までDBの書込排他を保持する。
-    let transaction = connection
+    let surface: StructuredSurface = StructuredSurface::default();
+    let mut transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .at_store(path)?;
     let Some(saved) = pending(&transaction, path, projection)? else {
@@ -410,14 +419,21 @@ fn publish_prepared(
     if &saved != batch {
         return Err(conflict(path));
     }
-    let current = JournalReaderImpl::read_checkpoint(&transaction, projection, path)?;
+    let current = surface
+        .checkpoint(&transaction, projection)
+        .in_store(path)?;
     if current != saved.from() && current != saved.to() {
         return Err(conflict(path));
     }
-    super::shared_projection::verify(&transaction, path)?;
+    surface.verify_head(&mut transaction).in_store(path)?;
     saved.apply()?;
-    JournalReaderImpl::advance_on(&transaction, path, projection, saved.to(), tables)?;
-    let head = super::shared_projection::read(&transaction, path)?.ok_or_else(|| conflict(path))?;
+    surface
+        .advance(&mut transaction, projection, saved.to(), tables)
+        .in_store(path)?;
+    let head = surface
+        .head(&transaction)
+        .in_store(path)?
+        .ok_or_else(|| conflict(path))?;
     transaction
         .execute(
             "UPDATE amadeus_publication SET committed=1,served_position=?3,served_generation=?4 WHERE projection=?1 AND request_id=?2",
@@ -443,13 +459,18 @@ mod tests {
     use super::*;
 
     use super::super::journal_reader_impl::tests::{birth_event, opened_store};
-    use crate::orchestration::{JournalBatch, JournalReader};
+    use crate::orchestration::{
+        JournalBatch, JournalReader, JournalReaderImpl, ReadModelUpdater,
+        StructuredReadModelUpdater,
+    };
     use core_command_domain::workspace::StorePath;
 
     /// 既存の本家ストア用フィクスチャを共有し、両相は実SQLiteの別接続で動かす。
     fn fixture() -> (tempfile::TempDir, StorePath, PathBuf, PublicationBatch) {
         let dir = tempfile::tempdir().unwrap();
         let (_store, path) = opened_store(&dir);
+        // 本番と同じく、読み面の表は構造化面の更新器の開く段が用意する。
+        drop(StructuredReadModelUpdater::open(path.as_path()).unwrap());
         drop(JournalReaderImpl::open(&path).unwrap());
         let state = dir.path().join("state.md");
         std::fs::write(&state, "before\n").unwrap();
@@ -686,12 +707,17 @@ mod tests {
             "INSERT INTO journal(pkey,skey,aid,seq_nr,payload,occurred_at,manifest) VALUES (?1,'1',?1,1,?2,0,'intent-event/1')",
             params![event.aggregate_id().as_str(), payload],
         ).unwrap();
-        let mut second = JournalReaderImpl::open(&path).unwrap();
-        let history = second.events_after(GlobalSeqNr::ZERO).await.unwrap();
-        let last = history.scanned_to().unwrap();
-        let advanced = ReadTables::project(&history).unwrap();
-        second
-            .advance_checkpoint(&projection(), last, &advanced)
+        let second = JournalReaderImpl::open(&path).unwrap();
+        let last = second
+            .events_after(GlobalSeqNr::ZERO)
+            .await
+            .unwrap()
+            .scanned_to()
+            .unwrap();
+        StructuredReadModelUpdater::open(path.as_path())
+            .unwrap()
+            .for_projection(projection())
+            .update_read_models()
             .await
             .unwrap();
 

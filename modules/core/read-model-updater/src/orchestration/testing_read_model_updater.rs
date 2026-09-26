@@ -36,9 +36,13 @@ const BARE_SPACE: &str = "bare-space";
 /// 読み手と規則の読取先は**借りる**。呼出側が 1 回の更新のために開いたものを、更新器が
 /// 所有する理由が無いため。表を書く接続は更新器が所有し、`BEGIN IMMEDIATE` で開いた
 /// トランザクションを表の DAO へ渡す。型引数 `T` は表の DAO である (スタティックディスパッチ)。
+///
+/// 共有構造化面の点検 (古ければ描き直す) はしない — それは構造化面の更新器
+/// ([`super::StructuredReadModelUpdater`]) の仕事で、呼出側がこの更新器より先に起動する
+/// (Issue #153 の PR4 までは、借りた読み手の `prepare_read_model` をここで呼んでいた)。
 #[derive(Debug)]
 pub struct TestingReadModelUpdater<'a, R, T> {
-    journal_reader: &'a mut R,
+    journal_reader: &'a R,
     source: &'a SteeringSource,
     connection: Connection,
     path: PathBuf,
@@ -58,7 +62,7 @@ impl<'a, R: JournalReader> TestingReadModelUpdater<'a, R, TestingContractDaoImpl
     ///
     /// ストアへ接続できない、表を作れない場合。
     pub fn open(
-        journal_reader: &'a mut R,
+        journal_reader: &'a R,
         path: &Path,
         source: &'a SteeringSource,
     ) -> Result<Self, ReadModelUpdateError> {
@@ -97,7 +101,6 @@ impl<R: JournalReader, T: TestingContractDao> ReadModelUpdater
     ///
     /// 履歴、規則、参照面の読書きに失敗した場合。
     async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
-        self.journal_reader.prepare_read_model()?;
         let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
         let sections = self.source.read_testing_sections()?;
         let tables = crate::read_tables::TestingTables::project(&history, &sections);

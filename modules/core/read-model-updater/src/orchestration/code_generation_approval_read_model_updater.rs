@@ -37,9 +37,13 @@ use super::{
 /// 続けて使う（計画・手順書の本文を返す）ので、更新器が所有を奪わない。表を書く接続は
 /// 更新器が所有し、`BEGIN IMMEDIATE` で開いたトランザクションを表の DAO へ渡す。型引数 `A` は
 /// 表の DAO である (スタティックディスパッチ)。
+///
+/// 共有構造化面の点検 (古ければ描き直す) はしない — それは構造化面の更新器
+/// ([`super::StructuredReadModelUpdater`]) の仕事で、呼出側がこの更新器より先に起動する
+/// (Issue #153 の PR4 までは、借りた読み手の `prepare_read_model` をここで呼んでいた)。
 #[derive(Debug)]
 pub struct CodeGenerationApprovalReadModelUpdater<'a, R, A> {
-    journal_reader: &'a mut R,
+    journal_reader: &'a R,
     execution_id: &'a IntentExecutionId,
     input: &'a PlanApprovalInput,
     receipts: &'a PlanReceipts,
@@ -63,7 +67,7 @@ impl<'a, R: JournalReader>
     ///
     /// ストアへ接続できない、表を作れない場合。
     pub fn open(
-        journal_reader: &'a mut R,
+        journal_reader: &'a R,
         path: &Path,
         execution_id: &'a IntentExecutionId,
         input: &'a PlanApprovalInput,
@@ -106,7 +110,6 @@ impl<R: JournalReader, A: CodeGenerationApprovalDao> ReadModelUpdater
     ///
     /// 履歴の再構成、または参照面の読み書きに失敗した場合。
     async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
-        self.journal_reader.prepare_read_model()?;
         let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
         let tables = crate::read_tables::CodeGenerationApprovalTables::project(
             &history,

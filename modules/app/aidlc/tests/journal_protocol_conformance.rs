@@ -84,6 +84,7 @@ use core_read_model_updater::orchestration::WorkflowDefinitionEventDto as Projec
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, OrchestrationReadModelUpdater, ProjectionName,
     ProjectionTargets, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
+    StructuredReadModelUpdater,
 };
 use event_store_adapter_rs::types::EventStore;
 use serde_json::Value;
@@ -233,7 +234,11 @@ impl Store {
     }
 
     /// 投影が使う横断読取 (同じファイルへの別接続)。
+    ///
+    /// 読み面の表 (処理したシーケンス番号の表を含む) は、本番と同じく構造化面の更新器の
+    /// 開く段が先に用意する — ジャーナルの読み手はリードモデル側の表を作らない。
     fn journal_reader(&self) -> JournalReaderImpl {
+        drop(StructuredReadModelUpdater::open(self.path.as_path()).expect("読み面の表を用意する"));
         JournalReaderImpl::open(&self.path).expect("Reader は開ける")
     }
 
@@ -423,6 +428,8 @@ impl RealProjection {
                 SteeringSource::new(self.memory_dir.clone()),
             )
             .expect("steering の更新器を開ける"),
+            StructuredReadModelUpdater::open(store.path.as_path())
+                .expect("構造化面の更新器を開ける"),
         );
         updater.update_read_models().await.expect("更新は通る");
         let reached = updater

@@ -14,6 +14,7 @@ struct Fixture {
     store: support::UpstreamStore,
     writer: support::JournalWriter,
     reader: JournalReaderImpl,
+    path: StorePath,
     projection: ProjectionName,
 }
 impl Fixture {
@@ -25,12 +26,15 @@ impl Fixture {
         support::seed_intent(&path).await;
         let writer = support::JournalWriter::start(&mut store, support::execution_id()).await;
         let reader = JournalReaderImpl::open(&path).unwrap();
+        // 読み面の表は構造化面の更新器の開く段が用意する (本番と同じ順)。
+        support::prepare_read_model(&path);
         let projection = ProjectionName::parse("report-result-contract").unwrap();
         Self {
             root,
             store,
             writer,
             reader,
+            path,
             projection,
         }
     }
@@ -74,9 +78,8 @@ impl Fixture {
         )
     }
     async fn project(&mut self) -> GlobalSeqNr {
-        let (position, tables) = self.tables().await;
-        self.reader
-            .advance_checkpoint(&self.projection, position, &tables)
+        let (position, _) = self.tables().await;
+        support::advance_structured(&self.path, &self.projection)
             .await
             .unwrap();
         position
@@ -174,11 +177,8 @@ async fn checkpoint_failure_rolls_back_results_and_retry_publishes_them() {
     let report = fixture.report(Verdict::AwaitingApproval, None).await;
     let raw = fixture.raw();
     raw.execute_batch("CREATE TRIGGER fail_report_checkpoint BEFORE INSERT ON amadeus_projection_checkpoint BEGIN SELECT RAISE(ABORT,'checkpoint unavailable'); END").unwrap();
-    let (position, tables) = fixture.tables().await;
     assert!(
-        fixture
-            .reader
-            .advance_checkpoint(&fixture.projection, position, &tables)
+        support::advance_structured(&fixture.path, &fixture.projection)
             .await
             .is_err()
     );

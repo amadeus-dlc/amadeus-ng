@@ -1,0 +1,130 @@
+//! `NextAnswerRow` — `read_next_answer` の 1 行 (`next` の答えを要求の形ごとに焼き込む)。
+
+/// `read_next_answer` の 1 行。主キーは 1 列 `id` (自然キー
+/// (`execution_id`, `request_kind`) から導いた代理キー)。`execution_id` は
+/// `read_execution.id` を、`run_stage_id` は `read_run_stage.id` を指す FK である。
+///
+/// 値は集約のクエリ [`IntentExecution::next_decision`] の答えである。**クエリ側は
+/// 21 分岐のラダーを持たない** — どの要求の形にどの答えが対応するかは書込側の集約が
+/// 決め、RMU はその答えを 4 行に焼き込むだけである
+/// (`coding-rules/cqrs-boundaries.md` 規則 6 の 2026-09-02 追記)。
+///
+/// 逐語文言と directive の綴りはここに無い。それは行の `decision_kind` に従って
+/// **出す側 (プレゼンタ)** が描く。
+///
+/// `run_stage_id` は**指す先の行が同じスナップショットに在るときだけ**値を持つ。「答えは
+/// run-stage なので、材料はこの行にある」を FK 1 本で言うためであり、NULL は「材料の行が
+/// 無い」を意味する (判断ではなく不在である)。値が無くなるのは 2 つの場合である —
+/// 決定が run-stage ではない、または決定が名指すステージの run-stage 行が**この定義には
+/// 無い** (計画は誕生時の内容版に対して解決されるので、その後の改訂でステージが消えると
+/// 実行の計画だけが古いステージを名乗り続ける)。届かない FK を書かないのは、読み手に
+/// 「引いたが無かった」の後始末をさせないためである。
+///
+/// 行は値を運ぶだけである。材料から行を組む投影は
+/// [`crate::read_tables::ReadTables::project`] が持つ。
+///
+/// [`IntentExecution::next_decision`]: core_command_domain::orchestration::IntentExecution::next_decision
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NextAnswerRow {
+    id: String,
+    execution_id: String,
+    request_kind: String,
+    decision_kind: String,
+    stage_index: Option<usize>,
+    stage_slug: Option<String>,
+    gate: Option<String>,
+    checkbox: Option<String>,
+    run_stage_id: Option<String>,
+}
+
+impl NextAnswerRow {
+    /// 行の値を束ねる (**この型の唯一の構築経路**)。
+    #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "表の 1 行の全列を唯一の構築口へ渡す — 列と引数の対応を一覧で読めることを優先する"
+    )]
+    pub const fn new(
+        id: String,
+        execution_id: String,
+        request_kind: String,
+        decision_kind: String,
+        stage_index: Option<usize>,
+        stage_slug: Option<String>,
+        gate: Option<String>,
+        checkbox: Option<String>,
+        run_stage_id: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            execution_id,
+            request_kind,
+            decision_kind,
+            stage_index,
+            stage_slug,
+            gate,
+            checkbox,
+            run_stage_id,
+        }
+    }
+
+    /// 主キー — 自然キー (`execution_id`, `request_kind`) から導いた代理キー。
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// `read_run_stage.id` を指す FK (指す先の行が同じスナップショットに在るときだけ)。
+    #[must_use]
+    pub fn run_stage_id(&self) -> Option<&str> {
+        self.run_stage_id.as_deref()
+    }
+
+    /// `read_execution.id` を指す FK。
+    #[must_use]
+    pub fn execution_id(&self) -> &str {
+        &self.execution_id
+    }
+
+    /// 要求の形の綴り (`bare` / `resume` / `free-text` / `reentry`)。
+    #[must_use]
+    pub fn request_kind(&self) -> &str {
+        &self.request_kind
+    }
+
+    /// 答えの分類子 (`run-stage` … `inconsistent-skip`)。
+    #[must_use]
+    pub fn decision_kind(&self) -> &str {
+        &self.decision_kind
+    }
+
+    /// 答えが名指すステージ位置 (名指さない分岐は NULL)。
+    #[must_use]
+    pub const fn stage_index(&self) -> Option<usize> {
+        self.stage_index
+    }
+
+    /// 答えが名指すステージの slug。
+    #[must_use]
+    pub fn stage_slug(&self) -> Option<&str> {
+        self.stage_slug.as_deref()
+    }
+
+    /// `run-stage` のときだけ在る — そのステージのゲート判断の綴り
+    /// (`gated` / `ungated` / `unresolved`)。
+    ///
+    /// 綴りの正本はドメインの [`GateDecision::spelling`] である — 3 値であって真偽値では
+    /// ないので、列も `INTEGER` ではなく `TEXT` である (b47 / #73)。
+    ///
+    /// [`GateDecision::spelling`]: core_command_domain::orchestration::GateDecision::spelling
+    #[must_use]
+    pub fn gate(&self) -> Option<&str> {
+        self.gate.as_deref()
+    }
+
+    /// 不整合 2 形のときだけ在る — 観測 checkbox の綴り。
+    #[must_use]
+    pub fn checkbox(&self) -> Option<&str> {
+        self.checkbox.as_deref()
+    }
+}

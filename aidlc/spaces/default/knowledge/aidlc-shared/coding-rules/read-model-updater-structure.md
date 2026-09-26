@@ -10,7 +10,8 @@
 **機械強制**: レビュー基準
 **適用例**: Issue #153 の PR1 — `WorkspaceDoctorReadModelUpdater`、PR2 — `SteeringReadModelUpdater` /
 `TestingReadModelUpdater` / `PlanFingerprintReadModelUpdater` / `CodeGenerationApprovalReadModelUpdater`、
-PR3 — `PipelineProgressReadModelUpdater`（いずれも `modules/core/read-model-updater/src/orchestration/`）
+PR3 — `PipelineProgressReadModelUpdater`、PR4 — `StructuredReadModelUpdater`（構造化面の 20 表・処理したシーケンス
+番号・共有面の記録。いずれも `modules/core/read-model-updater/src/orchestration/`）
 
 ## 原則
 
@@ -46,7 +47,8 @@ PR3 — `PipelineProgressReadModelUpdater`（いずれも `modules/core/read-mod
 
 **ジャーナルを読む口は `JournalReader` 1 本**（オーナー裁定 2026-09-26）。ジャーナルは構造上 1 つの要素なので、
 代理も 1 つである。更新器ごとに読みたい事実の種類が違うなら、読取の引数で絞る。移行中に置いた面ごとの
-`…JournalReader`（`PlanApprovalJournalReader`・`WorkspaceDoctorJournalReader`）は暫定であり、移行の最後に消す。
+`…JournalReader`（`PlanApprovalJournalReader`・`WorkspaceDoctorJournalReader`・`StructuredJournalReader`）は暫定であり、
+移行の最後に消す。
 
 ### 3. DAO は単一テーブルの I/O だけ
 
@@ -118,7 +120,8 @@ DB トランザクションの受け渡しは次の形にそろえる。PR1（�
 - ポート面に `rusqlite` の型が現れる。これは RMU クレートの内側の話であり、SQLite への依存は RMU の本質的な結合で
   ある（[cqrs-boundaries.md](cqrs-boundaries.md) の判定表 — 2026-08-29 裁定）。クエリ側ポートの「媒体を契約に
   漏らさない」とは射程が違う。
-- ジャーナルの読み手は、移行中だけ面ごとに `…JournalReader`（例: `WorkspaceDoctorJournalReader`）として立てる。
+- ジャーナルの読み手は、移行中だけ面ごとに `…JournalReader`（例: `WorkspaceDoctorJournalReader` /
+  `StructuredJournalReader`）として立てる。
   旧 `JournalReader` はまだリードモデルへの書込を抱えているので、それを流用すると書く口ごと依存してしまうため
   である。移行の最後に `JournalReader` 1 本へまとめて消す（原則 2 — オーナー裁定 2026-09-26）。
 
@@ -153,8 +156,9 @@ DB トランザクションの受け渡しは次の形にそろえる。PR1（�
 - **射程**: `modules/core/read-model-updater`（RMU）の更新器と、そのポート・実装。
 - **移行中である**。2026-09-26 時点でこの形に移したのは、自己診断（`WorkspaceDoctorReadModelUpdater` — PR1）と、
   参照入力由来の単独面 — steering（`SteeringReadModelUpdater`）・テスト契約・計画指紋・Code Generation 開始可否
-  （PR2）と、Pipeline 面（`PipelineProgressReadModelUpdater` — PR3）である。ほかの更新器（取得ループ本体の
-  構造化面と公開・runtime-graph・停止制御・心拍・承認ランタイム）は旧来の形のまま残っている。移行の順序は
+  （PR2）と、Pipeline 面（`PipelineProgressReadModelUpdater` — PR3）と、構造化面（`StructuredReadModelUpdater` —
+  PR4）である。ほかの更新器（取得ループ本体の公開（Markdown 面）・runtime-graph・停止制御・心拍・承認ランタイム）は
+  旧来の形のまま残っている（公開の確定の中の構造化面の書込は、PR4 から構造化面の表の DAO を通る）。移行の順序は
   [rmu-dao-migration-plan-20260926.md](../../rmu-dao-migration-plan-20260926.md)。移行が済むまで、既存の更新器を
   この規則で「違反」として止めない（新規に書く更新器と、手を入れる更新器には適用する）。
 - **対象外**: コマンド側の Repository（[gateway-taxonomy.md](gateway-taxonomy.md) §1・§2）と、クエリ側の DAO

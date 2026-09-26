@@ -24,10 +24,11 @@
 //! (スキーマガードと同じ運用)。
 //!
 //! さらに多層防御として、チェックポイント表に**アンカー (aid, seq_nr)** を併記する —
-//! `advance_checkpoint` が前進先の journal 行の識別子を保存し、読取はアンカーを journal の
+//! 構造化面の更新器が前進先の journal 行の識別子を保存し、読取はアンカーを journal の
 //! 同 rowid と照合して、食い違い (振り直し・改変の兆候) を
 //! `Corrupt (CheckpointAnchorMismatch)` で明示的に拒否する。前提が破れても静かな欠落・
-//! 重複にはならない。
+//! 重複にはならない (照合は `structured_surface` — チェックポイントの表とジャーナルをまたぐ
+//! 検査なので、表の DAO にもこの読み手にも置かない)。
 //!
 //! 本家スキーマへの結合は次の 2 つで守る:
 //!
@@ -35,17 +36,20 @@
 //! 2. スキーマガードテスト ([`tests::the_upstream_journal_schema_is_the_pinned_one`]) —
 //!    本家の DDL がずれたら「本家スキーマが変わった」と明示的に落ちる
 //!
-//! # チェックポイントは自前の表である
+//! # リードモデル側の表は持たない
 //!
-//! 本家の表とは名前を分ける (`amadeus_projection_checkpoint`) — 同じ DB ファイルに同居
-//! させても本家のスキーマ作成 (`CREATE TABLE IF NOT EXISTS`) と衝突しない。
+//! 処理したシーケンス番号 (`amadeus_projection_checkpoint`)・共有面の記録
+//! (`amadeus_read_model_head`)・`read_*` 表は、それぞれの表の DAO と構造化面の更新器
+//! ([`super::StructuredReadModelUpdater`]) の持ち物である (Issue #153 の PR4)。開く段で
+//! それらの表を作ることもしない — 読み面の表の用意は `read_model_schema::prepare` 1 か所が
+//! 持つ。ここに残る書込は公開 (`publish` — Markdown 面、PR5 で更新器へ移す) だけで、その中の
+//! 構造化面の確定と番号の読取は構造化面の手順 (`structured_surface`) を呼ぶ。
 //!
 //! # 接続は単一所有である
 //!
-//! 読取 (`events_after` / `checkpoint`) は `&self`、書込 (`advance_checkpoint`) は
-//! `&mut self` で、rusqlite の `Connection::prepare` (`&self`) と `Connection::transaction`
-//! (`&mut self`) にそのまま対応する。内部可変性で `&self` を偽装しない
-//! (`coding-rules/interior-mutability.md`)。
+//! 読取 (`events_after` / `checkpoint`) は `&self`、書込 (`publish`) は `&mut self` で、
+//! rusqlite の `Connection::prepare` (`&self`) と `Connection::transaction` (`&mut self`) に
+//! そのまま対応する。内部可変性で `&self` を偽装しない (`coding-rules/interior-mutability.md`)。
 
 use std::io::ErrorKind;
 use std::path::Path;
@@ -63,13 +67,8 @@ use super::journal_entry::JournalEntry;
 use super::journal_read_error::JournalReadError;
 use super::journal_reader::JournalReader;
 use super::projection_name::ProjectionName;
-use super::store_failure::SqliteResultExt;
-use super::{
-    CodeGenerationApprovalDao as _, CodeGenerationApprovalDaoImpl, PipelineProgressDao as _,
-    PipelineProgressDaoImpl, PlanFingerprintDao as _, PlanFingerprintDaoImpl, SteeringPartDao as _,
-    SteeringPartDaoImpl, SteeringPlanDao as _, SteeringPlanDaoImpl, TestingContractDao as _,
-    TestingContractDaoImpl,
-};
+use super::store_failure::{InStore as _, SqliteResultExt};
+use super::structured_surface::StructuredSurface;
 use core_command_domain::orchestration::{
     Intent, IntentExecutionEvent, IntentExecutionId, IntentId,
 };
@@ -83,26 +82,14 @@ use serde::Deserialize;
 use super::dto::{
     DtoDecodeError, IntentEventDto, IntentExecutionEventDto, WorkflowDefinitionEventDto,
 };
-use crate::read_tables::{
-    READ_SCHEMA_VERSION, ReadTables, ensure_tables, read_schema_version, recreate_tables,
-    replace_all, set_schema_version,
-};
+use crate::read_tables::ReadTables;
 use core_command_domain::workspace::StorePath;
 
-/// 書込ロックを待つ既定の上限 (BR2.1)。読取専用の接続でも、チェックポイントの前進だけは
-/// 書込なので待ち時間が要る。
+/// 書込ロックを待つ既定の上限 (BR2.1)。公開 (`publish`) は書込なので待ち時間が要る。
 const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_millis(5000);
 
 /// 本家の追記専用ジャーナル表 (`rowid` がコミット順の単調カーソルになる)。
 const UPSTREAM_JOURNAL_TABLE: &str = "journal";
-
-/// チェックポイント表の DDL (冪等)。
-const CREATE_CHECKPOINT_TABLE: &str = "CREATE TABLE IF NOT EXISTS amadeus_projection_checkpoint (
-  projection      TEXT    PRIMARY KEY,
-  last_global_seq INTEGER NOT NULL,
-  anchor_aid      TEXT,
-  anchor_seq_nr   INTEGER
-)";
 
 /// 全集約横断の差分読取 (`rowid` 昇順)。
 ///
@@ -111,27 +98,7 @@ const CREATE_CHECKPOINT_TABLE: &str = "CREATE TABLE IF NOT EXISTS amadeus_projec
 const SELECT_EVENTS_AFTER: &str = "SELECT rowid, aid, seq_nr, payload, occurred_at, manifest
      FROM journal WHERE rowid > ?1 AND (?2 IS NULL OR rowid <= ?2) ORDER BY rowid";
 
-/// 投影のチェックポイント。
-const SELECT_CHECKPOINT: &str = "SELECT last_global_seq, anchor_aid, anchor_seq_nr
-     FROM amadeus_projection_checkpoint WHERE projection = ?1";
-
-/// チェックポイント位置の journal 行の識別子 (アンカーの記録・照合の両方が使う)。
-const SELECT_ANCHOR_ROW: &str = "SELECT aid, seq_nr FROM journal WHERE rowid = ?1";
-
-/// チェックポイントの前進 (未登録なら登録)。
-const UPSERT_CHECKPOINT: &str =
-    "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
-     VALUES (?1, ?2, ?3, ?4)
-     ON CONFLICT(projection) DO UPDATE SET
-       last_global_seq = excluded.last_global_seq,
-       anchor_aid = excluded.anchor_aid,
-       anchor_seq_nr = excluded.anchor_seq_nr";
-
-/// 進んだチェックポイントの本数 (読み面の作り直しが要るストアかの判別に使う)。
-const SELECT_ADVANCED_CHECKPOINTS: &str =
-    "SELECT COUNT(*) FROM amadeus_projection_checkpoint WHERE last_global_seq > 0";
-
-/// 集約に属さない行 (チェックポイント・カーソル) の識別子欄に置く印。
+/// 集約に属さない行 (カーソル) の識別子欄に置く印。
 const NO_AGGREGATE: &str = "-";
 
 /// 行の材料を添えて `Corrupt` を組む。
@@ -175,11 +142,15 @@ struct JournalRow {
     manifest: String,
 }
 
-/// 本家のジャーナルを横断で読み、投影チェックポイントを持つ `JournalReader` の実装。
+/// 本家のジャーナルを横断で読む `JournalReader` の実装。
+///
+/// 公開 (`publish`) と処理したシーケンス番号の読取 (`checkpoint`) は、構造化面の手順
+/// (`structured` — 表の DAO の組) に委ねる。どちらも PR5 で更新器へ移すまでの暫定である。
 #[derive(Debug)]
 pub struct JournalReaderImpl {
     path: StorePath,
     connection: Connection,
+    structured: StructuredSurface,
 }
 
 impl JournalReaderImpl {
@@ -189,7 +160,10 @@ impl JournalReaderImpl {
     /// 本家が所有する表を我々が先に作ると、DDL の正本が 2 か所になる。まだ存在しない
     /// ストアを開こうとしたら `Io { kind: NotFound }` で止まる。
     ///
-    /// 自前のチェックポイント表だけは (無ければ) ここで作る。
+    /// リードモデル側の表 (チェックポイント・共有面の記録・`read_*` 表) も作らない — それは
+    /// 構造化面の更新器の開く段 (`read_model_schema::prepare`) の仕事である。ここで (無ければ)
+    /// 作るのは、まだこの読み手が抱えている公開計画の表 (`amadeus_publication*`、PR5 で移す)
+    /// だけであり、それも揃っていれば書込ロックを取らない。
     ///
     /// # Errors
     ///
@@ -213,8 +187,8 @@ impl JournalReaderImpl {
     ) -> Result<JournalReaderImpl, JournalReadError> {
         // 読取側の接続はストアファイルを**作らない** (SQLITE_OPEN_CREATE を外す)。
         // 存在しないパスは空 DB を作って NotFound を返すのではなく、open 自体が失敗する
-        // (B6 CodeRabbit #511)。書込は checkpoint 表があるので READ_WRITE は残す。
-        let mut connection = Connection::open_with_flags(
+        // (B6 CodeRabbit #511)。公開 (`publish`) が書くので READ_WRITE は残す。
+        let connection = Connection::open_with_flags(
             path.as_path(),
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_URI
@@ -230,25 +204,11 @@ impl JournalReaderImpl {
                 path: Some(path.as_path().to_path_buf()),
             });
         }
-        connection
-            .execute_batch(CREATE_CHECKPOINT_TABLE)
-            .at_store(path.as_path())?;
-        // 構造化リードモデルの表も我々の表である (本家の DDL とは衝突しない
-        // `read_` 接頭)。版が一致していれば冪等な `CREATE TABLE IF NOT EXISTS` だけ、
-        // 動いていれば落として作り直しジャーナルから描き直す。参照入力由来の 6 表は、
-        // DDL の正本であるそれぞれの表の DAO に作らせる。
-        let schema_changed =
-            read_schema_version(&connection).at_store(path.as_path())? != READ_SCHEMA_VERSION;
-        JournalReaderImpl::ensure_read_schema(&mut connection, path.as_path())?;
-        JournalReaderImpl::ensure_reference_tables(&mut connection, path.as_path())?;
         super::publication_store::initialize(&connection, path.as_path())?;
-        super::shared_projection::initialize(&connection, path.as_path())?;
-        if schema_changed {
-            super::shared_projection::invalidate(&connection, path.as_path())?;
-        }
         Ok(JournalReaderImpl {
             path: path.clone(),
             connection,
+            structured: StructuredSurface::default(),
         })
     }
 
@@ -258,40 +218,22 @@ impl JournalReaderImpl {
         &self.path
     }
 
-    /// 新規イベントの有無によらず、現在の全履歴から共有構造化面を再生成する。
-    /// 個別ファイルのチェックポイントは変更しない。
+    /// 新規イベントの有無によらず、現在の全履歴から共有構造化面を描き直す (1 つの IMMEDIATE
+    /// トランザクション)。個別ファイルのチェックポイントは変更しない。
     ///
-    /// # Errors
-    /// 履歴欠落・破損、投影不能、DB更新の失敗。
-    pub fn rebuild_read_model(&mut self) -> Result<GlobalSeqNr, super::ReadModelUpdateError> {
+    /// 失われた出力の復元 ([`JournalReaderImpl::restore_missing_files`]) だけが呼ぶ — 共有面は
+    /// 現在の履歴から修復し、個別ファイルは保存済みの断面から戻す。描き直しの手順そのものは
+    /// 構造化面の手順 (`structured_surface`) が持つ。
+    fn rebuild_shared_surface(&mut self) -> Result<GlobalSeqNr, super::ReadModelUpdateError> {
         let path = self.path.clone();
-        let transaction = self
+        let mut transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .at_store(path.as_path())?;
-        let history = Self::scan_from(&transaction, path.as_path(), GlobalSeqNr::ZERO)?;
-        let last = history.scanned_to().unwrap_or(GlobalSeqNr::ZERO);
-        let recorded: i64 = transaction
-            .query_row(
-                "SELECT COALESCE(MAX(last_global_seq),0) FROM amadeus_projection_checkpoint",
-                [],
-                |row| row.get(0),
-            )
-            .at_store(path.as_path())?;
-        let head = super::shared_projection::read(&transaction, path.as_path())?;
-        let published = match head {
-            Some(head) => head.position(),
-            None => super::shared_projection::known_position(&transaction, path.as_path())?,
-        };
-        let recorded = recorded.max(published);
-        if to_i64(last.to_u64())? < recorded {
-            return Err(
-                corrupt_error(NO_AGGREGATE, None, CorruptCause::CheckpointAnchorMismatch).into(),
-            );
-        }
-        let tables = ReadTables::project(&history)?;
-        replace_all(&transaction, &tables).at_store(path.as_path())?;
-        super::shared_projection::record(&transaction, path.as_path(), to_i64(last.to_u64())?)?;
+        let last = self
+            .structured
+            .rebuild(&mut transaction)
+            .in_store(path.as_path())?;
         transaction.commit().at_store(path.as_path())?;
         Ok(last)
     }
@@ -343,14 +285,17 @@ impl JournalReaderImpl {
         if !missing {
             return Ok(false);
         }
-        let checkpoint = Self::read_checkpoint(&self.connection, projection, self.path.as_path())?;
+        let checkpoint = self
+            .structured
+            .checkpoint(&self.connection, projection)
+            .in_store(self.path.as_path())?;
         if checkpoint < previous.to() {
             return Err(super::ReadModelUpdateError::PublicationConflict {
                 path: self.path.as_path().to_path_buf(),
             });
         }
         // 共有面は現在の履歴から修復し、個別ファイルは保存済み断面を回復する。
-        self.rebuild_read_model()?;
+        self.rebuild_shared_surface()?;
         let history = Self::scan_range(
             &self.connection,
             self.path.as_path(),
@@ -423,186 +368,6 @@ impl JournalReaderImpl {
             &tables,
         )?;
         Ok(true)
-    }
-
-    /// 読み面 21 表を**版付きで**用意する (取得ループの入口 = 開く段で 1 度)。
-    ///
-    /// `PRAGMA user_version` に [`READ_SCHEMA_VERSION`] を持ち、保存値が現行と同じなら
-    /// 冪等な `CREATE TABLE IF NOT EXISTS` だけを打つ。違うときは 21 表を落として作り直し、
-    /// **その場でジャーナル全履歴から描き直す**。
-    ///
-    /// # なぜ作り直しが要るか
-    ///
-    /// `CREATE TABLE IF NOT EXISTS` は既存の表に何もしない。列の形が変わる改訂
-    /// (b47 の `read_next_answer.gated INTEGER` → `gate TEXT`) を旧スキーマのストアへ
-    /// 持ち込むと、表は旧いまま残り `INSERT` が `no such column` で落ちる。行の正本は
-    /// ジャーナルなので、読み面は捨てて描き直せる。
-    ///
-    /// # なぜチェックポイントを戻さないか
-    ///
-    /// チェックポイントは Markdown 面 (状態ファイル・監査シャード) と**共有**である。
-    /// 戻すと未投影区間が全履歴になり、監査シャードに同じブロックがもう一度並ぶ
-    /// ([`crate::orchestration::OrchestrationReadModelUpdater`] の「書いてから進める」)。
-    /// 読み面だけを作り直したいので、ここで全履歴を引いて `replace_all` し、
-    /// チェックポイントには触れない。参照入力由来の 2 表 (`read_steering_*`) は空のまま
-    /// 戻るが、次の更新 (`update_read_models`) が保存済み `source_digest` を `None` と見て描き直す。
-    ///
-    /// # 描き直すのは「投影済みのストア」だけ
-    ///
-    /// チェックポイントがまだ 1 つも進んでいないストア (鋳造直後・未投影) には作り直す
-    /// 中身が無く、次の更新 (`update_read_models`) が全履歴から普通に描く。開く段で毎回ジャーナル全体を
-    /// 復号すると、読むだけの動詞まで復号の失敗で倒れるようになるので、**進んだ
-    /// チェックポイントが在るときだけ**その場の描き直しに入る。
-    fn ensure_read_schema(
-        connection: &mut Connection,
-        path: &Path,
-    ) -> Result<(), JournalReadError> {
-        let stored = read_schema_version(connection).at_store(path)?;
-        if stored == READ_SCHEMA_VERSION {
-            return ensure_tables(connection).at_store(path);
-        }
-        recreate_tables(connection).at_store(path)?;
-        if !JournalReaderImpl::projected_before(connection, path)? {
-            return set_schema_version(connection, READ_SCHEMA_VERSION).at_store(path);
-        }
-        let history = JournalReaderImpl::scan_from(connection, path, GlobalSeqNr::ZERO)?;
-        // 描けない歴史 (切り落とし・復号不能) は作り直しでも直らない — 版を上げずに止める。
-        let tables = ReadTables::project(&history)
-            .map_err(|_| corrupt_error(NO_AGGREGATE, None, CorruptCause::InvariantViolation))?;
-        // 行の全差し替えと版の記録は同じ Tx に閉じる — 途中で落ちたら版も上がらず、
-        // 次の起動が同じ作り直しをやり直す。
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path)?;
-        replace_all(&transaction, &tables).at_store(path)?;
-        set_schema_version(&transaction, READ_SCHEMA_VERSION).at_store(path)?;
-        transaction.commit().at_store(path)
-    }
-
-    /// 参照入力由来の 6 表 (steering 2 表・テスト契約・計画指紋・Code Generation 開始可否・
-    /// Pipeline 進捗) を無ければ作る。DDL の正本はそれぞれの表の DAO である。
-    ///
-    /// 表を書くのは面ごとの更新器 ([`super::SteeringReadModelUpdater`] ほか) だが、クエリ側は
-    /// その更新器がまだ一度も走っていないストアでも表を引く。読み面の表と同じく、開く段で
-    /// 表だけは揃えておく。読み面の版が動いて落とされた ([`recreate_tables`]) 後も、ここで
-    /// 空の表として作り直す (行は次の更新が保存済みの出所を `None` と見て描き直す)。
-    ///
-    /// 表が揃っているか (`table_exists`) は書込ロックを取らずに見る。揃っていれば書込
-    /// トランザクションを開かない。欠けているときだけ `BEGIN IMMEDIATE` で開いて作る
-    /// (DEFERRED で開くと、スキーマを読んでから書込へ昇格するときに busy timeout を待たずに
-    /// 即失敗しうる — #134)。
-    ///
-    /// 暫定である — 表の用意 (DDL・版による DROP) をどこが持つかは Issue #153 の PR4 で決める。
-    fn ensure_reference_tables(
-        connection: &mut Connection,
-        path: &Path,
-    ) -> Result<(), JournalReadError> {
-        let complete = SteeringPlanDaoImpl.table_exists(connection)?
-            && SteeringPartDaoImpl.table_exists(connection)?
-            && TestingContractDaoImpl.table_exists(connection)?
-            && PlanFingerprintDaoImpl.table_exists(connection)?
-            && CodeGenerationApprovalDaoImpl.table_exists(connection)?
-            && PipelineProgressDaoImpl.table_exists(connection)?;
-        if complete {
-            return Ok(());
-        }
-        let mut transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path)?;
-        SteeringPlanDaoImpl.create_table(&mut transaction)?;
-        SteeringPartDaoImpl.create_table(&mut transaction)?;
-        TestingContractDaoImpl.create_table(&mut transaction)?;
-        PlanFingerprintDaoImpl.create_table(&mut transaction)?;
-        CodeGenerationApprovalDaoImpl.create_table(&mut transaction)?;
-        PipelineProgressDaoImpl.create_table(&mut transaction)?;
-        transaction.commit().at_store(path)
-    }
-
-    /// このストアで投影が 1 度でも進んだか (進んだチェックポイントが在るか)。
-    ///
-    /// 読み面の作り直しが要るのは、**旧スキーマの表がすでに描かれている**ストアだけで
-    /// ある。未投影のストアは作り直す中身を持たない。
-    fn projected_before(connection: &Connection, path: &Path) -> Result<bool, JournalReadError> {
-        let count: i64 = connection
-            .query_row(SELECT_ADVANCED_CHECKPOINTS, [], |row| row.get(0))
-            .at_store(path)?;
-        Ok(count > 0)
-    }
-
-    /// ジャーナルを `after` の先から走査する (同期の核)。
-    ///
-    /// [`JournalReader::events_after`] の本体そのものであり、開く段のスキーマ作り直し
-    /// ([`JournalReaderImpl::ensure_read_schema`]) も同じ核を使う — 版が動いたときに
-    /// 読み面を全履歴から描き直すのに、非同期の口を通す必要が無いためである。
-    pub(super) fn advance_on(
-        connection: &rusqlite::Transaction<'_>,
-        path: &Path,
-        projection: &ProjectionName,
-        to: GlobalSeqNr,
-        tables: &ReadTables,
-    ) -> Result<(), JournalReadError> {
-        let target = to_i64(to.to_u64())?;
-        let current = JournalReaderImpl::read_checkpoint(connection, projection, path)?;
-        if to < current {
-            return Err(JournalReadError::CheckpointRegression {
-                projection: projection.clone(),
-                current,
-                requested: to,
-            });
-        }
-        // 前進先の journal 行の識別子をアンカーとして併記する。journal に無い位置へは
-        // 進めない — 進めると以後の照合が必ず失敗する (ZERO はアンカー無し)。
-        let anchor: Option<(String, i64)> = if target == 0 {
-            None
-        } else {
-            let row: Option<(String, i64)> = connection
-                .query_row(SELECT_ANCHOR_ROW, params![target], |row| {
-                    Ok((row.get(0)?, row.get(1)?))
-                })
-                .optional()
-                .at_store(path)?;
-            match row {
-                Some(found) => Some(found),
-                None => {
-                    return Err(corrupt_error(
-                        NO_AGGREGATE,
-                        None,
-                        CorruptCause::CheckpointAnchorMismatch,
-                    ));
-                }
-            }
-        };
-        let (anchor_aid, anchor_seq_nr) = match &anchor {
-            Some((aid, seq_nr)) => (Some(aid.as_str()), Some(*seq_nr)),
-            None => (None, None),
-        };
-        // 行の全差し替えとチェックポイントの前進は**同じ Tx** である (裁定 §3)。
-        // 上の単調性・アンカー照合で早期 return したときは行も 1 つも変わっていない
-        // (Tx は commit されずに落ちる)。
-        // 個別カーソルが遅れていても、space共有の行集合は後退させない。
-        // 古い候補を確定する場合も、共有面の現物と耐久headの一致を検査する。
-        let head = super::shared_projection::verify(connection, path)?;
-        let shared = head.position();
-        if target == shared
-            && !crate::read_tables::matches_rows(connection, tables).at_store(path)?
-        {
-            return Err(corrupt_error(
-                NO_AGGREGATE,
-                None,
-                CorruptCause::ProjectionSnapshotMismatch,
-            ));
-        }
-        if target > shared {
-            replace_all(connection, tables).at_store(path)?;
-            super::shared_projection::record(connection, path, target)?;
-        }
-        connection
-            .execute(
-                UPSERT_CHECKPOINT,
-                params![projection.as_str(), target, anchor_aid, anchor_seq_nr],
-            )
-            .at_store(path)?;
-        Ok(())
     }
 
     fn scan_from(
@@ -693,74 +458,6 @@ impl JournalReaderImpl {
         Ok(JournalBatch::new(entries, intents, definitions, scanned_to)
             .with_artifacts(artifacts)
             .with_sessions(sessions))
-    }
-
-    /// 現在のチェックポイント (未登録は `ZERO`)。読取・前進の両方が使う。
-    ///
-    /// 正のチェックポイントは保存済みアンカー (aid, seq_nr) を journal の同 rowid と照合して
-    /// から返す — 食い違いは `Corrupt (CheckpointAnchorMismatch)` (PR #30 レビュー裁定)。
-    pub(super) fn read_checkpoint(
-        connection: &Connection,
-        projection: &ProjectionName,
-        path: &Path,
-    ) -> Result<GlobalSeqNr, JournalReadError> {
-        let raw: Option<(i64, Option<String>, Option<i64>)> = connection
-            .query_row(SELECT_CHECKPOINT, params![projection.as_str()], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
-            .optional()
-            .at_store(path)?;
-        let Some((value, anchor_aid, anchor_seq_nr)) = raw else {
-            return Ok(GlobalSeqNr::ZERO);
-        };
-        let checkpoint = GlobalSeqNr::new(to_u64(value, NO_AGGREGATE)?);
-        if checkpoint == GlobalSeqNr::ZERO {
-            return Ok(checkpoint);
-        }
-        JournalReaderImpl::verify_anchor(connection, path, checkpoint, anchor_aid, anchor_seq_nr)?;
-        Ok(checkpoint)
-    }
-
-    /// 保存済みアンカーを journal の同 rowid と照合する。
-    ///
-    /// rowid が振り直される・ジャーナルが改変されると、`rowid > チェックポイント` の差分読取は
-    /// 欠落や重複を起こす。照合はそれを静かな破損ではなく明示エラーにする。
-    fn verify_anchor(
-        connection: &Connection,
-        path: &Path,
-        checkpoint: GlobalSeqNr,
-        anchor_aid: Option<String>,
-        anchor_seq_nr: Option<i64>,
-    ) -> Result<(), JournalReadError> {
-        // 正のチェックポイントには advance が必ずアンカーを書く — 欠けは直接改変の兆候。
-        let (Some(expected_aid), Some(expected_seq_nr)) = (anchor_aid, anchor_seq_nr) else {
-            return Err(corrupt_error(
-                NO_AGGREGATE,
-                None,
-                CorruptCause::CheckpointAnchorMismatch,
-            ));
-        };
-        let expected_seq_nr = usize::try_from(expected_seq_nr)
-            .map_err(|_| corrupt_error(&expected_aid, None, CorruptCause::InvariantViolation))?;
-        let target = to_i64(checkpoint.to_u64())?;
-        let actual: Option<(String, i64)> = connection
-            .query_row(SELECT_ANCHOR_ROW, params![target], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
-            .optional()
-            .at_store(path)?;
-        let matches = actual.as_ref().is_some_and(|(aid, seq_nr)| {
-            *aid == expected_aid && usize::try_from(*seq_nr) == Ok(expected_seq_nr)
-        });
-        if matches {
-            Ok(())
-        } else {
-            Err(corrupt_error(
-                &expected_aid,
-                Some(expected_seq_nr),
-                CorruptCause::CheckpointAnchorMismatch,
-            ))
-        }
     }
 }
 
@@ -1037,25 +734,6 @@ const fn occurred_at_of(nanos: i64) -> DateTime<Utc> {
 }
 
 impl JournalReader for JournalReaderImpl {
-    fn prepare_read_model(&mut self) -> Result<(), super::ReadModelUpdateError> {
-        let needs_rebuild =
-            match super::shared_projection::read(&self.connection, self.path.as_path())? {
-                None => true,
-                Some(head) => {
-                    !head.is_current()
-                        || (head.is_unverified()
-                            && super::shared_projection::known_position(
-                                &self.connection,
-                                self.path.as_path(),
-                            )? > 0)
-                }
-            };
-        if needs_rebuild {
-            self.rebuild_read_model()?;
-        }
-        Ok(())
-    }
-
     async fn pending_publication(
         &self,
         projection: &ProjectionName,
@@ -1095,22 +773,9 @@ impl JournalReader for JournalReaderImpl {
         &self,
         projection: &ProjectionName,
     ) -> Result<GlobalSeqNr, JournalReadError> {
-        JournalReaderImpl::read_checkpoint(&self.connection, projection, self.path.as_path())
-    }
-
-    async fn advance_checkpoint(
-        &mut self,
-        projection: &ProjectionName,
-        to: GlobalSeqNr,
-        tables: &ReadTables,
-    ) -> Result<(), JournalReadError> {
-        let path = self.path.clone();
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .at_store(path.as_path())?;
-        Self::advance_on(&transaction, path.as_path(), projection, to, tables)?;
-        transaction.commit().at_store(path.as_path())
+        self.structured
+            .checkpoint(&self.connection, projection)
+            .in_store(self.path.as_path())
     }
 }
 
@@ -1124,8 +789,6 @@ pub(super) mod tests {
         IntentEventId, IntentExecutionEvent, IntentExecutionEventId, Unparked,
     };
 
-    /// 投影チェックポイントの表 (**我々の表**。本家の `journal` / `snapshot` と衝突しない)。
-    const CHECKPOINT_TABLE: &str = "amadeus_projection_checkpoint";
     use core_command_domain::workspace::SpaceName;
     use event_store_adapter_rs::EventStoreForSqlite;
     use event_store_adapter_rs::types::AggregateId;
@@ -1281,10 +944,11 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn opening_creates_our_tables_next_to_the_upstream_ones() {
-        // 同じ DB ファイルに 3 種の表が同居する: 本家の 2 つ (`journal` / `snapshot`)、
-        // 我々のチェックポイント表、そして構造化リードモデルの 21 表 (`read_` 接頭)。
-        // 名前が衝突しないことが同居の前提なので、集合そのものを固定する。
+    fn opening_creates_only_the_publication_tables_next_to_the_upstream_ones() {
+        // 同じ DB ファイルに同居するのは本家の 2 表 (`journal` / `snapshot`) と、この読み手が
+        // まだ抱えている公開計画の表 (`amadeus_publication*`、PR5 で移す) だけである。
+        // リードモデル側の表 (チェックポイント・共有面の記録・`read_*`) は作らない — 読み面の
+        // 表の用意は構造化面の更新器の開く段 (`read_model_schema::prepare`) の仕事である。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
         let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
@@ -1300,76 +964,38 @@ pub(super) mod tests {
             .filter_map(Result::ok)
             .filter(|name| !name.starts_with("sqlite_"))
             .collect();
-
-        let upstream: Vec<&str> = tables
-            .iter()
-            .map(String::as_str)
-            .filter(|name| {
-                !name.starts_with("read_")
-                    && *name != CHECKPOINT_TABLE
-                    && *name != "amadeus_publication"
-                    && *name != "amadeus_publication_file"
-                    && *name != "amadeus_publication_history"
-                    && *name != "amadeus_publication_history_file"
-                    && *name != "amadeus_publication_snapshot"
-                    && *name != "amadeus_publication_snapshot_file"
-                    && *name != "amadeus_read_model_head"
-            })
-            .collect();
-        assert_eq!(upstream, ["journal", "snapshot"], "本家の表は 2 つだけ");
-        for name in [
-            "amadeus_publication",
-            "amadeus_publication_file",
-            "amadeus_publication_history",
-            "amadeus_publication_history_file",
-            "amadeus_publication_snapshot",
-            "amadeus_publication_snapshot_file",
-            "amadeus_read_model_head",
-        ] {
-            assert!(
-                tables.iter().any(|table| table == name),
-                "公開計画の表がある: {name}"
-            );
-        }
-        assert!(
-            tables.iter().any(|name| name == CHECKPOINT_TABLE),
-            "チェックポイント表がある"
-        );
         assert_eq!(
-            tables
-                .iter()
-                .filter(|name| name.starts_with("read_"))
-                .count(),
-            26,
-            "構造化リードモデルは 26 表 (v7: 25 表に開始可否の参照面 read_code_generation_approval を加えた)"
+            tables,
+            [
+                "amadeus_publication",
+                "amadeus_publication_file",
+                "amadeus_publication_history",
+                "amadeus_publication_history_file",
+                "amadeus_publication_snapshot",
+                "amadeus_publication_snapshot_file",
+                "journal",
+                "snapshot",
+            ]
         );
     }
 
     #[test]
-    fn opening_twice_does_not_recreate_the_checkpoint_table() {
+    fn opening_a_store_whose_tables_exist_does_not_wait_for_a_write_lock() {
+        // 開く段が表を作るのは欠けているときだけである。揃っていれば、別の接続が書込ロックを
+        // 握っていても待たずに開ける (以前は共有面の記録の `INSERT OR IGNORE` が毎回
+        // 書込ロックを取っていた — Issue #153 の PR4 で取り除いた)。
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        {
-            let conn = Connection::open(path.as_path()).expect("生の接続");
-            conn.execute_batch(CREATE_CHECKPOINT_TABLE)
-                .expect("表を作る");
-            conn.execute(
-                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
-                 VALUES ('state-file', 3)",
-                [],
-            )
-            .expect("行を置く");
-        }
-        let _reader = JournalReaderImpl::open(&path).expect("開ける");
-        let conn = Connection::open(path.as_path()).expect("生の接続");
-        let last: i64 = conn
-            .query_row(
-                "SELECT last_global_seq FROM amadeus_projection_checkpoint",
-                [],
-                |row| row.get(0),
-            )
-            .expect("行は残る");
-        assert_eq!(last, 3);
+        drop(JournalReaderImpl::open(&path).expect("初回は表を作る"));
+        let holder = raw(&path);
+        holder
+            .execute_batch("BEGIN IMMEDIATE")
+            .expect("書込ロックを握る");
+
+        let reopened = JournalReaderImpl::open_with_busy_timeout(&path, Duration::from_millis(20));
+
+        holder.execute_batch("END").expect("手放す");
+        assert!(reopened.is_ok(), "書込ロックを取りに行った: {reopened:?}");
     }
 
     /// 本家のストアを開いてから、その表を生の SQL で壊すための接続。
@@ -1394,7 +1020,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn opening_a_read_only_store_cannot_create_the_checkpoint_table() {
+    fn opening_a_read_only_store_cannot_create_the_publication_tables() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (store, path) = opened_store(&dir);
         drop(store);
@@ -1418,16 +1044,10 @@ pub(super) mod tests {
     async fn a_cursor_beyond_the_column_range_is_refused_before_the_query() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
-        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
+        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
         assert!(
             journal_reader
                 .events_after(GlobalSeqNr::new(u64::MAX))
-                .await
-                .is_err()
-        );
-        assert!(
-            journal_reader
-                .advance_checkpoint(&projection(), GlobalSeqNr::new(u64::MAX), &empty_tables())
                 .await
                 .is_err()
         );
@@ -1456,355 +1076,6 @@ pub(super) mod tests {
     }
 
     #[tokio::test]
-    async fn a_missing_checkpoint_table_is_reported_as_io_on_both_faces() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute_batch("DROP TABLE amadeus_projection_checkpoint")
-            .expect("表を落とす");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("表が無い");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-        let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
-            .await
-            .expect_err("表が無い");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_positive_checkpoint_without_an_anchor_is_a_mismatch() {
-        // 正のチェックポイントには advance が必ずアンカーを書く。欠けた行は直接改変の兆候。
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute(
-                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
-                 VALUES ('state-file', 3)",
-                [],
-            )
-            .expect("アンカー無しの正値を置く");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("照合できない");
-        assert_eq!(
-            error,
-            JournalReadError::Corrupt {
-                aggregate_id: "-".to_string(),
-                seq_nr: None,
-                cause: CorruptCause::CheckpointAnchorMismatch,
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_negative_anchor_seq_nr_is_corrupt() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute(
-                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
-                 VALUES ('state-file', 3, 'intent-x', -5)",
-                [],
-            )
-            .expect("負のアンカーを置く");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("負の通番は無い");
-        assert_eq!(
-            error,
-            JournalReadError::Corrupt {
-                aggregate_id: "intent-x".to_string(),
-                seq_nr: None,
-                cause: CorruptCause::InvariantViolation,
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn advancing_to_zero_writes_a_row_without_an_anchor_and_reads_back_zero() {
-        // ZERO は「まだ何も投影していない」の明示登録 — journal に対応行が無いので
-        // アンカーも無し。読み返しは照合をスキップして ZERO を返す。
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-
-        journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::ZERO, &empty_tables())
-            .await
-            .expect("ZERO への前進は通る");
-        let saved = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect("読める");
-        assert_eq!(saved, GlobalSeqNr::ZERO);
-    }
-
-    #[tokio::test]
-    async fn advancing_to_a_position_not_in_the_journal_is_refused() {
-        // journal に無い位置へ進めると以後の照合が必ず失敗するため、前進の時点で止める。
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-
-        let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
-            .await
-            .expect_err("空のジャーナルに位置 1 は無い");
-        assert_eq!(
-            error,
-            JournalReadError::Corrupt {
-                aggregate_id: "-".to_string(),
-                seq_nr: None,
-                cause: CorruptCause::CheckpointAnchorMismatch,
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_negative_checkpoint_row_is_corrupt() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute(
-                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
-                 VALUES ('state-file', -1)",
-                [],
-            )
-            .expect("負値を置く");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("負の通番は無い");
-        assert_eq!(
-            error,
-            JournalReadError::Corrupt {
-                aggregate_id: NO_AGGREGATE.to_string(),
-                seq_nr: None,
-                cause: CorruptCause::InvariantViolation,
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_checkpoint_row_whose_anchor_aid_is_not_text_is_reported_as_io() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute(
-                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
-                 VALUES ('state-file', 3, X'FF', 3)",
-                [],
-            )
-            .expect("UTF-8 でないアンカーを置く");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("列を読めない");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_journal_row_whose_aid_is_not_text_fails_anchor_verification_as_io() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        let conn = raw(&path);
-        conn.execute(
-            "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
-             VALUES ('p', 's', X'FF', 1, X'7B7D', 0)",
-            [],
-        )
-        .expect("UTF-8 でない aid の行を置く");
-        conn.execute(
-            "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
-             VALUES ('state-file', 1, 'intent-x', 1)",
-            [],
-        )
-        .expect("正のチェックポイントを置く");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("照合先の列を読めない");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn advancing_over_a_journal_row_whose_aid_is_not_text_is_reported_as_io() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute(
-                "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
-                 VALUES ('p', 's', X'FF', 1, X'7B7D', 0)",
-                [],
-            )
-            .expect("UTF-8 でない aid の行を置く");
-
-        let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
-            .await
-            .expect_err("アンカー列を読めない");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_checkpoint_row_whose_value_is_not_an_integer_is_reported_as_io() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute(
-                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq)
-                 VALUES ('state-file', 'x')",
-                [],
-            )
-            .expect("整数でないチェックポイント値を置く");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("列を読めない");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_checkpoint_row_whose_anchor_seq_nr_is_not_an_integer_is_reported_as_io() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute(
-                "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
-                 VALUES ('state-file', 3, 'intent-x', 'not-a-number')",
-                [],
-            )
-            .expect("整数でないアンカー通番を置く");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("列を読めない");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_journal_row_whose_seq_nr_is_not_an_integer_fails_anchor_verification_as_io() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        let conn = raw(&path);
-        conn.execute(
-            "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
-             VALUES ('p', 's', 'intent-x', 'x', X'7B7D', 0)",
-            [],
-        )
-        .expect("整数でない seq_nr の行を置く");
-        conn.execute(
-            "INSERT INTO amadeus_projection_checkpoint(projection, last_global_seq, anchor_aid, anchor_seq_nr)
-             VALUES ('state-file', 1, 'intent-x', 1)",
-            [],
-        )
-        .expect("正のチェックポイントを置く");
-
-        let error = journal_reader
-            .checkpoint(&projection())
-            .await
-            .expect_err("照合先の列を読めない");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn advancing_over_a_journal_row_whose_seq_nr_is_not_an_integer_is_reported_as_io() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        raw(&path)
-            .execute(
-                "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
-                 VALUES ('p', 's', 'intent-x', 'x', X'7B7D', 0)",
-                [],
-            )
-            .expect("整数でない seq_nr の行を置く");
-
-        let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
-            .await
-            .expect_err("アンカー列を読めない");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
     async fn a_row_whose_seq_nr_is_not_an_integer_is_reported_as_io() {
         let dir = tempfile::tempdir().expect("一時 dir");
         let (_store, path) = opened_store(&dir);
@@ -1821,40 +1092,6 @@ pub(super) mod tests {
             .events_after(GlobalSeqNr::ZERO)
             .await
             .expect_err("列を読めない");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::Other,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn a_failing_checkpoint_write_is_reported_as_io() {
-        // UPSERT 自体の失敗経路。トリガで書込を落とし、握り潰されないことを確かめる。
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let mut journal_reader = JournalReaderImpl::open(&path).expect("開ける");
-        let conn = raw(&path);
-        conn.execute(
-            "INSERT INTO journal(pkey, skey, aid, seq_nr, payload, occurred_at)
-             VALUES ('p', 's', 'intent-x', 1, X'7B7D', 0)",
-            [],
-        )
-        .expect("前進先の行を置く");
-        conn.execute_batch(
-            "CREATE TRIGGER checkpoint_write_fails
-             BEFORE INSERT ON amadeus_projection_checkpoint
-             BEGIN SELECT RAISE(ABORT, 'boom'); END",
-        )
-        .expect("書込を落とすトリガを置く");
-        drop(conn);
-
-        let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
-            .await
-            .expect_err("書込が落ちる");
         assert_eq!(
             error,
             JournalReadError::Io {
@@ -1914,47 +1151,6 @@ pub(super) mod tests {
                 path: Some(path.as_path().to_path_buf()),
             }
         );
-    }
-
-    #[tokio::test]
-    async fn a_write_lock_held_by_another_connection_is_reported_as_would_block() {
-        // BR2.1 の待ち時間そのものを観測する。既定 (5000ms) では試験が待つだけなので、
-        // `open_with_busy_timeout` で上限を縮めて `WouldBlock` を実測する (NFR3.5)。
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let (_store, path) = opened_store(&dir);
-        let mut journal_reader =
-            JournalReaderImpl::open_with_busy_timeout(&path, Duration::from_millis(20))
-                .expect("開ける");
-
-        let holder = raw(&path);
-        holder
-            .execute_batch("BEGIN EXCLUSIVE")
-            .expect("書込ロックを握る");
-
-        let error = journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
-            .await
-            .expect_err("他の書き手がいる");
-        assert_eq!(
-            error,
-            JournalReadError::Io {
-                kind: ErrorKind::WouldBlock,
-                path: Some(path.as_path().to_path_buf()),
-            }
-        );
-    }
-
-    /// 失敗経路の試験が使う投影名。
-    fn projection() -> ProjectionName {
-        ProjectionName::parse("state-file").expect("投影名は kebab")
-    }
-
-    /// 前進と一緒に渡す構造化リードモデル。
-    ///
-    /// 単調性・アンカー照合を見る試験は行の中身に依存しないので、空の履歴からの投影
-    /// (= 全表 0 行) で足りる。行の往復そのものは `journal_reader_impl_test.rs` が見る。
-    fn empty_tables() -> ReadTables {
-        ReadTables::project(&JournalBatch::empty()).expect("空も投影できる")
     }
 
     #[test]
@@ -2661,59 +1857,5 @@ pub(super) mod tests {
             decode_cause(&DtoDecodeError::InvariantViolation),
             CorruptCause::InvariantViolation
         );
-    }
-
-    /// 参照入力由来の表が揃っていれば、開く段の用意は書込ロックを取らない。
-    ///
-    /// 別の接続が `BEGIN IMMEDIATE` で書込ロックを握っていても、busy timeout を待たずに
-    /// 返る (IMMEDIATE で開いていた頃は、表が在っても待たされ `WouldBlock` で落ちた)。
-    #[test]
-    fn preparing_existing_reference_tables_does_not_wait_for_a_write_lock() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let path = dir.path().join("store.sqlite");
-        let mut connection = Connection::open(&path).expect("接続");
-        connection
-            .busy_timeout(Duration::from_millis(2000))
-            .expect("待ち時間");
-        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("初回は作る");
-
-        let (locked_sender, locked_receiver) = std::sync::mpsc::channel::<()>();
-        let (release_sender, release_receiver) = std::sync::mpsc::channel::<()>();
-        let holder_path = path.clone();
-        let holder = std::thread::spawn(move || {
-            let holder = Connection::open(&holder_path).expect("握る側の接続");
-            holder.execute_batch("BEGIN IMMEDIATE").expect("書込ロック");
-            locked_sender.send(()).expect("合図");
-            let _ = release_receiver.recv();
-            holder.execute_batch("END").expect("手放す");
-        });
-        locked_receiver.recv().expect("ロックを握った");
-
-        let started = std::time::Instant::now();
-        let result = JournalReaderImpl::ensure_reference_tables(&mut connection, &path);
-        let waited = started.elapsed();
-        drop(release_sender);
-        holder.join().expect("握る側が終わる");
-
-        assert_eq!(result, Ok(()));
-        assert!(
-            waited < Duration::from_millis(1000),
-            "書込ロックを待った (所要 {waited:?})"
-        );
-    }
-
-    /// 参照入力由来の表が 1 つでも欠けていれば、開く段で作り直す。
-    #[test]
-    fn a_missing_reference_table_is_created_again() {
-        let dir = tempfile::tempdir().expect("一時 dir");
-        let path = dir.path().join("store.sqlite");
-        let mut connection = Connection::open(&path).expect("接続");
-        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("初回は作る");
-        connection
-            .execute_batch("DROP TABLE read_plan_fingerprint")
-            .expect("1 表を落とす");
-        assert!(!PlanFingerprintDaoImpl.table_exists(&connection).unwrap());
-        JournalReaderImpl::ensure_reference_tables(&mut connection, &path).expect("作り直す");
-        assert!(PlanFingerprintDaoImpl.table_exists(&connection).unwrap());
     }
 }

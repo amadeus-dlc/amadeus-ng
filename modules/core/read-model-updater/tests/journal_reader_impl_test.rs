@@ -26,7 +26,9 @@ use core_command_domain::workflow_definition::StageSlug;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
     CorruptCause, GlobalSeqNr, IntentExecutionEventDto, JournalBatch, JournalEntry,
-    JournalReadError, JournalReader, JournalReaderImpl, ProjectionName, WorkflowDefinitionEventDto,
+    JournalReadError, JournalReader, JournalReaderImpl, ProjectionName, PublicationBatch,
+    ReadModelUpdateError, ReadModelUpdater as _, StructuredReadModelUpdater,
+    WorkflowDefinitionEventDto,
 };
 use core_read_model_updater::read_tables::ReadTables;
 use rusqlite::Connection;
@@ -69,8 +71,36 @@ impl Fixture {
         open_store(&self.path)
     }
 
+    /// 読み面の表を用意してから読み手を開く — 本番でも構造化面の更新器が先に開かれ、
+    /// チェックポイント・共有面の記録・`read_*` 表を揃える (`JournalReaderImpl::open` は
+    /// それらを作らない — Issue #153 の PR4)。
     fn journal_reader(&self) -> JournalReaderImpl {
+        support::prepare_read_model(&self.path);
         JournalReaderImpl::open(&self.path).expect("Reader は開ける")
+    }
+
+    /// 共有面の記録を旧い変換にしてから、構造化面の更新器 (投影名なし) を 1 回走らせる。
+    ///
+    /// 共有面の描き直しを起こす公開の経路はこれだけである (本番も記録の変換の版で描き直しを
+    /// 決める)。描き直した位置は共有面の記録 ([`Fixture::head_position`]) で読む。
+    async fn rebuild_shared_surface(&self) -> Result<(), ReadModelUpdateError> {
+        self.raw()
+            .execute_batch("UPDATE amadeus_read_model_head SET revision = 'old-transform'")
+            .expect("共有面の記録を旧い変換にする");
+        StructuredReadModelUpdater::open(self.path.as_path())?
+            .update_read_models()
+            .await
+    }
+
+    /// 共有面の記録が名乗る位置。
+    fn head_position(&self) -> GlobalSeqNr {
+        let position: i64 = self
+            .raw()
+            .query_row("SELECT position FROM amadeus_read_model_head", [], |row| {
+                row.get(0)
+            })
+            .expect("共有面の記録がある");
+        GlobalSeqNr::new(u64::try_from(position).expect("非負"))
     }
 
     fn raw(&self) -> Connection {
@@ -82,10 +112,32 @@ fn projection() -> ProjectionName {
     ProjectionName::parse("state-file").expect("投影名は kebab")
 }
 
+/// 投影 `projection` を、任意の構造化面 `tables` と一緒に `to` まで進める。
+///
+/// 全履歴から描いた面ではない行 (古い断面・食い違う行・空の面) を渡す試験のための公開の
+/// 入口である — ファイルの無い公開計画を、現在のチェックポイントから `to` までの再生成要求
+/// として確定させる (公開のトランザクションの中で構造化面の前進がそのまま走る)。全履歴から
+/// 描いた面で進めるなら `support::advance_structured` を使う。
+async fn advance_with(
+    reader: &mut JournalReaderImpl,
+    projection: &ProjectionName,
+    to: GlobalSeqNr,
+    tables: &ReadTables,
+) -> Result<(), ReadModelUpdateError> {
+    let from = reader.checkpoint(projection).await?;
+    reader
+        .publish(
+            projection,
+            &PublicationBatch::rebuild(from, to, Vec::new()),
+            tables,
+        )
+        .await
+}
+
 /// ファイル公開後の確定失敗を実SQLiteで発生させ、別接続から回復する。
 #[tokio::test]
 async fn publication_recovers_without_duplicate_bytes_after_checkpoint_failure() {
-    use core_read_model_updater::orchestration::{PublicationBatch, PublicationFile};
+    use core_read_model_updater::orchestration::PublicationFile;
     let fixture = Fixture::new();
     seed(&mut fixture.store()).await;
     let state = fixture._dir.path().join("state.md");
@@ -164,12 +216,10 @@ async fn an_older_projection_keeps_the_newer_shared_rows() {
     let previous = GlobalSeqNr::new(last.to_u64() - 1);
     let older = ReadTables::project(&reader.events_through(previous).await.unwrap()).unwrap();
     let other = ProjectionName::parse("other-projection").unwrap();
-    reader
-        .advance_checkpoint(&other, last, &latest)
+    support::advance_structured(&fixture.path, &other)
         .await
         .unwrap();
-    reader
-        .advance_checkpoint(&projection(), previous, &older)
+    advance_with(&mut reader, &projection(), previous, &older)
         .await
         .unwrap();
     let observed: i64 = fixture
@@ -191,8 +241,7 @@ async fn a_candidate_with_the_same_position_but_different_rows_is_refused() {
     let mut reader = fixture.journal_reader();
     let expected = seeded_tables(&reader).await;
     let last = expected.as_of().unwrap();
-    reader
-        .advance_checkpoint(&projection(), last, &expected)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .unwrap();
     let wrong = ReadTables::project(&JournalBatch::new(
@@ -204,8 +253,7 @@ async fn a_candidate_with_the_same_position_but_different_rows_is_refused() {
     .unwrap();
     let other = ProjectionName::parse("wrong-projection").unwrap();
     assert!(
-        reader
-            .advance_checkpoint(&other, last, &wrong)
+        advance_with(&mut reader, &other, last, &wrong)
             .await
             .is_err()
     );
@@ -219,9 +267,7 @@ async fn a_candidate_with_the_same_position_but_different_rows_is_refused() {
 
 #[tokio::test]
 async fn a_missing_committed_file_is_restored_without_moving_the_cursor() {
-    use core_read_model_updater::orchestration::{
-        ProjectionTargets, PublicationBatch, PublicationFile,
-    };
+    use core_read_model_updater::orchestration::{ProjectionTargets, PublicationFile};
     let fixture = Fixture::new();
     let mut store = fixture.store();
     seed_intent(&fixture.path).await;
@@ -268,9 +314,7 @@ async fn a_missing_committed_file_is_restored_without_moving_the_cursor() {
 
 #[tokio::test]
 async fn resolving_a_publication_preserves_user_additions_and_fences_the_old_request() {
-    use core_read_model_updater::orchestration::{
-        ProjectionTargets, PublicationBatch, PublicationFile,
-    };
+    use core_read_model_updater::orchestration::{ProjectionTargets, PublicationFile};
     let fixture = Fixture::new();
     let mut store = fixture.store();
     seed_intent(&fixture.path).await;
@@ -325,9 +369,7 @@ async fn resolving_a_publication_preserves_user_additions_and_fences_the_old_req
 
 #[tokio::test]
 async fn a_structured_only_commit_keeps_the_file_restoration_snapshot() {
-    use core_read_model_updater::orchestration::{
-        ProjectionTargets, PublicationBatch, PublicationFile,
-    };
+    use core_read_model_updater::orchestration::{ProjectionTargets, PublicationFile};
     let fixture = Fixture::new();
     let mut store = fixture.store();
     seed_intent(&fixture.path).await;
@@ -378,9 +420,7 @@ async fn a_structured_only_commit_keeps_the_file_restoration_snapshot() {
 
 #[tokio::test]
 async fn restoration_does_not_resurrect_a_user_deleted_memory_file() {
-    use core_read_model_updater::orchestration::{
-        ProjectionTargets, PublicationBatch, PublicationFile,
-    };
+    use core_read_model_updater::orchestration::{ProjectionTargets, PublicationFile};
     let fixture = Fixture::new();
     let mut store = fixture.store();
     seed_intent(&fixture.path).await;
@@ -422,7 +462,7 @@ async fn restoration_does_not_resurrect_a_user_deleted_memory_file() {
 
 #[tokio::test]
 async fn a_modified_persisted_publication_is_not_replayed() {
-    use core_read_model_updater::orchestration::{PublicationBatch, PublicationFile};
+    use core_read_model_updater::orchestration::PublicationFile;
     let fixture = Fixture::new();
     seed(&mut fixture.store()).await;
     let audit = fixture._dir.path().join("audit.md");
@@ -458,9 +498,7 @@ fn u64_to_i64(value: u64) -> i64 {
 
 #[tokio::test]
 async fn changing_targets_does_not_restore_files_from_the_previous_intent() {
-    use core_read_model_updater::orchestration::{
-        ProjectionTargets, PublicationBatch, PublicationFile,
-    };
+    use core_read_model_updater::orchestration::{ProjectionTargets, PublicationFile};
     let fixture = Fixture::new();
     let mut store = fixture.store();
     seed_intent(&fixture.path).await;
@@ -544,8 +582,7 @@ async fn an_older_candidate_cannot_confirm_a_damaged_newer_shared_view() {
     let previous = GlobalSeqNr::new(last.to_u64() - 1);
     let older = ReadTables::project(&reader.events_through(previous).await.unwrap()).unwrap();
     let ahead = ProjectionName::parse("ahead").unwrap();
-    reader
-        .advance_checkpoint(&ahead, last, &tables)
+    support::advance_structured(&fixture.path, &ahead)
         .await
         .unwrap();
     fixture
@@ -553,8 +590,7 @@ async fn an_older_candidate_cannot_confirm_a_damaged_newer_shared_view() {
         .execute("DELETE FROM read_execution", [])
         .unwrap();
     assert!(
-        reader
-            .advance_checkpoint(&projection(), previous, &older)
+        advance_with(&mut reader, &projection(), previous, &older)
             .await
             .is_err()
     );
@@ -562,9 +598,9 @@ async fn an_older_candidate_cannot_confirm_a_damaged_newer_shared_view() {
         reader.checkpoint(&projection()).await.unwrap(),
         GlobalSeqNr::ZERO
     );
-    assert_eq!(reader.rebuild_read_model().unwrap(), last);
-    reader
-        .advance_checkpoint(&projection(), previous, &older)
+    fixture.rebuild_shared_surface().await.unwrap();
+    assert_eq!(fixture.head_position(), last);
+    advance_with(&mut reader, &projection(), previous, &older)
         .await
         .unwrap();
     let observed: i64 = fixture
@@ -585,11 +621,11 @@ async fn a_rebuild_retains_its_high_watermark_even_when_checkpoints_lag() {
     let last = tables.as_of().unwrap();
     let previous = GlobalSeqNr::new(last.to_u64() - 1);
     let older = ReadTables::project(&reader.events_through(previous).await.unwrap()).unwrap();
-    reader
-        .advance_checkpoint(&projection(), previous, &older)
+    advance_with(&mut reader, &projection(), previous, &older)
         .await
         .unwrap();
-    assert_eq!(reader.rebuild_read_model().unwrap(), last);
+    fixture.rebuild_shared_surface().await.unwrap();
+    assert_eq!(fixture.head_position(), last);
     fixture
         .raw()
         .execute(
@@ -597,7 +633,21 @@ async fn a_rebuild_retains_its_high_watermark_even_when_checkpoints_lag() {
             [u64_to_i64(last.to_u64())],
         )
         .unwrap();
-    assert!(reader.rebuild_read_model().is_err());
+    // 記録が名乗る位置より歴史が短い — 切り落としの兆候なので描かずに止める。
+    let error = fixture
+        .rebuild_shared_surface()
+        .await
+        .expect_err("記録より短い歴史からは描き直さない");
+    assert!(
+        matches!(
+            error,
+            ReadModelUpdateError::Read(JournalReadError::Corrupt {
+                cause: CorruptCause::CheckpointAnchorMismatch,
+                ..
+            })
+        ),
+        "{error:?}"
+    );
     let observed: i64 = fixture
         .raw()
         .query_row("SELECT as_of FROM read_execution", [], |row| row.get(0))
@@ -608,8 +658,8 @@ async fn a_rebuild_retains_its_high_watermark_even_when_checkpoints_lag() {
 #[tokio::test]
 async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ProjectionTargets, PublicationBatch, PublicationFile,
-        ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, ProjectionTargets, PublicationFile,
+        SteeringReadModelUpdater, SteeringSource,
     };
     let fixture = Fixture::new();
     let _store = fixture.store();
@@ -649,6 +699,7 @@ async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
             SteeringSource::new(fixture._dir.path().join("memory")),
         )
         .unwrap(),
+        StructuredReadModelUpdater::open(fixture.path.as_path()).unwrap(),
     );
     updater.update_read_models().await.unwrap();
     assert_eq!(updater.checkpoint().await.unwrap(), GlobalSeqNr::ZERO);
@@ -659,8 +710,8 @@ async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
 #[tokio::test]
 async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ProjectionTargets, PublicationBatch, PublicationFile,
-        ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, ProjectionTargets, PublicationFile,
+        SteeringReadModelUpdater, SteeringSource,
     };
     for interrupt_tail in [false, true] {
         let fixture = Fixture::new();
@@ -706,6 +757,7 @@ async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
                 SteeringSource::new(fixture._dir.path().join("memory")),
             )
             .unwrap(),
+            StructuredReadModelUpdater::open(fixture.path.as_path()).unwrap(),
         );
         // 定義のseedは鋳造と取込の2イベントを追記する。
         let latest = GlobalSeqNr::new(cut.to_u64() + 2);
@@ -765,7 +817,7 @@ async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
 /// 実プロセスをファイル反映後・SQLite確定前に終了させる。
 #[tokio::test]
 async fn publication_survives_process_termination() {
-    use core_read_model_updater::orchestration::{PublicationBatch, PublicationFile};
+    use core_read_model_updater::orchestration::PublicationFile;
     use std::process::{Command, Stdio};
     if let Ok(root) = std::env::var("AMADEUS_PUBLICATION_TEST_CHILD") {
         let root = std::path::PathBuf::from(root);
@@ -856,7 +908,7 @@ async fn publication_survives_process_termination() {
 
 #[tokio::test]
 async fn a_partial_audit_append_is_completed_from_the_saved_plan() {
-    use core_read_model_updater::orchestration::{PublicationBatch, PublicationFile};
+    use core_read_model_updater::orchestration::PublicationFile;
     let fixture = Fixture::new();
     seed(&mut fixture.store()).await;
     let audit = fixture._dir.path().join("audit.md");
@@ -1239,8 +1291,7 @@ async fn a_renumbered_journal_is_refused_by_the_anchor() {
         .await
         .expect("全件");
     let third = before.executions().get(2).expect("3 件目").global_seq();
-    journal_reader
-        .advance_checkpoint(&projection(), third, &empty_tables())
+    advance_with(&mut journal_reader, &projection(), third, &empty_tables())
         .await
         .expect("チェックポイント前進");
     drop(journal_reader);
@@ -1291,8 +1342,7 @@ async fn a_truncated_journal_behind_the_checkpoint_is_refused() {
         .await
         .expect("全件");
     let last = all.executions().last().expect("末尾").global_seq();
-    journal_reader
-        .advance_checkpoint(&projection(), last, &empty_tables())
+    advance_with(&mut journal_reader, &projection(), last, &empty_tables())
         .await
         .expect("チェックポイント前進");
     drop(journal_reader);
@@ -1336,8 +1386,7 @@ async fn a_vacuum_rebuild_does_not_move_the_cursor() {
         .await
         .expect("全件");
     let third = before.executions().get(2).expect("3 件目").global_seq();
-    journal_reader
-        .advance_checkpoint(&projection(), third, &empty_tables())
+    advance_with(&mut journal_reader, &projection(), third, &empty_tables())
         .await
         .expect("チェックポイント前進");
     drop(journal_reader); // VACUUM は排他を要するため他接続を全部閉じてから実行する
@@ -1502,8 +1551,7 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
         .expect("全件");
     let last = rows.executions().last().expect("4 件ある").global_seq();
 
-    journal_reader
-        .advance_checkpoint(&projection(), last, &empty_tables())
+    advance_with(&mut journal_reader, &projection(), last, &empty_tables())
         .await
         .expect("前進");
     assert_eq!(
@@ -1514,8 +1562,7 @@ async fn the_checkpoint_advances_and_repeats_are_noops() {
         last
     );
 
-    journal_reader
-        .advance_checkpoint(&projection(), last, &empty_tables())
+    advance_with(&mut journal_reader, &projection(), last, &empty_tables())
         .await
         .expect("同値は no-op");
     assert_eq!(
@@ -1543,10 +1590,14 @@ async fn the_checkpoint_survives_reopening_the_store() {
     seed(&mut store).await;
     {
         let mut journal_reader = fixture.journal_reader();
-        journal_reader
-            .advance_checkpoint(&projection(), GlobalSeqNr::new(3), &empty_tables())
-            .await
-            .expect("前進");
+        advance_with(
+            &mut journal_reader,
+            &projection(),
+            GlobalSeqNr::new(3),
+            &empty_tables(),
+        )
+        .await
+        .expect("前進");
     }
 
     let journal_reader = fixture.journal_reader();
@@ -1567,21 +1618,27 @@ async fn a_checkpoint_regression_is_refused() {
     seed(&mut store).await;
 
     let mut journal_reader = fixture.journal_reader();
-    journal_reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(3), &empty_tables())
-        .await
-        .expect("前進");
-    let err = journal_reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(2), &empty_tables())
-        .await
-        .expect_err("後退は拒否");
-    assert_eq!(
-        err,
-        JournalReadError::CheckpointRegression {
-            projection: projection(),
-            current: GlobalSeqNr::new(3),
-            requested: GlobalSeqNr::new(2),
-        }
+    advance_with(
+        &mut journal_reader,
+        &projection(),
+        GlobalSeqNr::new(3),
+        &empty_tables(),
+    )
+    .await
+    .expect("前進");
+    // 公開の入口では、現在の番号より前を指す計画はトランザクションを開く前に食い違いとして
+    // 拒まれる (`CheckpointRegression` そのものは前進の手順の単体テストが固定する)。
+    let err = advance_with(
+        &mut journal_reader,
+        &projection(),
+        GlobalSeqNr::new(2),
+        &empty_tables(),
+    )
+    .await
+    .expect_err("後退は拒否");
+    assert!(
+        matches!(err, ReadModelUpdateError::PublicationConflict { .. }),
+        "{err:?}"
     );
     assert_eq!(
         journal_reader
@@ -1601,19 +1658,27 @@ async fn two_projections_keep_independent_checkpoints() {
 
     let other = ProjectionName::parse("intents-registry").expect("投影名は kebab");
     let mut journal_reader = fixture.journal_reader();
-    journal_reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(4), &empty_tables())
-        .await
-        .expect("前進");
+    advance_with(
+        &mut journal_reader,
+        &projection(),
+        GlobalSeqNr::new(4),
+        &empty_tables(),
+    )
+    .await
+    .expect("前進");
     assert_eq!(
         journal_reader.checkpoint(&other).await.expect("読取"),
         GlobalSeqNr::ZERO,
         "別の投影は動かない"
     );
-    journal_reader
-        .advance_checkpoint(&other, GlobalSeqNr::new(2), &empty_tables())
-        .await
-        .expect("前進");
+    advance_with(
+        &mut journal_reader,
+        &other,
+        GlobalSeqNr::new(2),
+        &empty_tables(),
+    )
+    .await
+    .expect("前進");
     assert_eq!(
         journal_reader
             .checkpoint(&projection())
@@ -1642,20 +1707,21 @@ async fn seeded_tables(journal_reader: &JournalReaderImpl) -> ReadTables {
 
 #[tokio::test]
 async fn opening_the_store_twice_leaves_the_read_tables_intact() {
-    // DDL は `CREATE TABLE IF NOT EXISTS` — 2 度目の open で落ちないし、行も消さない。
+    // DDL は `CREATE TABLE IF NOT EXISTS` — 構造化面の更新器を 2 度開いても落ちないし、
+    // 行も消さない。
     let fixture = Fixture::new();
     let mut store = fixture.store();
     seed_intent(&fixture.path).await;
     seed(&mut store).await;
 
-    let mut journal_reader = fixture.journal_reader();
+    let journal_reader = fixture.journal_reader();
     let tables = seeded_tables(&journal_reader).await;
     let last = tables.as_of().expect("走査位置");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
 
+    support::prepare_read_model(&fixture.path);
     let reopened = fixture.journal_reader();
     assert_eq!(
         reopened.checkpoint(&projection()).await.expect("読取"),
@@ -1676,11 +1742,10 @@ async fn the_rows_come_back_out_of_sqlite_exactly_as_they_were_projected() {
     seed_definition(&fixture.path).await;
     seed(&mut store).await;
 
-    let mut journal_reader = fixture.journal_reader();
+    let journal_reader = fixture.journal_reader();
     let tables = seeded_tables(&journal_reader).await;
     let last = tables.as_of().expect("走査位置");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
 
@@ -1797,11 +1862,9 @@ async fn the_written_rows_carry_their_primary_key_and_resolve_their_foreign_keys
     seed_definition(&fixture.path).await;
     seed(&mut store).await;
 
-    let mut journal_reader = fixture.journal_reader();
+    let journal_reader = fixture.journal_reader();
     let tables = seeded_tables(&journal_reader).await;
-    let last = tables.as_of().expect("走査位置");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
 
@@ -1913,9 +1976,7 @@ async fn a_read_table_whose_shape_drifted_fails_the_advance_instead_of_writing_p
         seed_definition(&fixture.path).await;
         seed(&mut store).await;
 
-        let mut journal_reader = fixture.journal_reader();
-        let tables = seeded_tables(&journal_reader).await;
-        let last = tables.as_of().expect("走査位置");
+        let journal_reader = fixture.journal_reader();
 
         // `DELETE` は通るが `INSERT` の列が解決できない形へ作り替える。
         fixture
@@ -1925,12 +1986,14 @@ async fn a_read_table_whose_shape_drifted_fails_the_advance_instead_of_writing_p
             ))
             .expect("表を作り替える");
 
-        let error = journal_reader
-            .advance_checkpoint(&projection(), last, &tables)
+        let error = support::advance_structured(&fixture.path, &projection())
             .await
             .expect_err("列の合わない表への INSERT は失敗する");
         assert!(
-            matches!(error, JournalReadError::Io { .. }),
+            matches!(
+                error,
+                ReadModelUpdateError::Read(JournalReadError::Io { .. })
+            ),
             "{table}: SQLite の失敗は I/O の失敗として上がる (実際: {error:?})"
         );
 
@@ -1955,10 +2018,7 @@ async fn a_refused_advance_leaves_the_rows_untouched() {
     seed(&mut store).await;
 
     let mut journal_reader = fixture.journal_reader();
-    let tables = seeded_tables(&journal_reader).await;
-    let last = tables.as_of().expect("走査位置");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
 
@@ -1968,12 +2028,20 @@ async fn a_refused_advance_leaves_the_rows_untouched() {
         .expect("件数");
     assert!(before > 0, "前進で行が入っている");
 
-    // 後退を、**行が空の**リードモデルと一緒に要求する。拒否されるので行は消えない。
-    let err = journal_reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(1), &empty_tables())
-        .await
-        .expect_err("後退は拒否");
-    assert!(matches!(err, JournalReadError::CheckpointRegression { .. }));
+    // 後退を、**行が空の**リードモデルと一緒に要求する。拒否されるので行は消えない
+    // (公開の入口では、現在の番号より前を指す計画は食い違いとして拒まれる)。
+    let err = advance_with(
+        &mut journal_reader,
+        &projection(),
+        GlobalSeqNr::new(1),
+        &empty_tables(),
+    )
+    .await
+    .expect_err("後退は拒否");
+    assert!(
+        matches!(err, ReadModelUpdateError::PublicationConflict { .. }),
+        "{err:?}"
+    );
 
     let after: i64 = fixture
         .raw()
@@ -1990,11 +2058,10 @@ async fn a_second_advance_replaces_every_row_instead_of_appending() {
     seed_intent(&fixture.path).await;
     seed(&mut store).await;
 
-    let mut journal_reader = fixture.journal_reader();
+    let journal_reader = fixture.journal_reader();
     let tables = seeded_tables(&journal_reader).await;
     let last = tables.as_of().expect("走査位置");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
     let first: i64 = fixture
@@ -2004,10 +2071,16 @@ async fn a_second_advance_replaces_every_row_instead_of_appending() {
         })
         .expect("件数");
 
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    // 事実を足してから進め直す — 共有面より新しい位置なので 20 表は全差し替えになる。
+    seed_definition(&fixture.path).await;
+    support::advance_structured(&fixture.path, &projection())
         .await
-        .expect("同値は no-op だが行は書き直す");
+        .expect("新しい位置へ進め直す");
+    let advanced = journal_reader
+        .checkpoint(&projection())
+        .await
+        .expect("読取");
+    assert!(advanced > last, "前提: 2 度目の前進は新しい位置へ進む");
     let second: i64 = fixture
         .raw()
         .query_row("SELECT COUNT(*) FROM read_execution_stage", [], |row| {
@@ -2015,6 +2088,15 @@ async fn a_second_advance_replaces_every_row_instead_of_appending() {
         })
         .expect("件数");
     assert_eq!(second, first, "差し替えであって追記ではない");
+    let stale: i64 = fixture
+        .raw()
+        .query_row(
+            "SELECT COUNT(*) FROM read_execution_stage WHERE as_of <> ?1",
+            [u64_to_i64(advanced.to_u64())],
+            |row| row.get(0),
+        )
+        .expect("件数");
+    assert_eq!(stale, 0, "1 度目の行は 1 つも残っていない");
 }
 
 // ---------------------------------------------------------------------------
@@ -2048,7 +2130,8 @@ fn regress_to_the_old_schema(fixture: &Fixture) {
         .expect("旧スキーマへ戻せる");
 }
 
-/// 保存済みの版が違えば、17 表を作り直してジャーナルから描き直す。
+/// 保存済みの版が違えば、構造化面の更新器の開く段が `read_*` 表を作り直してジャーナルから
+/// 描き直す。
 #[tokio::test]
 async fn a_store_left_on_the_old_read_schema_is_rebuilt_from_the_journal() {
     let fixture = Fixture::new();
@@ -2058,11 +2141,7 @@ async fn a_store_left_on_the_old_read_schema_is_rebuilt_from_the_journal() {
     seed(&mut store).await;
 
     // いったん現行スキーマで投影しておく (= チェックポイントが進んだストアにする)。
-    let mut journal_reader = fixture.journal_reader();
-    let tables = seeded_tables(&journal_reader).await;
-    let last = tables.as_of().expect("走査位置");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
     let projected: i64 = fixture
@@ -2072,14 +2151,12 @@ async fn a_store_left_on_the_old_read_schema_is_rebuilt_from_the_journal() {
         })
         .expect("件数");
     assert!(projected > 0, "前提: 現行スキーマでは行が入る");
-    drop(journal_reader);
 
     // 旧スキーマへ戻す — この形のまま INSERT すると `no such column: gate` で落ちる。
     regress_to_the_old_schema(&fixture);
 
-    // 取得ループの入口 (= 開く段) が版の差を見て作り直す。
-    let journal_reader = fixture.journal_reader();
-    drop(journal_reader);
+    // 構造化面の更新器の開く段が版の差を見て作り直す。
+    drop(StructuredReadModelUpdater::open(fixture.path.as_path()).expect("作り直せる"));
 
     let raw = fixture.raw();
     let version: i64 = raw
@@ -2110,14 +2187,9 @@ async fn a_store_already_on_the_current_read_schema_is_not_dropped() {
     seed_intent(&fixture.path).await;
     seed(&mut store).await;
 
-    let mut journal_reader = fixture.journal_reader();
-    let tables = seeded_tables(&journal_reader).await;
-    let last = tables.as_of().expect("走査位置");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
-    drop(journal_reader);
     // 投影が書かない印を 1 行置く — 落として作り直せば消える。
     fixture
         .raw()
@@ -2128,8 +2200,7 @@ async fn a_store_already_on_the_current_read_schema_is_not_dropped() {
         )
         .expect("印を置ける");
 
-    let journal_reader = fixture.journal_reader();
-    drop(journal_reader);
+    drop(StructuredReadModelUpdater::open(fixture.path.as_path()).expect("開ける"));
 
     let survived: i64 = fixture
         .raw()
@@ -2145,7 +2216,8 @@ async fn a_store_already_on_the_current_read_schema_is_not_dropped() {
 /// 作り直しの途中で歴史が読めなければ、版を上げずに止める。
 ///
 /// 版だけ先に上げてしまうと、次の起動は「もう作り直した」と判断して旧い読み面のまま
-/// 進んでしまう。壊れた材料は作り直しでも直らないので、開く段でそのまま倒れる。
+/// 進んでしまう。壊れた材料は作り直しでも直らないので、構造化面の更新器の開く段で
+/// そのまま倒れる (作り直しは 1 つのトランザクションなので、表も版も動かない)。
 #[tokio::test]
 async fn a_rebuild_that_cannot_read_the_history_stops_without_bumping_the_version() {
     let fixture = Fixture::new();
@@ -2154,14 +2226,9 @@ async fn a_rebuild_that_cannot_read_the_history_stops_without_bumping_the_versio
     seed(&mut store).await;
 
     // チェックポイントを進めておく (作り直しの対象になるストアにする)。
-    let mut journal_reader = fixture.journal_reader();
-    let tables = seeded_tables(&journal_reader).await;
-    let last = tables.as_of().expect("走査位置");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
-    drop(journal_reader);
 
     regress_to_the_old_schema(&fixture);
     // 版を戻したうえで歴史も壊す — 作り直しは読取の段で倒れる。
@@ -2170,7 +2237,8 @@ async fn a_rebuild_that_cannot_read_the_history_stops_without_bumping_the_versio
         .execute("UPDATE journal SET payload = X'7B6E6F74206A736F6E'", [])
         .expect("payload を壊す");
 
-    let error = JournalReaderImpl::open(&fixture.path).expect_err("壊れた歴史は描き直せない");
+    let error = StructuredReadModelUpdater::open(fixture.path.as_path())
+        .expect_err("壊れた歴史は描き直せない");
     assert!(
         matches!(
             error,
@@ -2191,7 +2259,8 @@ async fn a_rebuild_that_cannot_read_the_history_stops_without_bumping_the_versio
 /// 開いたばかりの実ストアには参照入力由来の表が揃っており、出典を捏造しない。
 ///
 /// 表を書くのは面ごとの更新器だが、クエリ側はその更新器がまだ走っていないストアでも表を
-/// 引く。開く段で表 (DDL の正本は各表の DAO) だけは揃える。
+/// 引く。構造化面の更新器の開く段で表 (DDL の正本は各表の DAO) だけは揃える
+/// (`Fixture::journal_reader` はその開く段を先に通す)。
 #[tokio::test]
 async fn an_unprojected_steering_face_has_no_source_yet() {
     use core_read_model_updater::orchestration::{SteeringPlanDao as _, SteeringPlanDaoImpl};
@@ -2217,7 +2286,7 @@ async fn an_unprojected_steering_face_has_no_source_yet() {
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
                 row.get(0)
             })
-            .expect("開く段で作られている");
+            .expect("構造化面の更新器の開く段で作られている");
         assert_eq!(rows, 0, "{table}");
     }
     assert_eq!(
@@ -2236,10 +2305,14 @@ async fn the_steering_face_is_replaced_on_its_own_and_names_its_source() {
     let fixture = Fixture::new();
     seed(&mut fixture.store()).await;
     let mut reader = fixture.journal_reader();
-    reader
-        .advance_checkpoint(&projection(), GlobalSeqNr::new(2), &empty_tables())
-        .await
-        .unwrap();
+    advance_with(
+        &mut reader,
+        &projection(),
+        GlobalSeqNr::new(2),
+        &empty_tables(),
+    )
+    .await
+    .unwrap();
     let memory = fixture._dir.path().join("memory");
     std::fs::create_dir_all(&memory).unwrap();
     let mut steering =

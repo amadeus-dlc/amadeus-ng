@@ -24,6 +24,8 @@ impl Fixture {
         let store = StorePath::for_space(&root.path().join("aidlc"), &SpaceName::default());
         fs::create_dir_all(store.as_path().parent().unwrap()).unwrap();
         drop(support::open_store(&store));
+        // 読み面の表は構造化面の更新器の開く段が用意する (本番と同じ順)。
+        support::prepare_read_model(&store);
         Self {
             root,
             store,

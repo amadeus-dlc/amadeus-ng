@@ -5,8 +5,23 @@ use core_query_interface_adapter::ReadModelDaos;
 use core_query_use_case::orchestration::{FindTestingContractUseCase, TestingContractView};
 use core_read_model_updater::orchestration::{
     CodeGenerationApprovalReadModelUpdater, JournalReaderImpl, PlanFingerprintReadModelUpdater,
-    ReadModelUpdater, SteeringSource, TestingReadModelUpdater,
+    ReadModelUpdater, SteeringSource, StructuredReadModelUpdater, TestingReadModelUpdater,
 };
+
+/// 共有構造化面を点検し、古ければ現在の全履歴から描き直す (構造化面の更新器)。
+///
+/// テスト契約・計画指紋・開始可否の参照面は、読取の前にこの点検を通す — 古い共有面の上で
+/// 読ませない (Issue #153 の PR4 までは、それぞれの更新器が借りた読み手の
+/// `prepare_read_model` で同じことをしていた)。開く段で読み面の表も揃う。
+async fn refresh_shared_surface(
+    store: &core_command_domain::workspace::StorePath,
+) -> Result<(), String> {
+    StructuredReadModelUpdater::open(store.as_path())
+        .map_err(|error| error.to_string())?
+        .update_read_models()
+        .await
+        .map_err(|error| error.to_string())
+}
 
 pub(super) async fn run(layout: &Layout, args: &[String]) -> Completion {
     let command = args
@@ -47,9 +62,10 @@ pub(super) async fn run(layout: &Layout, args: &[String]) -> Completion {
 }
 pub(super) async fn load(layout: &Layout) -> Result<TestingContractView, String> {
     let store = store_path(layout)?;
-    let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
+    let reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
+    refresh_shared_surface(&store).await?;
     let source = SteeringSource::new(layout.memory_dir());
-    TestingReadModelUpdater::open(&mut reader, store.as_path(), &source)
+    TestingReadModelUpdater::open(&reader, store.as_path(), &source)
         .map_err(|error| error.to_string())?
         .update_read_models()
         .await
@@ -122,17 +138,13 @@ async fn fingerprint(layout: &Layout, args: &[String]) -> Result<String, String>
     .read(None)
     .map_err(|error| error.to_string())?;
     let store = store_path(layout)?;
-    let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
-    PlanFingerprintReadModelUpdater::open(
-        &mut reader,
-        store.as_path(),
-        cursor.execution_id(),
-        &input,
-    )
-    .map_err(|error| error.to_string())?
-    .update_read_models()
-    .await
-    .map_err(|error| error.to_string())?;
+    let reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
+    refresh_shared_surface(&store).await?;
+    PlanFingerprintReadModelUpdater::open(&reader, store.as_path(), cursor.execution_id(), &input)
+        .map_err(|error| error.to_string())?
+        .update_read_models()
+        .await
+        .map_err(|error| error.to_string())?;
     let daos = ReadModelDaos::open(store.as_path()).map_err(|error| error.to_string())?;
     let view = FindPlanFingerprintUseCase::new(daos.plan_fingerprint())
         .execute(cursor.execution_id().as_str(), &target.id())
@@ -269,9 +281,10 @@ pub(super) async fn approval(
         PlanReceipts::default()
     };
     let store = store_path(layout)?;
-    let mut reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
+    let reader = JournalReaderImpl::open(&store).map_err(|error| error.to_string())?;
+    refresh_shared_surface(&store).await?;
     CodeGenerationApprovalReadModelUpdater::open(
-        &mut reader,
+        &reader,
         store.as_path(),
         cursor.execution_id(),
         &input,

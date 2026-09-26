@@ -88,7 +88,7 @@ impl PublicationBatch {
     pub(super) fn current_transform_revision() -> String {
         format!(
             "publication-1/read-{}",
-            crate::read_tables::READ_SCHEMA_VERSION
+            super::read_model_schema::READ_SCHEMA_VERSION
         )
     }
     pub(super) fn target_binding(&self) -> Option<&str> {

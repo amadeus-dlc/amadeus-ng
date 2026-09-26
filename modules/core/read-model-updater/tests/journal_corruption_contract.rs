@@ -28,7 +28,8 @@ use core_command_domain::workspace::{
 };
 use core_read_model_updater::orchestration::{
     CorruptCause, GlobalSeqNr, IntentExecutionEventDto, JournalReadError, JournalReader,
-    JournalReaderImpl, ProjectionName, WorkflowDefinitionEventDto,
+    JournalReaderImpl, ProjectionName, ReadModelUpdateError, StructuredReadModelUpdater,
+    WorkflowDefinitionEventDto,
 };
 use core_read_model_updater::read_tables::ReadTables;
 use rusqlite::Connection;
@@ -456,18 +457,9 @@ async fn a_positive_checkpoint_without_its_anchor_is_refused() {
     seed_intent(&fixture.path).await;
     seed(&mut store).await;
     drop(store);
-    let mut journal_reader = fixture.journal_reader();
-    let history = journal_reader
-        .events_after(GlobalSeqNr::ZERO)
-        .await
-        .expect("全件");
-    let last = history.scanned_to().expect("走査位置");
-    let tables = ReadTables::project(&history).expect("投影");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
-    drop(journal_reader);
     fixture
         .raw()
         .execute(
@@ -489,7 +481,8 @@ async fn a_positive_checkpoint_without_its_anchor_is_refused() {
 }
 
 /// 版の違うストアの作り直しで、行は読めるが表を描けない歴史（誕生の欠けた実行）に
-/// 当たったら、版を上げずに止める。
+/// 当たったら、版を上げずに止める。作り直しは読み面の表の用意 (構造化面の更新器の開く段)
+/// が持つ。
 #[tokio::test]
 async fn a_rebuild_whose_history_cannot_be_projected_stops_without_bumping_the_version() {
     let fixture = Fixture::new();
@@ -497,18 +490,9 @@ async fn a_rebuild_whose_history_cannot_be_projected_stops_without_bumping_the_v
     seed_intent(&fixture.path).await;
     seed(&mut store).await;
     drop(store);
-    let mut journal_reader = fixture.journal_reader();
-    let history = journal_reader
-        .events_after(GlobalSeqNr::ZERO)
-        .await
-        .expect("全件");
-    let last = history.scanned_to().expect("走査位置");
-    let tables = ReadTables::project(&history).expect("投影");
-    journal_reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.path, &projection())
         .await
         .expect("前進");
-    drop(journal_reader);
     // 版を戻し、誕生の行だけを消す — 各行は復号できるが、集約は起こせない。
     let raw = fixture.raw();
     raw.execute_batch("PRAGMA user_version = 0")
@@ -520,7 +504,8 @@ async fn a_rebuild_whose_history_cannot_be_projected_stops_without_bumping_the_v
     .expect("誕生の行を消す");
     drop(raw);
     let (aid, seq, cause) = corrupt(
-        JournalReaderImpl::open(&fixture.path).expect_err("誕生の欠けた歴史は描き直せない"),
+        StructuredReadModelUpdater::open(fixture.path.as_path())
+            .expect_err("誕生の欠けた歴史は描き直せない"),
     );
     assert_eq!(
         (aid.as_str(), seq, cause),
@@ -561,25 +546,24 @@ async fn a_read_table_missing_its_columns_fails_the_insert_of_that_table() {
         seed_definition(&fixture.path).await;
         seed(&mut store).await;
         drop(store);
-        let mut journal_reader = fixture.journal_reader();
-        let history = journal_reader
-            .events_after(GlobalSeqNr::ZERO)
-            .await
-            .expect("全件");
-        let last = history.scanned_to().expect("走査位置");
-        let tables = ReadTables::project(&history).expect("投影");
+        // 読み面の表を先に揃えておく (本番では構造化面の更新器の開く段が揃える)。揃った後に
+        // 形を崩すので、開く段は表が在ると見て作り直さない (版も現行のまま)。
+        support::prepare_read_model(&fixture.path);
+        let journal_reader = fixture.journal_reader();
         fixture
             .raw()
             .execute_batch(&format!(
                 "DROP TABLE {table}; CREATE TABLE {table} (id TEXT, as_of INTEGER)"
             ))
             .expect("列の欠けた形へ作り替える");
-        let error = journal_reader
-            .advance_checkpoint(&projection(), last, &tables)
+        let error = support::advance_structured(&fixture.path, &projection())
             .await
             .expect_err("列の欠けた表への INSERT は失敗する");
         assert!(
-            matches!(error, JournalReadError::Io { .. }),
+            matches!(
+                error,
+                ReadModelUpdateError::Read(JournalReadError::Io { .. })
+            ),
             "{table}: SQLite の失敗は I/O の失敗として上がる (実際: {error:?})"
         );
         assert_eq!(

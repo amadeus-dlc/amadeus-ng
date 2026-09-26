@@ -29,9 +29,13 @@ use super::{PlanFingerprintDao, PlanFingerprintDaoImpl, SourceStamp, updater_con
 /// （計画・手順書の本文）ので、更新器が所有を奪わない。表を書く接続は更新器が所有し、
 /// `BEGIN IMMEDIATE` で開いたトランザクションを表の DAO へ渡す。型引数 `F` は表の DAO で
 /// ある (スタティックディスパッチ)。
+///
+/// 共有構造化面の点検 (古ければ描き直す) はしない — それは構造化面の更新器
+/// ([`super::StructuredReadModelUpdater`]) の仕事で、呼出側がこの更新器より先に起動する
+/// (Issue #153 の PR4 までは、借りた読み手の `prepare_read_model` をここで呼んでいた)。
 #[derive(Debug)]
 pub struct PlanFingerprintReadModelUpdater<'a, R, F> {
-    journal_reader: &'a mut R,
+    journal_reader: &'a R,
     execution_id: &'a IntentExecutionId,
     input: &'a PlanApprovalInput,
     connection: Connection,
@@ -52,7 +56,7 @@ impl<'a, R: JournalReader> PlanFingerprintReadModelUpdater<'a, R, PlanFingerprin
     ///
     /// ストアへ接続できない、表を作れない場合。
     pub fn open(
-        journal_reader: &'a mut R,
+        journal_reader: &'a R,
         path: &Path,
         execution_id: &'a IntentExecutionId,
         input: &'a PlanApprovalInput,
@@ -93,7 +97,6 @@ impl<R: JournalReader, F: PlanFingerprintDao> ReadModelUpdater
     ///
     /// 履歴の再構成または参照面の読み書きに失敗した場合。
     async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
-        self.journal_reader.prepare_read_model()?;
         let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
         let tables = crate::read_tables::PlanFingerprintTables::project(
             &history,

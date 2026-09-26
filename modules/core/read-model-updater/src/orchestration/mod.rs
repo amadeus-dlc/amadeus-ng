@@ -9,9 +9,10 @@
 //!
 //! Markdown 面（系統 (1) — `aidlc-state.md` と監査シャード）は [`crate::workspace`] の投影核が
 //! 描き、構造化面（系統 (2) — SQLite の `read_*` 表）は [`crate::read_tables`] の投影核が描く。
-//! 後者の行は `advance_checkpoint` の引数として読み手へ渡り、**行の差し替えとチェックポイントの
-//! 前進は 1 トランザクション**に閉じる（裁定 §3）。ポートが行を受け取る形になっているのは
-//! そのためであり、行を書く別の口を並立させない。
+//! 構造化面の行は表ごとの DAO が書き、**20 表の差し替えと処理したシーケンス番号の前進は
+//! 1 トランザクション**に閉じる（裁定 §3 — [`StructuredReadModelUpdater`] と、同じ手順を
+//! 公開の確定の中で使う `JournalReader::publish`）。ジャーナルの読み手は行を受け取らない
+//! （Issue #153 の PR4 で `advance_checkpoint` を取り除いた）。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_read_model_updater::orchestration::<型>` で安定する
@@ -39,7 +40,6 @@ mod read_model_update_error;
 mod read_model_updater;
 mod runtime_graph_read_model_updater;
 mod runtime_graph_targets;
-mod shared_projection;
 mod steering_source;
 mod store_failure;
 mod structured_read_model_updater;
@@ -126,12 +126,17 @@ pub use dto::SingleStageRunStartedDto;
 // (`coding-rules/read-model-updater-structure.md`)。ポート (trait と、それが運ぶ値) は
 // `port/`、実装は `…Impl` としてこの階層に置く。移行済みは自己診断 (Issue #153 の PR1) と、
 // 参照入力由来の単独面 — steering・テスト契約・計画指紋・Code Generation 開始可否 (PR2) と、
-// Pipeline 面 (PR3)。
+// Pipeline 面 (PR3) と、構造化面 (ジャーナル由来の read_* 20 表・処理したシーケンス番号・共有面の
+// 記録 — PR4)。
 mod port;
 pub use port::{
-    CodeGenerationApprovalDao, CodeGenerationApprovalRow, DoctorCheckDao, DoctorCheckRow,
-    DoctorReportDao, DoctorReportRow, PipelineProgressDao, PipelineProgressRow, PlanFingerprintDao,
-    PlanFingerprintRow, SourceStamp, SteeringPartDao, SteeringPartRow, SteeringPlanDao,
+    AnswerResultRow, ArtifactAuditRow, CodeGenerationApprovalDao, CodeGenerationApprovalRow,
+    DefinitionRow, DefinitionScopeKeywordRow, DefinitionScopePhaseEntryRow, DefinitionScopeRow,
+    DefinitionScopeStageRow, DefinitionStageRow, DoctorCheckDao, DoctorCheckRow, DoctorReportDao,
+    DoctorReportRow, ExecutionRow, ExecutionStageRow, IntentRow, IntentStageRow, JumpResultRow,
+    NextAnswerRow, NextJumpPhaseRow, NextJumpRow, PipelineProgressDao, PipelineProgressRow,
+    PlanFingerprintDao, PlanFingerprintRow, ReportResultRow, RunStageRow, ScopeChangeRow,
+    SessionAuditRow, SourceStamp, SteeringPartDao, SteeringPartRow, SteeringPlanDao,
     SteeringPlanRow, TestingContractDao, TestingContractRow, WorkspaceDoctorJournalEntry,
     WorkspaceDoctorJournalReader, WorkspaceDoctorProjectionCheckpointDao,
 };
@@ -168,3 +173,73 @@ pub use workspace_doctor_projection_checkpoint_dao_impl::WorkspaceDoctorProjecti
 
 mod workspace_doctor_read_model_updater;
 pub use workspace_doctor_read_model_updater::WorkspaceDoctorReadModelUpdater;
+
+// 構造化面 (Issue #153 の PR4) — 20 表の DAO と、処理したシーケンス番号・共有面の記録・読み面の
+// 版の DAO、構造化面の更新器が使うジャーナルの読み手。書く手順 (表をまたぐ検査を含む) は
+// `structured_surface`、読み面の表の用意 (版を含む) は `read_model_schema` の 1 か所が持つ。
+pub use port::{
+    AnswerResultDao, ArtifactAuditDao, DefinitionDao, DefinitionScopeDao,
+    DefinitionScopeKeywordDao, DefinitionScopePhaseEntryDao, DefinitionScopeStageDao,
+    DefinitionStageDao, ExecutionDao, ExecutionStageDao, IntentDao, IntentStageDao, JournalAnchor,
+    JumpResultDao, NextAnswerDao, NextJumpDao, NextJumpPhaseDao, ProjectionCheckpointDao,
+    ProjectionCheckpointRow, ReadModelHeadDao, ReadModelHeadRow, ReadSchemaVersionDao,
+    ReportResultDao, RunStageDao, ScopeChangeDao, SessionAuditDao, StructuredJournalReader,
+    TableContent,
+};
+
+mod column_value;
+mod read_model_schema;
+mod structured_surface;
+mod structured_surface_content;
+
+mod answer_result_dao_impl;
+mod artifact_audit_dao_impl;
+mod definition_dao_impl;
+mod definition_scope_dao_impl;
+mod definition_scope_keyword_dao_impl;
+mod definition_scope_phase_entry_dao_impl;
+mod definition_scope_stage_dao_impl;
+mod definition_stage_dao_impl;
+mod execution_dao_impl;
+mod execution_stage_dao_impl;
+mod intent_dao_impl;
+mod intent_stage_dao_impl;
+mod jump_result_dao_impl;
+mod next_answer_dao_impl;
+mod next_jump_dao_impl;
+mod next_jump_phase_dao_impl;
+mod projection_checkpoint_dao_impl;
+mod read_model_head_dao_impl;
+mod read_schema_version_dao_impl;
+mod report_result_dao_impl;
+mod run_stage_dao_impl;
+mod scope_change_dao_impl;
+mod session_audit_dao_impl;
+mod structured_journal_reader_impl;
+pub use answer_result_dao_impl::AnswerResultDaoImpl;
+pub use artifact_audit_dao_impl::ArtifactAuditDaoImpl;
+pub use definition_dao_impl::DefinitionDaoImpl;
+pub use definition_scope_dao_impl::DefinitionScopeDaoImpl;
+pub use definition_scope_keyword_dao_impl::DefinitionScopeKeywordDaoImpl;
+pub use definition_scope_phase_entry_dao_impl::DefinitionScopePhaseEntryDaoImpl;
+pub use definition_scope_stage_dao_impl::DefinitionScopeStageDaoImpl;
+pub use definition_stage_dao_impl::DefinitionStageDaoImpl;
+pub use execution_dao_impl::ExecutionDaoImpl;
+pub use execution_stage_dao_impl::ExecutionStageDaoImpl;
+pub use intent_dao_impl::IntentDaoImpl;
+pub use intent_stage_dao_impl::IntentStageDaoImpl;
+pub use jump_result_dao_impl::JumpResultDaoImpl;
+pub use next_answer_dao_impl::NextAnswerDaoImpl;
+pub use next_jump_dao_impl::NextJumpDaoImpl;
+pub use next_jump_phase_dao_impl::NextJumpPhaseDaoImpl;
+pub use projection_checkpoint_dao_impl::ProjectionCheckpointDaoImpl;
+pub use read_model_head_dao_impl::ReadModelHeadDaoImpl;
+pub use read_schema_version_dao_impl::ReadSchemaVersionDaoImpl;
+pub use report_result_dao_impl::ReportResultDaoImpl;
+pub use run_stage_dao_impl::RunStageDaoImpl;
+pub use scope_change_dao_impl::ScopeChangeDaoImpl;
+pub use session_audit_dao_impl::SessionAuditDaoImpl;
+pub use structured_journal_reader_impl::StructuredJournalReaderImpl;
+
+#[cfg(test)]
+mod structured_surface_tables_tests;
