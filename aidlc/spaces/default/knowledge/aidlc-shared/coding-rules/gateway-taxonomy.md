@@ -133,6 +133,14 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 集約の永続化を担うのは `IntentExecutionRepository` であり、`EventStore` はその下請けである。
 **ユースケースが `EventStore` を直接注入されることはない**（するなら Repository の意味が消える）。
 
+**`JournalReader` はジャーナルの要素だけ**（追記 2026-09-26、オーナー裁定 — Issue #153）: `JournalReader` が
+持つのは「ある位置より後／までの事実を読む」ことだけで、リードモデル側の型に依存しない。リードモデルへの書込
+（`publish` / `advance_checkpoint` / `replace_*`）と投影チェックポイントの保存は、RMU クレートの `orchestration/port/` に
+置く**表の DAO**（`<表名>Dao` / `…DaoImpl`、単一テーブルの I/O だけ）へ移す。`ReadModelWriter` のような書込ポートは
+作らないので、本節の例外（`EventStore` / `JournalReader` の 2 本）は増えない。詳細は
+[read-model-updater-structure.md](read-model-updater-structure.md)。**移行中**（PR1 = 自己診断のみ。上の表の
+「投影チェックポイント」は移行前の形の記述）。
+
 ### 1d. コマンド側で外界に触るのは Repository 実装だけ（2026-09-04 機械強制、#47）
 
 §1 の帰結として、**コマンド側 3 クレート（domain / use-case / interface-adapter）で
@@ -171,6 +179,13 @@ EventStoreForSqlite を使わないといけない」。**ファイルから集�
 ドメイン語へ言い換えると対応が読めなくなる（[ubiquitous-language.md](ubiquitous-language.md)）。
 **例外はこの 2 本のみ**で、新たに `XxxStore` / `XxxReader` を増やすことは認めない。
 機械化する場合も、この 2 本を除外リストに持つ実装にすること。
+
+> **暫定の扱い（追記 2026-09-26 — オーナー裁定: 最後に `JournalReader` 1 本へまとめる）**: RMU の移行中は、面ごとのジャーナル読取ポート
+> （既存の `PlanApprovalJournalReader`、PR1 の `WorkspaceDoctorJournalReader`）を `JournalReader` の面別の
+> 分身 — ジャーナルという同じ要素の代理 — として扱う。旧 `JournalReader` はまだリードモデルへの書込を抱えて
+> いるため、移行済みの面がそれに依存すると書く口ごと依存してしまうからである。面別の `…JournalReader` は
+> 例外に加えない — 移行の最後に `JournalReader` 1 本（読む事実の種類は引数で絞る）へまとめて消す
+> （[read-model-updater-structure.md](read-model-updater-structure.md) 原則 2、オーナー裁定 2026-09-26）。
 
 ~~なお `DefinitionArtifactsClient` は…~~ — **決着（2026-09-02、b36）**: この型は
 `CompiledDefinitionRepository` へ昇格して消滅した（§1 の再是正）。`Client` 命名は本当に
