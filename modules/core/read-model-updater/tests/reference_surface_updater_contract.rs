@@ -1,7 +1,9 @@
-//! 参照入力由来の単独面の更新器の契約 — steering・テスト契約・計画指紋・Code Generation 開始可否。
+//! 参照入力由来の単独面の更新器の契約 — steering・テスト契約・計画指紋・Code Generation 開始可否・
+//! Pipeline 進捗。
 //!
 //! どれも「読む → 投影 → 表の DAO で書く」形の更新器である
-//! (`coding-rules/read-model-updater-structure.md`)。材料が人の編集するファイルや承認入力なので、
+//! (`coding-rules/read-model-updater-structure.md`)。材料が人の編集するファイルや承認入力、
+//! 外部の handoff ファイルの観測なので、
 //! 冪等の鍵は処理したシーケンス番号ではなく行の `source_digest` である。ここでは実ストア
 //! (本家のイベントストアが書いた履歴) の上で次を固定する:
 //!
@@ -10,8 +12,8 @@
 //! - 途中で失敗すれば、どの行も動かない (同じトランザクションで確定するため)
 //! - 別の接続が書込ロックを握っている間は、IMMEDIATE で待ってから書く (#134)
 //!
-//! 計画指紋と開始可否の行は実行と intent の履歴からしか組めないので、その 2 表の DAO の
-//! 「書いて読み戻す」試験もここに置く。
+//! 計画指紋と開始可否と Pipeline 進捗の行は実行と intent の履歴からしか組めないので、その 3 表の
+//! DAO の「書いて読み戻す」試験もここに置く。
 
 // テストコードでは unwrap / expect / panic を許可 (オーナー規約)。integration test は
 // clippy.toml の allow-unwrap-in-tests の検出対象外のため file-level で明示する。
@@ -25,22 +27,26 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use core_command_domain::orchestration::{
-    PlanApprovalDocuments, PlanApprovalInput, PlanReceipts, PlanTarget, TestingSections,
+    PipelineHandoff, PlanApprovalDocuments, PlanApprovalInput, PlanReceipts, PlanTarget,
+    TestingSections,
 };
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
     CodeGenerationApprovalDao as _, CodeGenerationApprovalDaoImpl,
     CodeGenerationApprovalReadModelUpdater, CodeGenerationApprovalRow, GlobalSeqNr,
-    JournalReadError, JournalReader as _, JournalReaderImpl, PlanFingerprintDao as _,
+    JournalReadError, JournalReader as _, JournalReaderImpl, PipelineProgressDao as _,
+    PipelineProgressDaoImpl, PipelineProgressReadModelUpdater, PlanFingerprintDao as _,
     PlanFingerprintDaoImpl, PlanFingerprintReadModelUpdater, PlanFingerprintRow,
     ReadModelUpdateError, ReadModelUpdater, SourceStamp, SteeringReadModelUpdater, SteeringSource,
     TestingReadModelUpdater,
 };
-use core_read_model_updater::read_tables::{CodeGenerationApprovalTables, PlanFingerprintTables};
+use core_read_model_updater::read_tables::{
+    CodeGenerationApprovalTables, PipelineTables, PlanFingerprintTables,
+};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use support::{execution_id, open_store, seed, seed_intent};
+use support::{execution_id, open_store, seed, seed_intent, seed_pipeline_definition};
 
 /// ロックを握る側が保持する時間。
 const HOLD: Duration = Duration::from_millis(200);
@@ -233,6 +239,9 @@ async fn opening_each_updater_does_not_wait_for_a_write_lock_when_its_tables_exi
         &receipts,
     )
     .map(drop);
+    let pipeline =
+        PipelineProgressReadModelUpdater::open(&reader, fixture.store(), &execution, None)
+            .map(drop);
     let waited = started.elapsed();
     held.release();
 
@@ -240,6 +249,7 @@ async fn opening_each_updater_does_not_wait_for_a_write_lock_when_its_tables_exi
     assert_eq!(testing, Ok(()));
     assert_eq!(fingerprint, Ok(()));
     assert_eq!(approval, Ok(()));
+    assert_eq!(pipeline, Ok(()));
     assert!(
         waited < PROMPT_OPEN,
         "開く段が書込ロックを待った (所要 {waited:?})"
@@ -252,16 +262,28 @@ async fn opening_an_updater_creates_its_table_again_when_it_is_missing() {
     // 自分で作ることを見るには、落とした後に読み手を開かない)。
     let fixture = Fixture::seeded().await;
     let mut reader = fixture.journal_reader();
-    fixture.execute("DROP TABLE read_testing_contract; DROP TABLE read_steering_part");
+    fixture.execute(
+        "DROP TABLE read_testing_contract; DROP TABLE read_steering_part;
+         DROP TABLE read_pipeline_progress",
+    );
     let source = fixture.source();
+    let execution = execution_id();
     drop(TestingReadModelUpdater::open(&mut reader, fixture.store(), &source).unwrap());
     drop(SteeringReadModelUpdater::open(fixture.store(), fixture.source()).unwrap());
+    drop(
+        PipelineProgressReadModelUpdater::open(&reader, fixture.store(), &execution, None).unwrap(),
+    );
     assert_eq!(
         fixture.count("read_testing_contract"),
         0,
         "空の表として在る"
     );
     assert_eq!(fixture.count("read_steering_part"), 0, "空の表として在る");
+    assert_eq!(
+        fixture.count("read_pipeline_progress"),
+        0,
+        "空の表として在る"
+    );
 }
 
 // ---- steering (`read_steering_plan` / `read_steering_part`) ----
@@ -971,5 +993,254 @@ async fn the_approval_update_waits_for_a_write_lock_held_by_another_connection()
     assert_ne!(
         fixture.text("SELECT source_digest FROM read_code_generation_approval"),
         before
+    );
+}
+
+// ---- Pipeline 進捗 (`read_pipeline_progress`) ----
+
+/// Pipeline のステージを持つ定義も履歴に在る実ストア (行は Pipeline のステージ × 単独実行の別)。
+async fn pipeline_fixture() -> Fixture {
+    let fixture = Fixture::seeded().await;
+    seed_pipeline_definition(&fixture.path).await;
+    fixture
+}
+
+/// 現在の handoff の観測 (`fill` を変えれば照合子が動く)。
+fn handoff(fill: char) -> PipelineHandoff {
+    PipelineHandoff::new(
+        "aidlc/handoff.json".to_string(),
+        format!("sha256:{}", fill.to_string().repeat(64)),
+        "1700000000000".to_string(),
+    )
+    .unwrap()
+}
+
+async fn update_pipeline(
+    fixture: &Fixture,
+    handoff: Option<&PipelineHandoff>,
+) -> Result<(), ReadModelUpdateError> {
+    let reader = fixture.journal_reader();
+    let execution = execution_id();
+    PipelineProgressReadModelUpdater::open(&reader, fixture.store(), &execution, handoff)?
+        .update_read_models()
+        .await
+}
+
+/// 行を並べた 1 本の文字列 (差し替わったかを丸ごと比べる)。
+fn pipeline_rows(fixture: &Fixture) -> String {
+    fixture.text(
+        "SELECT COALESCE(group_concat(id || ':' || completed || ':' || source_digest || ':'
+                 || event_position), '')
+         FROM (SELECT * FROM read_pipeline_progress ORDER BY id)",
+    )
+}
+
+#[tokio::test]
+async fn saved_pipeline_rows_read_back_column_for_column_with_their_stamp() {
+    let fixture = pipeline_fixture().await;
+    update_pipeline(&fixture, Some(&handoff('a')))
+        .await
+        .unwrap();
+
+    let history = fixture
+        .journal_reader()
+        .events_after(GlobalSeqNr::ZERO)
+        .await
+        .unwrap();
+    let tables = PipelineTables::project(&history, &execution_id(), Some(&handoff('a'))).unwrap();
+    assert_eq!(
+        tables.rows().len(),
+        2,
+        "Pipeline のステージ 1 つ × 単独実行の別"
+    );
+    let raw = fixture.raw();
+    let mut statement = raw
+        .prepare(
+            "SELECT id, execution_id, stage, single, completed, source_digest, event_position
+             FROM read_pipeline_progress ORDER BY id",
+        )
+        .unwrap();
+    let saved: Vec<(String, String, String, bool, String, String, i64)> = statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+            ))
+        })
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let mut expected: Vec<_> = tables
+        .rows()
+        .iter()
+        .map(|row| {
+            (
+                row.id().to_string(),
+                row.execution_id().to_string(),
+                row.stage().to_string(),
+                row.is_single(),
+                row.completed().to_string(),
+                row.source_digest().to_string(),
+                i64::try_from(row.event_position().to_u64()).unwrap(),
+            )
+        })
+        .collect();
+    expected.sort();
+    assert_eq!(saved, expected);
+    let first = tables.rows().first().unwrap();
+    assert_eq!(
+        PipelineProgressDaoImpl
+            .find_stamp(&raw, execution_id().as_str())
+            .unwrap(),
+        Some(SourceStamp::new(
+            first.source_digest().to_string(),
+            first.event_position()
+        )),
+        "実行の行が名乗る出所を読み戻せる"
+    );
+    assert_eq!(
+        Some(first.event_position()),
+        history.scanned_to(),
+        "出所の位置は投影した履歴の走査位置"
+    );
+}
+
+#[tokio::test]
+async fn an_unchanged_pipeline_input_does_not_rewrite_the_rows() {
+    let fixture = pipeline_fixture().await;
+    update_pipeline(&fixture, Some(&handoff('a')))
+        .await
+        .unwrap();
+    fixture.execute("UPDATE read_pipeline_progress SET completed = 'untouched'");
+    update_pipeline(&fixture, Some(&handoff('a')))
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture.text("SELECT group_concat(DISTINCT completed) FROM read_pipeline_progress"),
+        "untouched",
+        "同じ履歴と同じ handoff では書き替えない"
+    );
+}
+
+#[tokio::test]
+async fn a_changed_handoff_rewrites_the_pipeline_rows() {
+    let fixture = pipeline_fixture().await;
+    update_pipeline(&fixture, None).await.unwrap();
+    let before = fixture.text("SELECT source_digest FROM read_pipeline_progress LIMIT 1");
+    fixture.execute("UPDATE read_pipeline_progress SET completed = 'stale'");
+
+    update_pipeline(&fixture, Some(&handoff('b')))
+        .await
+        .unwrap();
+
+    assert_ne!(
+        fixture.text("SELECT source_digest FROM read_pipeline_progress LIMIT 1"),
+        before
+    );
+    assert_eq!(fixture.count("read_pipeline_progress"), 2);
+    assert_eq!(
+        fixture.text("SELECT group_concat(DISTINCT completed) FROM read_pipeline_progress"),
+        "[]",
+        "古い行は残らない"
+    );
+}
+
+#[tokio::test]
+async fn pipeline_rows_at_a_later_position_are_not_overwritten_by_an_older_cut() {
+    // 保存済みの行のほうが新しい履歴位置で作られていれば、照合子が違っても古い断面で
+    // 上書きしない (#134 の修正で入った判定 — 判定は更新器が持ち、DAO は値を運ぶだけ)。
+    let fixture = pipeline_fixture().await;
+    update_pipeline(&fixture, None).await.unwrap();
+    fixture.execute(
+        "UPDATE read_pipeline_progress
+         SET completed = 'newer', source_digest = 'newer-digest', event_position = 999",
+    );
+    let newer = pipeline_rows(&fixture);
+
+    update_pipeline(&fixture, Some(&handoff('c')))
+        .await
+        .unwrap();
+
+    assert_eq!(pipeline_rows(&fixture), newer, "新しい面が残る");
+}
+
+#[tokio::test]
+async fn a_pipeline_update_that_fails_midway_leaves_every_row_unchanged() {
+    let fixture = pipeline_fixture().await;
+    update_pipeline(&fixture, None).await.unwrap();
+    let before = pipeline_rows(&fixture);
+    // 実行の行を消した後、1 行目の書込で落ちるようにする (差し替えの途中の失敗)。
+    fixture.execute(
+        "CREATE TRIGGER refuse_pipeline BEFORE INSERT ON read_pipeline_progress
+         BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+    );
+    let error = update_pipeline(&fixture, Some(&handoff('d')))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ReadModelUpdateError::Read(JournalReadError::Io { .. })
+        ),
+        "実際: {error:?}"
+    );
+    assert_eq!(pipeline_rows(&fixture), before, "消した行も戻る");
+
+    // 原因を取り除けば、次の更新が同じ入力を描き直す。
+    fixture.execute("DROP TRIGGER refuse_pipeline");
+    update_pipeline(&fixture, Some(&handoff('d')))
+        .await
+        .unwrap();
+    assert_ne!(pipeline_rows(&fixture), before);
+}
+
+#[tokio::test]
+async fn the_pipeline_update_waits_for_a_write_lock_held_by_another_connection() {
+    // Issue #134 の再現 (旧 `JournalReaderImpl::replace_pipeline` の回帰試験をここへ移した)。
+    // 更新器は保存済みの出所を読んでから書く。DEFERRED で始めると、別の接続が書込ロックを
+    // 握っている間の書込昇格は busy timeout を待たずに即 `SQLITE_BUSY` (= `WouldBlock`) になる。
+    // IMMEDIATE なら最初に書込ロックを待ち、解放後に書く。ホルダが握る時間 (HOLD = 200ms) は
+    // busy timeout (5000ms) より十分短いので、IMMEDIATE なら解放を待って成功する。DEFERRED の
+    // 失敗は待ちに入らず即時に起きるので HOLD に依存しない。
+    //
+    // ホルダは HOLD を「主スレッドが更新を呼ぶ直前」の合図から数える (`LockHolder`)。書込ロックを
+    // 握った合図から数えると、呼び出しより先にホルダが放してしまったとき DEFERRED でも通って
+    // しまい、試験が IMMEDIATE の効果を見分けられない。そのうえで、呼び出しがロック待ちを実際に
+    // 観測したことを所要時間 (HOLD の半分以上) で確かめる。
+    //
+    // 定義を履歴に置かないので、投影した行は 0 本 — 前回の投影が残した行が消えることを、
+    // 書込まで届いた証拠にする (比べる相手が無くても、保存済みの出所は読む)。
+    let fixture = Fixture::seeded().await;
+    fixture
+        .raw()
+        .execute(
+            "INSERT INTO read_pipeline_progress
+             (id, execution_id, stage, single, completed, source_digest, event_position)
+             VALUES ('stale', ?1, 'ci-pipeline', 0, '[]', 'stale-digest', 1)",
+            [execution_id().as_str()],
+        )
+        .unwrap();
+    let reader = fixture.journal_reader();
+    let execution = execution_id();
+    let mut updater =
+        PipelineProgressReadModelUpdater::open(&reader, fixture.store(), &execution, None).unwrap();
+
+    let holder = LockHolder::hold(fixture.store());
+    let (waited, result) = holder.measure(updater.update_read_models()).await;
+
+    assert_eq!(result, Ok(()), "書込ロックの解放を待って書く");
+    assert!(
+        waited >= MIN_OBSERVED_WAIT,
+        "ロック待ちを観測していない (所要 {waited:?})。ホルダが呼び出しより先に放した"
+    );
+    assert_eq!(
+        fixture.count("read_pipeline_progress"),
+        0,
+        "0 本の行で差し替えたので古い行は残らない"
     );
 }

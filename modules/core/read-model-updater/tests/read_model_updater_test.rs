@@ -1406,31 +1406,6 @@ async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
     );
 }
 
-#[tokio::test]
-async fn a_reader_without_a_pipeline_face_reports_unsupported_instead_of_pretending() {
-    let mut reader = FakeReader::default();
-    let tables = core_read_model_updater::read_tables::PipelineTables::project(
-        &JournalBatch::empty(),
-        &IntentExecutionId::parse(EXECUTION).expect("UUIDv7"),
-        None,
-    )
-    .expect("空の履歴からも表は組める");
-    let error = reader
-        .replace_pipeline(&tables)
-        .await
-        .expect_err("pipeline 面を持たない読み手");
-    assert!(
-        matches!(
-            error,
-            JournalReadError::Io {
-                kind: std::io::ErrorKind::Unsupported,
-                path: None
-            }
-        ),
-        "実際: {error:?}"
-    );
-}
-
 /// 公開名（記録ディレクトリ名と slug）を持つ intent の誕生。
 fn named_intent() -> Intent {
     let base = genesis_intent();

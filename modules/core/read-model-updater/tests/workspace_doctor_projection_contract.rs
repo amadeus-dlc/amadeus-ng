@@ -591,8 +591,8 @@ async fn the_update_waits_for_a_write_lock_held_by_another_connection() {
     //
     // ホルダは HOLD を「主スレッドが更新を呼ぶ直前」の合図 (合図 2) から数え、呼び出しが
     // ロック待ちを実際に観測したことを所要時間 (下限 = HOLD の半分) で確かめる
-    // (`JournalReaderImpl` の `replace_pipeline_waits_for_a_write_lock_held_by_another_connection`
-    // と同じ立て付け)。
+    // (`reference_surface_updater_contract.rs` の
+    // `the_pipeline_update_waits_for_a_write_lock_held_by_another_connection` と同じ立て付け)。
     const HOLD: std::time::Duration = std::time::Duration::from_millis(200);
     const MIN_OBSERVED_WAIT: std::time::Duration = std::time::Duration::from_millis(100);
     let temp = tempfile::tempdir().unwrap();

@@ -2,11 +2,13 @@
 //!
 //! ```text
 //! steering の更新器 (参照入力の読取 → source_digest 比較 → 変化時のみ 2 表を DAO で差し替え) ← 別 Tx
+//! Pipeline の更新器 (全履歴 + handoff の観測 → source_digest 比較 → 変化時のみ DAO で差し替え) ← 別 Tx
 //! checkpoint 読取 → 差分の探り → 全履歴 1 回の読取 → 純粋投影核 → リードモデルを書く → advance_checkpoint
 //! ```
 //!
-//! 1 行目が参照入力（memory 層の規則ファイル）の面、2 行目がジャーナルの面である。規則の
-//! 編集はイベントを伴わないので、ジャーナル差分が空でも 1 行目は毎回走る。
+//! 1 行目が参照入力（memory 層の規則ファイル）の面、2 行目が Pipeline の面（外部の handoff
+//! ファイルの観測を材料に含む）、3 行目がジャーナルの面である。規則や handoff の変化は
+//! イベントを伴わないので、ジャーナル差分が空でも 1・2 行目は毎回走る。
 //!
 //! SQLite にはストリームが無いので、AWS 版 RMU が Streams から**受信する**のと同じ役割を、
 //! ここでは**自分で引く**形で果たす。イベントを運ぶのは RMU 自身であり、合成ルート（U7）は
@@ -19,7 +21,11 @@
 //! テスト契約・計画指紋・Code Generation 開始可否を描く入口は、それぞれ別の更新器
 //! （[`super::StructuredReadModelUpdater`] ほか）に分けてある。
 
-use core_command_domain::orchestration::IntentExecutionEvent;
+use std::path::{Path, PathBuf};
+
+use core_command_domain::orchestration::{
+    IntentExecutionEvent, IntentExecutionId, PipelineHandoff,
+};
 use core_command_domain::workspace::EventType;
 
 use crate::read_tables::ReadTables;
@@ -32,7 +38,7 @@ use super::projection_name::ProjectionName;
 use super::projection_targets::ProjectionTargets;
 use super::read_model_update_error::ReadModelUpdateError;
 use super::read_model_updater::ReadModelUpdater;
-use super::{PublicationBatch, PublicationFile};
+use super::{PipelineProgressReadModelUpdater, PublicationBatch, PublicationFile};
 
 /// 取得ループ — チェックポイント以降のイベントを Markdown 面と構造化面の両方へ流し込む。
 ///
@@ -43,9 +49,17 @@ use super::{PublicationBatch, PublicationFile};
 /// 型引数 `S` は steering の面を描く更新器である（実物は [`super::SteeringReadModelUpdater`]）。
 /// steering の面は参照入力由来で、自分の表の DAO と自分のトランザクションで書く。取得ループは
 /// その更新を**どの時点で起動するか**（ジャーナル差分の探りより前）だけを持つ。
+///
+/// Pipeline の面も参照入力を含む面で、自分の表の DAO と自分のトランザクションで書く
+/// （[`PipelineProgressReadModelUpdater`]）。その更新器は取得ループの読み手を借りて履歴を読むので、
+/// 取得ループが更新のたびに組んで起動する。取得ループが持つのは、描く先（共有ストア）と
+/// 現在の handoff と、起動の時点だけである。
 #[derive(Debug)]
 pub struct OrchestrationReadModelUpdater<R, S> {
-    pipeline_handoff: Option<Option<core_command_domain::orchestration::PipelineHandoff>>,
+    /// Pipeline の面を描く共有ストア。`None` なら Pipeline の面を描かない。
+    pipeline_store: Option<PathBuf>,
+    /// Pipeline の面の材料にする、現在の handoff の観測。
+    pipeline_handoff: Option<PipelineHandoff>,
     journal_reader: R,
     projection: ProjectionName,
     targets: ProjectionTargets,
@@ -53,25 +67,36 @@ pub struct OrchestrationReadModelUpdater<R, S> {
     steering: S,
     /// 解決済み計画の控え。`Started` は 1 度しか書かれないので、一度引けば以後は使い回す。
     plan: Option<ResolvedPlan>,
-    execution_id: Option<core_command_domain::orchestration::IntentExecutionId>,
+    execution_id: Option<IntentExecutionId>,
 }
 
 impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
-    /// 現在のhandoffを参照入力として受け取り、イベントなしの変更も再投影する。
+    /// Pipeline の面を描く共有ストアと、現在の handoff を参照入力として受け取る。
+    /// イベントを伴わない handoff の変化も、次の更新で再投影する。
+    ///
+    /// 描くのは対象の実行（[`OrchestrationReadModelUpdater::for_execution`]）があるときだけ
+    /// である。
     #[must_use]
-    pub fn with_pipeline_handoff(
-        mut self,
-        handoff: Option<core_command_domain::orchestration::PipelineHandoff>,
-    ) -> Self {
-        self.pipeline_handoff = Some(handoff);
+    pub fn with_pipeline_handoff(mut self, store: &Path, handoff: Option<PipelineHandoff>) -> Self {
+        self.pipeline_store = Some(store.to_path_buf());
+        self.pipeline_handoff = handoff;
         self
     }
-    async fn update_pipeline(&mut self) -> Result<(), ReadModelUpdateError> {
-        if let (Some(current), Some(id)) = (&self.pipeline_handoff, &self.execution_id) {
-            let history = self.journal_reader.events_after(GlobalSeqNr::ZERO).await?;
-            let tables =
-                crate::read_tables::PipelineTables::project(&history, id, current.as_ref())?;
-            self.journal_reader.replace_pipeline(&tables).await?;
+
+    /// Pipeline の面の更新器を組んで起動する。
+    ///
+    /// 更新器は取得ループの読み手・実行・handoff を借り、自分の接続と表の DAO で書く
+    /// （比較と差し替えは更新器の IMMEDIATE トランザクションの中 — #134）。
+    async fn update_pipeline(&self) -> Result<(), ReadModelUpdateError> {
+        if let (Some(store), Some(id)) = (&self.pipeline_store, &self.execution_id) {
+            PipelineProgressReadModelUpdater::open(
+                &self.journal_reader,
+                store,
+                id,
+                self.pipeline_handoff.as_ref(),
+            )?
+            .update_read_models()
+            .await?;
         }
         Ok(())
     }
@@ -103,6 +128,7 @@ impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
         steering: S,
     ) -> OrchestrationReadModelUpdater<R, S> {
         OrchestrationReadModelUpdater {
+            pipeline_store: None,
             pipeline_handoff: None,
             journal_reader,
             projection,
@@ -115,10 +141,7 @@ impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
 
     /// 状態・監査へ反映する実行を明示する。構造化面は引き続き全履歴から投影する。
     #[must_use]
-    pub fn for_execution(
-        mut self,
-        id: core_command_domain::orchestration::IntentExecutionId,
-    ) -> Self {
+    pub fn for_execution(mut self, id: IntentExecutionId) -> Self {
         self.execution_id = Some(id);
         self.plan = None;
         self
@@ -183,6 +206,10 @@ where
     /// 読むのは毎回だが、書き替えるのは `source_digest` が動いたときだけであり、その比較と
     /// 差し替えはチェックポイントとは別のトランザクションである（設計 §3 —
     /// [`super::SteeringReadModelUpdater`]）。
+    ///
+    /// Pipeline の面（`read_pipeline_progress`）も同じ理由で差分の探りより前に描く — 材料の
+    /// handoff ファイルはイベントを伴わずに変わる。比較と差し替えは Pipeline の更新器
+    /// （[`PipelineProgressReadModelUpdater`]）が自分のトランザクションで行う。
     ///
     /// # Errors
     ///

@@ -125,14 +125,15 @@ pub use dto::SingleStageRunStartedDto;
 // 更新器の構造 — ジャーナルを読む → 投影 → 表の DAO で更新する
 // (`coding-rules/read-model-updater-structure.md`)。ポート (trait と、それが運ぶ値) は
 // `port/`、実装は `…Impl` としてこの階層に置く。移行済みは自己診断 (Issue #153 の PR1) と、
-// 参照入力由来の単独面 — steering・テスト契約・計画指紋・Code Generation 開始可否 (PR2)。
+// 参照入力由来の単独面 — steering・テスト契約・計画指紋・Code Generation 開始可否 (PR2) と、
+// Pipeline 面 (PR3)。
 mod port;
 pub use port::{
     CodeGenerationApprovalDao, CodeGenerationApprovalRow, DoctorCheckDao, DoctorCheckRow,
-    DoctorReportDao, DoctorReportRow, PlanFingerprintDao, PlanFingerprintRow, SourceStamp,
-    SteeringPartDao, SteeringPartRow, SteeringPlanDao, SteeringPlanRow, TestingContractDao,
-    TestingContractRow, WorkspaceDoctorJournalEntry, WorkspaceDoctorJournalReader,
-    WorkspaceDoctorProjectionCheckpointDao,
+    DoctorReportDao, DoctorReportRow, PipelineProgressDao, PipelineProgressRow, PlanFingerprintDao,
+    PlanFingerprintRow, SourceStamp, SteeringPartDao, SteeringPartRow, SteeringPlanDao,
+    SteeringPlanRow, TestingContractDao, TestingContractRow, WorkspaceDoctorJournalEntry,
+    WorkspaceDoctorJournalReader, WorkspaceDoctorProjectionCheckpointDao,
 };
 
 mod updater_connection;
@@ -150,6 +151,11 @@ pub use testing_contract_dao_impl::TestingContractDaoImpl;
 
 mod steering_read_model_updater;
 pub use steering_read_model_updater::SteeringReadModelUpdater;
+
+mod pipeline_progress_dao_impl;
+mod pipeline_progress_read_model_updater;
+pub use pipeline_progress_dao_impl::PipelineProgressDaoImpl;
+pub use pipeline_progress_read_model_updater::PipelineProgressReadModelUpdater;
 
 mod doctor_check_dao_impl;
 mod doctor_report_dao_impl;

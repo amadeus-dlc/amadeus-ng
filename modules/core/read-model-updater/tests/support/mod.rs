@@ -479,6 +479,66 @@ pub(crate) async fn seed_definition(path: &StorePath) {
     }
 }
 
+/// [`defined_event`] のグラフに Pipeline のステージ (`reverse-engineering`) を 1 つ足した定義の
+/// 誕生イベント (`Defined`)。
+///
+/// Pipeline 面 (`read_pipeline_progress`) の行はその定義の Pipeline ステージごとに立つので、
+/// 1 ノードだけの [`defined_event`] では 1 行も立たない。
+#[must_use]
+pub(crate) fn pipeline_defined_event() -> WorkflowDefinitionEvent {
+    let (_, grid, scopes) = definition_content();
+    let graph = StageGraph::new(vec![
+        StageNodeBuilder::new(
+            slug("state-init"),
+            StageNumber::parse("0.1").expect("テストのステージ番号は文法内"),
+            "State Init".to_string(),
+            PhaseId::Initialization,
+            ExecutionKind::Always,
+            StageMode::Inline,
+        )
+        .build(),
+        StageNodeBuilder::new(
+            slug("reverse-engineering"),
+            StageNumber::parse("2.1").expect("テストのステージ番号は文法内"),
+            "Reverse Engineering".to_string(),
+            PhaseId::Inception,
+            ExecutionKind::Always,
+            StageMode::Pipeline,
+        )
+        .lead_agent("aidlc-developer-agent".to_string())
+        .build(),
+    ])
+    .expect("2 ノードのグラフ");
+    WorkflowDefinitionEvent::Defined(Defined::new(
+        definition_event_id(),
+        definition_id(),
+        definition_revision('0'),
+        graph,
+        grid,
+        scopes,
+    ))
+}
+
+/// 定義ストリームへ [`pipeline_defined_event`] (seq_nr = 1) を 1 行書く。
+pub(crate) async fn seed_pipeline_definition(path: &StorePath) {
+    let mut store: EventStoreForSqlite<
+        DefinitionStoreKey,
+        serde_json::Value,
+        WorkflowDefinitionEventDto,
+    > = EventStoreForSqlite::new(path.as_path()).expect("本家ストアは開ける");
+    let envelope = EventEnvelope::new(
+        DefinitionStoreKey(DEFINITION.to_string()),
+        1,
+        at(),
+        WorkflowDefinitionEventDto::of(&pipeline_defined_event()),
+    )
+    .with_manifest(DEFINITION_MANIFEST);
+    store
+        .persist_event_and_snapshot(envelope, serde_json::Value::Null, 0)
+        .await
+        .expect("本家ストアは書ける");
+}
+
 /// 定義ジャーナル行 `manifest` 列に書く型判別子 (読む側の定数と同じ綴り)。
 pub(crate) const DEFINITION_MANIFEST: &str = "workflow-definition-event/1";
 
