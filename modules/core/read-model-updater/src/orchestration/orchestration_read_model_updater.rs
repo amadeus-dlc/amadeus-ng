@@ -1,14 +1,19 @@
 //! **取得ループ** — RMU の上側の層（2026-08-28 裁定 / `coding-rules/cqrs-boundaries.md`）。
 //!
 //! ```text
+//! 構造化面の更新器 (共有面が古ければ全履歴から描き直す — 20 表の DAO で書く)       ← 別 Tx
 //! steering の更新器 (参照入力の読取 → source_digest 比較 → 変化時のみ 2 表を DAO で差し替え) ← 別 Tx
 //! Pipeline の更新器 (全履歴 + handoff の観測 → source_digest 比較 → 変化時のみ DAO で差し替え) ← 別 Tx
-//! checkpoint 読取 → 差分の探り → 全履歴 1 回の読取 → 純粋投影核 → リードモデルを書く → advance_checkpoint
+//! checkpoint 読取 → 差分の探り → 全履歴 1 回の読取 → 純粋投影核 → 公開 (ファイル + 構造化面 + 番号)
 //! ```
 //!
-//! 1 行目が参照入力（memory 層の規則ファイル）の面、2 行目が Pipeline の面（外部の handoff
-//! ファイルの観測を材料に含む）、3 行目がジャーナルの面である。規則や handoff の変化は
-//! イベントを伴わないので、ジャーナル差分が空でも 1・2 行目は毎回走る。
+//! 1 行目が共有構造化面の点検（旧い変換で描かれた面を、公開より前に描き直す）、2 行目が
+//! 参照入力（memory 層の規則ファイル）の面、3 行目が Pipeline の面（外部の handoff ファイルの
+//! 観測を材料に含む）、4 行目がジャーナルの面である。規則や handoff の変化はイベントを
+//! 伴わないので、ジャーナル差分が空でも 2・3 行目は毎回走る。4 行目の公開
+//! （`JournalReader::publish`）は、ファイルの公開と構造化面の 20 表・処理したシーケンス番号の
+//! 確定を 1 つの IMMEDIATE トランザクションで行う（構造化面の書込は表の DAO — Issue #153 の
+//! PR4。公開そのものの移行は PR5）。
 //!
 //! SQLite にはストリームが無いので、AWS 版 RMU が Streams から**受信する**のと同じ役割を、
 //! ここでは**自分で引く**形で果たす。イベントを運ぶのは RMU 自身であり、合成ルート（U7）は
@@ -46,6 +51,11 @@ use super::{PipelineProgressReadModelUpdater, PublicationBatch, PublicationFile}
 /// 監査シャード・`read_*` 表を 1 回で描く更新器）であることを、同じ契約を実装する他の
 /// 更新器（構造化面だけ・runtime-graph・心拍 …）と区別するためである。
 ///
+/// 型引数 `P` は共有構造化面を点検する更新器である（実物は投影名を束ねない
+/// [`super::StructuredReadModelUpdater`]）。共有面が旧い変換で描かれていれば、公開計画の再開より
+/// 前に現在の全履歴から描き直す (古い面の上に公開を重ねない)。描き直しは構造化面の表の DAO と
+/// 自分のトランザクションで行い、取得ループは起動の時点 (更新の先頭) だけを持つ。
+///
 /// 型引数 `S` は steering の面を描く更新器である（実物は [`super::SteeringReadModelUpdater`]）。
 /// steering の面は参照入力由来で、自分の表の DAO と自分のトランザクションで書く。取得ループは
 /// その更新を**どの時点で起動するか**（ジャーナル差分の探りより前）だけを持つ。
@@ -55,7 +65,7 @@ use super::{PipelineProgressReadModelUpdater, PublicationBatch, PublicationFile}
 /// 取得ループが更新のたびに組んで起動する。取得ループが持つのは、描く先（共有ストア）と
 /// 現在の handoff と、起動の時点だけである。
 #[derive(Debug)]
-pub struct OrchestrationReadModelUpdater<R, S> {
+pub struct OrchestrationReadModelUpdater<R, S, P> {
     /// Pipeline の面を描く共有ストア。`None` なら Pipeline の面を描かない。
     pipeline_store: Option<PathBuf>,
     /// Pipeline の面の材料にする、現在の handoff の観測。
@@ -65,12 +75,14 @@ pub struct OrchestrationReadModelUpdater<R, S> {
     targets: ProjectionTargets,
     /// 参照入力 (memory 層) から steering の面を描く更新器。ジャーナルとは別の入口である。
     steering: S,
+    /// 共有構造化面を点検する更新器 (古ければ描き直す)。
+    structured: P,
     /// 解決済み計画の控え。`Started` は 1 度しか書かれないので、一度引けば以後は使い回す。
     plan: Option<ResolvedPlan>,
     execution_id: Option<IntentExecutionId>,
 }
 
-impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
+impl<R: JournalReader, S, P> OrchestrationReadModelUpdater<R, S, P> {
     /// Pipeline の面を描く共有ストアと、現在の handoff を参照入力として受け取る。
     /// イベントを伴わない handoff の変化も、次の更新で再投影する。
     ///
@@ -120,13 +132,14 @@ impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
         Ok(())
     }
 
-    /// 読み手・投影名・書込先・steering の面の更新器から組む。
+    /// 読み手・投影名・書込先・steering の面の更新器・共有構造化面を点検する更新器から組む。
     pub const fn new(
         journal_reader: R,
         projection: ProjectionName,
         targets: ProjectionTargets,
         steering: S,
-    ) -> OrchestrationReadModelUpdater<R, S> {
+        structured: P,
+    ) -> OrchestrationReadModelUpdater<R, S, P> {
         OrchestrationReadModelUpdater {
             pipeline_store: None,
             pipeline_handoff: None,
@@ -134,6 +147,7 @@ impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
             projection,
             targets,
             steering,
+            structured,
             plan: None,
             execution_id: None,
         }
@@ -168,10 +182,11 @@ impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
     }
 }
 
-impl<R, S> ReadModelUpdater for OrchestrationReadModelUpdater<R, S>
+impl<R, S, P> ReadModelUpdater for OrchestrationReadModelUpdater<R, S, P>
 where
     R: JournalReader,
     S: ReadModelUpdater<Error = ReadModelUpdateError>,
+    P: ReadModelUpdater<Error = ReadModelUpdateError>,
 {
     type Error = ReadModelUpdateError;
 
@@ -198,6 +213,13 @@ where
     /// 公開計画の確定とチェックポイントの前進は `publish` の中で1トランザクションに
     /// 閉じる。共有構造化面が別投影によって既に新しい場合は、その面を維持する。
     ///
+    /// # 共有構造化面の点検が最初
+    ///
+    /// 共有構造化面が旧い変換で描かれていれば（あるいは旧いストアから持ち越した未照合の記録
+    /// なら）、公開計画の再開より前に現在の全履歴から描き直す — 古い面の上に公開を重ねない。
+    /// 点検と描き直しは構造化面の更新器（型引数 `P`）が表の DAO と自分のトランザクションで行う
+    /// （Issue #153 の PR4 までは読み手の `prepare_read_model` だった）。
+    ///
     /// # 参照入力はジャーナルより先に見る
     ///
     /// steering の面（`read_steering_*`）の材料は**人が編集するファイル**であって
@@ -219,7 +241,7 @@ where
     /// 歴史の切り落としを見つけた（`ReadTables`）、参照入力の規則ファイルが在るのに読めない
     /// （`SteeringRead`）・刻めない（`SteeringPack`）。
     async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
-        self.journal_reader.prepare_read_model()?;
+        self.structured.update_read_models().await?;
         if let Some(batch) = self
             .journal_reader
             .pending_publication(&self.projection)
@@ -540,7 +562,7 @@ where
     }
 }
 
-impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
+impl<R: JournalReader, S, P> OrchestrationReadModelUpdater<R, S, P> {
     /// メモリ層 2 本の本文（**両方在るときだけ**）。
     ///
     /// 2 本が揃っていないのは正常である — 昇格を 1 度も打っていない workspace には

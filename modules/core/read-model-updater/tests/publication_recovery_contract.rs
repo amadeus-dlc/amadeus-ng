@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalBatch, JournalReadError, JournalReader, JournalReaderImpl, ProjectionName,
-    ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdateError,
+    ProjectionTargets, PublicationBatch, PublicationFile, ReadModelUpdateError, ReadModelUpdater,
+    StructuredReadModelUpdater,
 };
 use core_read_model_updater::read_tables::ReadTables;
 use rusqlite::Connection;
@@ -29,6 +30,8 @@ impl Fixture {
         let store = StorePath::for_space(&root.path().join("aidlc"), &SpaceName::default());
         fs::create_dir_all(store.as_path().parent().unwrap()).unwrap();
         drop(support::open_store(&store));
+        // 本番と同じく、読み面の表は構造化面の更新器の開く段が用意する。
+        support::prepare_read_model(&store);
         let state = root.path().join("state.md");
         let audit = root.path().join("audit.md");
         fs::write(&state, "before\n").unwrap();
@@ -534,8 +537,7 @@ async fn a_publication_already_covered_by_the_cursor_does_not_touch_files() {
     let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
     let tables = ReadTables::project(&history).unwrap();
     let last = history.scanned_to().unwrap();
-    reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.store, &projection())
         .await
         .unwrap();
     let obsolete = PublicationBatch::new(
@@ -724,12 +726,11 @@ async fn a_shared_head_cannot_claim_missing_history_or_overflow_its_generation()
 async fn an_old_transform_is_rebuilt_at_the_write_boundary() {
     let fixture = Fixture::new();
     support::seed_intent(&fixture.store).await;
-    let mut reader = fixture.reader();
+    let reader = fixture.reader();
     let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
     let tables = ReadTables::project(&history).unwrap();
     let last = history.scanned_to().unwrap();
-    reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.store, &projection())
         .await
         .unwrap();
     drop(reader);
@@ -741,25 +742,25 @@ async fn an_old_transform_is_rebuilt_at_the_write_boundary() {
         .unwrap();
 
     let mut reopened = fixture.reader();
+    let mut structured = StructuredReadModelUpdater::open(fixture.store.as_path())
+        .unwrap()
+        .for_projection(projection());
     let untouched: i64 = fixture
         .raw()
         .query_row("SELECT count(*) FROM read_intent", [], |r| r.get(0))
         .unwrap();
     assert_eq!(untouched, 0, "openだけでは全履歴を投影しない");
     assert_eq!(reopened.checkpoint(&projection()).await.unwrap(), last);
-    {
-        use core_read_model_updater::orchestration::{
-            ReadModelUpdater, StructuredReadModelUpdater,
-        };
-        StructuredReadModelUpdater::new(&mut reopened, &projection())
-            .update_read_models()
-            .await
-            .unwrap();
-    }
+    structured.update_read_models().await.unwrap();
 
-    // 同位置の正しい断面を再提示できることが、再生成された内容一致の検収。
+    // 同位置の正しい断面を再提示できることが、再生成された内容一致の検収。公開の
+    // トランザクションは同位置の断面を全表と突き合わせ、食い違えば拒否する。
     reopened
-        .advance_checkpoint(&projection(), last, &tables)
+        .publish(
+            &projection(),
+            &PublicationBatch::rebuild(last, last, vec![]),
+            &tables,
+        )
         .await
         .unwrap();
     assert_eq!(reopened.checkpoint(&projection()).await.unwrap(), last);
@@ -840,8 +841,9 @@ async fn preparing_an_old_transform_preserves_history_failure_classification() {
         }
         drop(reader);
 
-        let mut reopened = JournalReaderImpl::open(&fixture.store).expect("openでは再投影しない");
-        let failure = reopened.prepare_read_model().unwrap_err();
+        let mut reopened = StructuredReadModelUpdater::open(fixture.store.as_path())
+            .expect("openでは再投影しない");
+        let failure = reopened.update_read_models().await.unwrap_err();
         if corrupt_payload {
             assert!(matches!(
                 failure,
@@ -894,7 +896,7 @@ async fn restoration_refuses_a_checkpoint_behind_its_saved_snapshot() {
 #[tokio::test]
 async fn update_refuses_a_saved_plan_for_different_targets_before_publication() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     let fixture = Fixture::new();
     let mut reader = fixture.reader();
@@ -922,6 +924,7 @@ async fn update_refuses_a_saved_plan_for_different_targets_before_publication() 
             SteeringSource::new(fixture.root.path().join("memory")),
         )
         .unwrap(),
+        StructuredReadModelUpdater::open(fixture.store.as_path()).unwrap(),
     );
 
     assert_eq!(
@@ -941,7 +944,7 @@ async fn update_refuses_a_saved_plan_for_different_targets_before_publication() 
 #[tokio::test]
 async fn update_refuses_a_saved_cut_that_has_disappeared_from_history() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     let fixture = Fixture::new();
     let mut reader = fixture.reader();
@@ -976,6 +979,7 @@ async fn update_refuses_a_saved_cut_that_has_disappeared_from_history() {
             SteeringSource::new(fixture.root.path().join("memory")),
         )
         .unwrap(),
+        StructuredReadModelUpdater::open(fixture.store.as_path()).unwrap(),
     );
 
     assert_eq!(
@@ -1017,10 +1021,8 @@ async fn typed_shared_row_corruption_blocks_old_and_same_position_publications_u
             let mut reader = fixture.reader();
             let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
             let last = history.scanned_to().unwrap();
-            let complete = ReadTables::project(&history).unwrap();
             let ahead = ProjectionName::parse("ahead").unwrap();
-            reader
-                .advance_checkpoint(&ahead, last, &complete)
+            support::advance_structured(&fixture.store, &ahead)
                 .await
                 .unwrap();
             let head = fixture.shared_head();
@@ -1078,7 +1080,21 @@ async fn typed_shared_row_corruption_blocks_old_and_same_position_publications_u
                 .await
                 .unwrap()
                 .unwrap();
-            assert_eq!(reader.rebuild_read_model().unwrap(), last);
+            // 公開の API に明示の描き直しは無い。本番の経路 (共有面の記録が古ければ、更新の
+            // 冒頭の点検が全履歴から描き直す) で描き直すために、記録を旧い変換の版にする。
+            fixture
+                .raw()
+                .execute_batch("UPDATE amadeus_read_model_head SET revision='old-transform'")
+                .unwrap();
+            StructuredReadModelUpdater::open(fixture.store.as_path())
+                .unwrap()
+                .update_read_models()
+                .await
+                .unwrap();
+            assert_eq!(
+                fixture.shared_head().0,
+                i64::try_from(last.to_u64()).unwrap()
+            );
             assert_eq!(sqlite_type(), restored_type);
             reader
                 .publish(&projection(), &saved, &candidate_tables)
@@ -1100,13 +1116,11 @@ async fn a_same_position_comparison_failure_preserves_rows_head_and_checkpoint()
     let fixture = Fixture::new();
     support::seed_intent(&fixture.store).await;
     support::seed(&mut support::open_store(&fixture.store)).await;
-    let mut reader = fixture.reader();
+    let reader = fixture.reader();
     let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
     let last = history.scanned_to().unwrap();
-    let tables = ReadTables::project(&history).unwrap();
     let ahead = ProjectionName::parse("ahead").unwrap();
-    reader
-        .advance_checkpoint(&ahead, last, &tables)
+    support::advance_structured(&fixture.store, &ahead)
         .await
         .unwrap();
     let head = fixture.shared_head();
@@ -1125,14 +1139,13 @@ async fn a_same_position_comparison_failure_preserves_rows_head_and_checkpoint()
     // DELETEとIntent/Executionの再挿入が済んだ後で、比較用のステージ挿入を拒否する。
     fixture.raw().execute_batch("CREATE TRIGGER fail_compare BEFORE INSERT ON read_execution_stage BEGIN SELECT RAISE(ABORT,'comparison insert unavailable'); END").unwrap();
 
+    // 表の DAO の失敗には、更新器が開いたストアの場所 (開いたときの綴り) を添える。
     assert_eq!(
-        reader
-            .advance_checkpoint(&projection(), last, &tables)
-            .await,
-        Err(JournalReadError::Io {
+        support::advance_structured(&fixture.store, &projection()).await,
+        Err(ReadModelUpdateError::Read(JournalReadError::Io {
             kind: ErrorKind::Other,
             path: Some(fixture.store.as_path().to_path_buf())
-        })
+        }))
     );
 
     let execution_after: (String, String, i64) = fixture
@@ -1161,8 +1174,7 @@ async fn a_same_position_comparison_failure_preserves_rows_head_and_checkpoint()
         .execute_batch("DROP TRIGGER fail_compare")
         .unwrap();
     // 同じ候補の再試行は全表の一致比較を通る。
-    reader
-        .advance_checkpoint(&projection(), last, &tables)
+    support::advance_structured(&fixture.store, &projection())
         .await
         .unwrap();
     assert_eq!(reader.checkpoint(&projection()).await.unwrap(), last);
@@ -1226,31 +1238,38 @@ async fn losing_the_shared_head_during_checkpoint_write_rolls_back_and_keeps_the
 }
 
 /// headが失われても、公開行の終点より古い履歴への巻戻りを拒否する。
+///
+/// 描き直しは更新の冒頭の点検 (記録が無ければ描き直す) が行う。開く段は欠けた記録を未照合の
+/// 初期値で置き直すので、記録が**無い**まま点検させるために、更新器を開いてから記録を消す。
 #[tokio::test]
 async fn rebuilding_without_a_head_preserves_the_known_published_cut() {
     let fixture = Fixture::new();
     support::seed_intent(&fixture.store).await;
-    let mut reader = fixture.reader();
+    let reader = fixture.reader();
     let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
     let last = history.scanned_to().unwrap();
-    reader
-        .advance_checkpoint(&projection(), last, &ReadTables::project(&history).unwrap())
+    support::advance_structured(&fixture.store, &projection())
         .await
         .unwrap();
+    let mut structured = StructuredReadModelUpdater::open(fixture.store.as_path()).unwrap();
     fixture
         .raw()
         .execute_batch(
             "DELETE FROM amadeus_read_model_head; DELETE FROM amadeus_projection_checkpoint",
         )
         .unwrap();
-    assert_eq!(reader.rebuild_read_model().unwrap(), last);
+    structured.update_read_models().await.unwrap();
+    assert_eq!(
+        fixture.shared_head().0,
+        i64::try_from(last.to_u64()).unwrap()
+    );
     assert_eq!(fixture.shared_head().0, 1);
     fixture
         .raw()
         .execute_batch("DELETE FROM amadeus_read_model_head; DELETE FROM journal")
         .unwrap();
     assert!(matches!(
-        reader.rebuild_read_model(),
+        structured.update_read_models().await,
         Err(ReadModelUpdateError::Read(JournalReadError::Corrupt {
             cause: core_read_model_updater::orchestration::CorruptCause::CheckpointAnchorMismatch,
             ..
@@ -1426,8 +1445,7 @@ async fn resolution_refuses_corrupt_history_before_replacing_the_saved_plan() {
 #[tokio::test]
 async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
-        StructuredReadModelUpdater,
+        OrchestrationReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     for reopen in [false, true] {
         for structured in [false, true] {
@@ -1436,10 +1454,13 @@ async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
             let mut reader = fixture.reader();
             let history = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
             let last = history.scanned_to().unwrap();
-            reader
-                .advance_checkpoint(&projection(), last, &ReadTables::project(&history).unwrap())
+            support::advance_structured(&fixture.store, &projection())
                 .await
                 .unwrap();
+            // 開き直さない場合は、記録を消す前に開いた更新器で点検する (記録が無いまま描き
+            // 直す)。開き直す場合は、開く段が欠けた記録を未照合の初期値で置き直す。
+            let opened_before = (!reopen)
+                .then(|| StructuredReadModelUpdater::open(fixture.store.as_path()).unwrap());
             fixture
                 .raw()
                 .execute_batch("DELETE FROM amadeus_read_model_head; DELETE FROM read_intent")
@@ -1447,11 +1468,13 @@ async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
             if reopen {
                 reader = fixture.reader();
             }
+            let refresher = opened_before.unwrap_or_else(|| {
+                StructuredReadModelUpdater::open(fixture.store.as_path()).unwrap()
+            });
             if structured {
-                StructuredReadModelUpdater::new(&mut reader, &projection())
-                    .update_read_models()
-                    .await
-                    .unwrap();
+                let mut refresher = refresher.for_projection(projection());
+                refresher.update_read_models().await.unwrap();
+                assert_eq!(refresher.checkpoint(&projection()).unwrap(), last);
                 assert_eq!(reader.checkpoint(&projection()).await.unwrap(), last);
             } else {
                 let mut updater = OrchestrationReadModelUpdater::new(
@@ -1463,6 +1486,7 @@ async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
                         SteeringSource::new(fixture.root.path().join("memory")),
                     )
                     .unwrap(),
+                    refresher,
                 );
                 updater.update_read_models().await.unwrap();
                 assert_eq!(updater.checkpoint().await.unwrap(), last);
@@ -1485,7 +1509,7 @@ async fn update_repairs_a_lost_head_without_new_events_even_after_reopening() {
 #[tokio::test]
 async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
     use core_read_model_updater::orchestration::{
-        OrchestrationReadModelUpdater, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
+        OrchestrationReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     for with_state in [false, true] {
         let fixture = Fixture::new();
@@ -1535,6 +1559,7 @@ async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
                 SteeringSource::new(fixture.root.path().join("other-memory")),
             )
             .unwrap(),
+            StructuredReadModelUpdater::open(fixture.store.as_path()).unwrap(),
         );
         assert!(matches!(
             updater.update_read_models().await,
@@ -1556,6 +1581,9 @@ async fn an_empty_or_partial_pending_plan_is_bound_to_all_of_its_targets() {
 }
 
 /// 保存媒体の制約が壊れても、共有headの不正値でファイルを公開しない。
+///
+/// 公開の API に明示の描き直しは無い。描き直しは本番の経路 (共有面の記録が旧い変換の版なら、
+/// 構造化面の更新器の点検が全履歴から描き直す) で行う。
 #[tokio::test]
 async fn damaged_shared_head_fields_refuse_publication_until_explicit_rebuild() {
     for corruption in [
@@ -1607,7 +1635,18 @@ async fn damaged_shared_head_fields_refuse_publication_until_explicit_rebuild() 
             reader.checkpoint(&projection()).await.unwrap(),
             GlobalSeqNr::ZERO
         );
-        reader.rebuild_read_model().unwrap();
+        fixture
+            .raw()
+            .execute_batch(
+                "PRAGMA ignore_check_constraints=ON; UPDATE amadeus_read_model_head SET revision='old-transform';",
+            )
+            .unwrap();
+        StructuredReadModelUpdater::open(fixture.store.as_path())
+            .unwrap()
+            .update_read_models()
+            .await
+            .unwrap();
+        assert!(fixture.shared_head().4, "{corruption}");
         let pending = reader
             .pending_publication(&projection())
             .await

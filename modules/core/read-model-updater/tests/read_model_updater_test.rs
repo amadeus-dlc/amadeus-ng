@@ -29,7 +29,7 @@ use core_command_domain::workspace::{PromotedSections, RuleLines};
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalBatch, JournalEntry, JournalReadError, JournalReader,
     OrchestrationReadModelUpdater, ProjectionName, ProjectionTargets, PublicationBatch,
-    ReadModelUpdateError, ReadModelUpdater, SteeringSource, StructuredReadModelUpdater,
+    ReadModelUpdateError, ReadModelUpdater, SteeringSource,
 };
 use core_read_model_updater::read_tables::ReadTables;
 use tempfile::TempDir;
@@ -183,6 +183,9 @@ fn journal() -> Vec<JournalEntry> {
     ]
 }
 
+/// 試験が組む取得ループ (読み手・steering の面・共有構造化面の点検がすべてフェイク)。
+type Loop = OrchestrationReadModelUpdater<FakeReader, SpySteering, SpySteering>;
+
 /// ループだけを孤立させるための読み手。
 #[derive(Debug, Default)]
 struct FakeReader {
@@ -211,10 +214,6 @@ struct FakeReader {
 }
 
 impl JournalReader for FakeReader {
-    fn prepare_read_model(&mut self) -> Result<(), ReadModelUpdateError> {
-        Ok(())
-    }
-
     async fn pending_publication(
         &self,
         projection: &ProjectionName,
@@ -285,8 +284,7 @@ impl JournalReader for FakeReader {
             .borrow_mut()
             .insert(projection.clone(), (batch.clone(), false));
         batch.apply()?;
-        self.advance_checkpoint(projection, batch.to(), tables)
-            .await?;
+        self.advance_checkpoint(projection, batch.to(), tables)?;
         self.publications
             .borrow_mut()
             .insert(projection.clone(), (batch, true));
@@ -359,8 +357,12 @@ impl JournalReader for FakeReader {
             .copied()
             .unwrap_or(GlobalSeqNr::ZERO))
     }
+}
 
-    async fn advance_checkpoint(
+impl FakeReader {
+    /// 公開の確定の中で行の差し替えと番号の前進を 1 つの操作として行う (実物は構造化面の
+    /// 手順 — 表の DAO — が公開と同じトランザクションの中で行う)。
+    fn advance_checkpoint(
         &mut self,
         projection: &ProjectionName,
         to: GlobalSeqNr,
@@ -416,6 +418,8 @@ struct Fixture {
     memory_dir: PathBuf,
     /// steering の更新器が起動された回数 (取得ループがどの時点で起動するかの観測点)。
     steering_calls: Rc<RefCell<usize>>,
+    /// 共有構造化面を点検する更新器が起動された回数 (取得ループの先頭で起動されるかの観測点)。
+    structured_calls: Rc<RefCell<usize>>,
     /// 次に組む steering の更新器が返す失敗 (無ければ成功する)。
     steering_failure: RefCell<Option<ReadModelUpdateError>>,
 }
@@ -440,6 +444,7 @@ impl Fixture {
             audit_shard,
             memory_dir,
             steering_calls: Rc::new(RefCell::new(0)),
+            structured_calls: Rc::new(RefCell::new(0)),
             steering_failure: RefCell::new(None),
         }
     }
@@ -467,6 +472,22 @@ impl Fixture {
         *self.steering_calls.borrow()
     }
 
+    /// 起動回数を数える共有構造化面の点検 (取得ループから見た構造化面の更新器)。
+    ///
+    /// 型は steering のスパイと同じ (`ReadModelUpdater` を実装して起動回数を数えるだけ) だが、
+    /// 数える器は別に持つ。
+    fn structured(&self) -> SpySteering {
+        SpySteering {
+            calls: Rc::clone(&self.structured_calls),
+            failure: None,
+        }
+    }
+
+    /// 共有構造化面の点検が起動された回数。
+    fn structured_calls(&self) -> usize {
+        *self.structured_calls.borrow()
+    }
+
     fn targets(&self) -> ProjectionTargets {
         ProjectionTargets::new(
             self.state_file.clone(),
@@ -475,11 +496,7 @@ impl Fixture {
         )
     }
 
-    fn updater(
-        &self,
-        journal: Vec<JournalEntry>,
-        intents: Vec<(u64, Intent)>,
-    ) -> OrchestrationReadModelUpdater<FakeReader, SpySteering> {
+    fn updater(&self, journal: Vec<JournalEntry>, intents: Vec<(u64, Intent)>) -> Loop {
         self.spied_updater(journal, intents).0
     }
 
@@ -488,10 +505,7 @@ impl Fixture {
         &self,
         journal: Vec<JournalEntry>,
         intents: Vec<(u64, Intent)>,
-    ) -> (
-        OrchestrationReadModelUpdater<FakeReader, SpySteering>,
-        Rc<RefCell<Option<ReadTables>>>,
-    ) {
+    ) -> (Loop, Rc<RefCell<Option<ReadTables>>>) {
         // genesis を投影せずに済むよう、チェックポイントはその直後から始める。
         let mut checkpoints = BTreeMap::new();
         if !journal.is_empty() {
@@ -514,6 +528,7 @@ impl Fixture {
             projection(),
             self.targets(),
             self.steering(),
+            self.structured(),
         );
         (updater, spy)
     }
@@ -524,10 +539,7 @@ impl Fixture {
         journal: Vec<JournalEntry>,
         intents: Vec<(u64, Intent)>,
         late_row: JournalEntry,
-    ) -> (
-        OrchestrationReadModelUpdater<FakeReader, SpySteering>,
-        Rc<RefCell<Option<ReadTables>>>,
-    ) {
+    ) -> (Loop, Rc<RefCell<Option<ReadTables>>>) {
         let mut checkpoints = BTreeMap::new();
         if !journal.is_empty() {
             checkpoints.insert(projection(), GlobalSeqNr::new(2));
@@ -549,6 +561,7 @@ impl Fixture {
             projection(),
             self.targets(),
             self.steering(),
+            self.structured(),
         );
         (updater, spy)
     }
@@ -1212,49 +1225,82 @@ async fn an_invalid_audit_target_prevents_any_file_or_plan_publication() {
 }
 
 /// 差分を観測した直後に履歴が消えた場合、古い読取位置で成功したことにしない。
+///
+/// 構造化面の更新器の同じ約束は、その単体試験 (`structured_read_model_updater.rs`) が
+/// フェイクのジャーナルの読み手で見る (構造化面の更新器はこの読み手を使わない)。
 #[tokio::test]
 async fn a_disappeared_history_is_not_a_successful_update() {
-    for structured in [false, true] {
-        let fixture = Fixture::new();
-        let state = fixture.state();
-        let tables = Rc::new(RefCell::new(None));
-        let mut reader = FakeReader {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let tables = Rc::new(RefCell::new(None));
+    let reader = FakeReader {
+        journal: journal(),
+        intents: intents(),
+        checkpoints: BTreeMap::from([(projection(), GlobalSeqNr::new(2))]),
+        lose_history_after_probe: true,
+        publications: Rc::clone(&fixture.publications),
+        tables: Rc::clone(&tables),
+        ..FakeReader::default()
+    };
+    let mut updater = OrchestrationReadModelUpdater::new(
+        reader,
+        projection(),
+        fixture.targets(),
+        fixture.steering(),
+        fixture.structured(),
+    );
+    let result = updater.update_read_models().await;
+    assert_eq!(result, Err(ReadModelUpdateError::HistoryDisappeared));
+    assert!(fixture.publications.borrow().is_empty());
+    assert!(tables.borrow().is_none());
+    assert_eq!(fixture.state(), state);
+    assert!(!fixture.audit_shard.exists());
+    assert_eq!(
+        updater.checkpoint().await.unwrap(),
+        GlobalSeqNr::new(2),
+        "番号は動かない"
+    );
+}
+
+/// 取得ループは共有構造化面の点検を、公開計画の再開・steering の面より前に毎回起動する。
+///
+/// 点検が失敗すれば何も描かない (古い共有面の上に公開を重ねない)。
+#[tokio::test]
+async fn the_shared_surface_is_checked_first_on_every_update() {
+    let fixture = Fixture::new();
+    let mut updater = fixture.updater(journal(), intents());
+    updater.update_read_models().await.unwrap();
+    updater.update_read_models().await.unwrap();
+    assert_eq!(fixture.structured_calls(), 2, "更新のたびに起動する");
+
+    let state = fixture.state();
+    let failing = OrchestrationReadModelUpdater::new(
+        FakeReader {
             journal: journal(),
             intents: intents(),
-            checkpoints: BTreeMap::from([(projection(), GlobalSeqNr::new(2))]),
-            lose_history_after_probe: true,
             publications: Rc::clone(&fixture.publications),
-            tables: Rc::clone(&tables),
             ..FakeReader::default()
-        };
-        let result = if structured {
-            let result = StructuredReadModelUpdater::new(&mut reader, &projection())
-                .update_read_models()
-                .await;
-            assert_eq!(
-                reader.checkpoint(&projection()).await.unwrap(),
-                GlobalSeqNr::new(2)
-            );
-            result
-        } else {
-            let mut updater = OrchestrationReadModelUpdater::new(
-                reader,
-                projection(),
-                fixture.targets(),
-                fixture.steering(),
-            );
-            updater.update_read_models().await
-        };
-        assert_eq!(
-            result,
-            Err(ReadModelUpdateError::HistoryDisappeared),
-            "structured={structured}"
-        );
-        assert!(fixture.publications.borrow().is_empty());
-        assert!(tables.borrow().is_none());
-        assert_eq!(fixture.state(), state);
-        assert!(!fixture.audit_shard.exists());
-    }
+        },
+        projection(),
+        fixture.targets(),
+        fixture.steering(),
+        SpySteering {
+            calls: Rc::new(RefCell::new(0)),
+            failure: Some(ReadModelUpdateError::HistoryDisappeared),
+        },
+    );
+    let steering_before = fixture.steering_calls();
+    let mut failing = failing;
+    assert_eq!(
+        failing.update_read_models().await,
+        Err(ReadModelUpdateError::HistoryDisappeared)
+    );
+    assert_eq!(
+        fixture.steering_calls(),
+        steering_before,
+        "steering の面より前で止まる"
+    );
+    assert_eq!(fixture.state(), state, "何も描かない");
 }
 
 /// 3 行目に任意のイベントを載せた履歴（genesis → GateOpened → 指定イベント）。
@@ -1395,6 +1441,7 @@ async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
             fixture.memory_dir.clone(),
         ),
         fixture.steering(),
+        fixture.structured(),
     );
     let error = updater
         .update_read_models()
@@ -1446,7 +1493,7 @@ impl RegistryFixture {
     fn registry(&self) -> PathBuf {
         self.fixture._dir.path().join("intents.json")
     }
-    fn updater(&self) -> OrchestrationReadModelUpdater<FakeReader, SpySteering> {
+    fn updater(&self) -> Loop {
         let mut checkpoints = BTreeMap::new();
         checkpoints.insert(projection(), GlobalSeqNr::new(2));
         OrchestrationReadModelUpdater::new(
@@ -1469,6 +1516,7 @@ impl RegistryFixture {
                 self.fixture.memory_dir.clone(),
             ),
             self.fixture.steering(),
+            self.fixture.structured(),
         )
     }
 }
@@ -1672,7 +1720,7 @@ fn updater_from_zero(
     fixture: &Fixture,
     journal: Vec<JournalEntry>,
     intents: Vec<(u64, Intent)>,
-) -> OrchestrationReadModelUpdater<FakeReader, SpySteering> {
+) -> Loop {
     OrchestrationReadModelUpdater::new(
         FakeReader {
             journal,
@@ -1683,6 +1731,7 @@ fn updater_from_zero(
         projection(),
         fixture.targets(),
         fixture.steering(),
+        fixture.structured(),
     )
 }
 
@@ -1804,6 +1853,7 @@ async fn a_state_or_description_path_that_cannot_be_probed_stops_the_update() {
         projection(),
         targets,
         fixture.steering(),
+        fixture.structured(),
     );
     let error = updater
         .update_read_models()
@@ -1836,6 +1886,7 @@ async fn a_state_or_description_path_that_cannot_be_probed_stops_the_update() {
         projection(),
         nested,
         fixture.steering(),
+        fixture.structured(),
     );
     let error = updater
         .update_read_models()
@@ -1987,7 +2038,7 @@ impl RecordFixture {
         intents: Vec<(u64, Intent)>,
         artifacts: Vec<core_read_model_updater::orchestration::ArtifactJournalEntry>,
         sessions: Vec<core_read_model_updater::orchestration::SessionJournalEntry>,
-    ) -> OrchestrationReadModelUpdater<FakeReader, SpySteering> {
+    ) -> Loop {
         let mut checkpoints = BTreeMap::new();
         if checkpoint > 0 {
             checkpoints.insert(projection(), GlobalSeqNr::new(checkpoint));
@@ -2004,6 +2055,7 @@ impl RecordFixture {
             },
             projection(),
             self.targets(),
+            SpySteering::default(),
             SpySteering::default(),
         )
     }

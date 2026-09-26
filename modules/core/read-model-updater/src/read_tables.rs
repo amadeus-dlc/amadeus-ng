@@ -19,7 +19,7 @@
 //!
 //! | 投影単位 | 材料 | 表 | 時点の名乗り | Tx |
 //! | --- | --- | --- | --- | --- |
-//! | [`ReadTables`] | ジャーナルの全履歴 | 17 表 | `as_of` (走査位置) | チェックポイントと同一 |
+//! | [`ReadTables`] | ジャーナルの全履歴 | 20 表 | `as_of` (走査位置) | チェックポイントと同一 |
 //! | [`SteeringTables`] | 参照入力 (memory 層の規則ファイル) | 2 表 | `source_digest` | 別 Tx |
 //! | [`TestingTables`] | memory と依頼条件 | 1 表 | `source_digest` | 別 Tx |
 //! | [`PlanFingerprintTables`] | 計画文書・規則・現在の発行 | 1 表 | `source_digest` | 別 Tx |
@@ -46,8 +46,11 @@
 //! # 純粋である
 //!
 //! [`ReadTables::project`] はストレージを知らない — 接続もチェックポイントも引数に
-//! 現れない。行を SQLite へ落とすのは取得ループの仕事であり、行の差し替えとチェック
-//! ポイントの前進は 1 トランザクションで行う (裁定 §3)。二層を潰してはならない。
+//! 現れない。行を SQLite へ落とすのは構造化面の更新器
+//! ([`crate::orchestration::StructuredReadModelUpdater`]) が表ごとの DAO で行い、20 表の
+//! 差し替えと処理したシーケンス番号の前進は 1 トランザクションで行う (裁定 §3)。表の DDL も
+//! 表ごとの DAO が持つ (Issue #153 の PR4 までは `read_tables/sql.rs` に集めていた)。
+//! 二層を潰してはならない。
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_read_model_updater::read_tables::<型>` で安定する
@@ -99,7 +102,6 @@ mod request_kind;
 mod row_id;
 mod rule_content;
 mod spelling;
-mod sql;
 mod stage_lookup;
 mod steering_tables;
 mod unsplittable_section;
@@ -111,15 +113,9 @@ pub use rule_content::RuleContent;
 pub use steering_tables::SteeringTables;
 pub use unsplittable_section::UnsplittableSection;
 
-// 表の DDL と全差し替えは取得ループ (`JournalReaderImpl`) だけが呼ぶ内部の口である。
 // 自己診断の行 (`orchestration::DoctorCheckRow`) も代理キーの作り方を
 // ここ 1 箇所から借りる — 表ごとに素材の組み方を書き下さない。
 pub(crate) use row_id::doctor_check;
-
-pub(crate) use sql::{
-    READ_SCHEMA_VERSION, content_digest, ensure_tables, matches_rows, read_schema_version,
-    recreate_tables, replace_all, set_schema_version,
-};
 
 /// 1 回の投影で作った `read_*` 表の全行。
 ///

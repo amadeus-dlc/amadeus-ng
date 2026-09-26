@@ -2994,9 +2994,15 @@ async fn prepare_definition_for_first_read(layout: &Layout) -> Result<(), String
 
     let projection = ProjectionName::parse(STRUCTURED_PROJECTION)
         .map_err(|error| format!("projection name: {error:?}"))?;
-    let mut journal_reader = JournalReaderImpl::open(&store)
-        .map_err(|error| diagnose("cannot open the definition journal", &error))?;
-    StructuredReadModelUpdater::new(&mut journal_reader, &projection)
+    // ストアの有無 (本家の `journal` 表) を先に確かめ、無ければ今までどおりの診断で止める。
+    // 読み面の表の用意は構造化面の更新器の開く段が持つ。
+    drop(
+        JournalReaderImpl::open(&store)
+            .map_err(|error| diagnose("cannot open the definition journal", &error))?,
+    );
+    StructuredReadModelUpdater::open(store.as_path())
+        .map_err(|error| diagnose("cannot open the definition journal", &error))?
+        .for_projection(projection)
         .update_read_models()
         .await
         .map_err(|error| format!("definition projection: {error}"))
@@ -3102,12 +3108,17 @@ async fn update_read_models_with(layout: &Layout, restore_missing: bool) -> Resu
     let store = store_path(layout)?;
     let mut journal_reader =
         JournalReaderImpl::open(&store).map_err(|error| format!("journal: {error}"))?;
+    // 読み面の表の用意 (版を含む) は構造化面の更新器の開く段が持つ。共有面の点検 (古ければ
+    // 描き直す) は取得ループが更新の先頭で起動する。
+    let structured = StructuredReadModelUpdater::open(store.as_path())
+        .map_err(|error| format!("journal: {error}"))?;
     if execution_id.is_some() {
         let legacy = ProjectionName::parse(PROJECTION)
             .map_err(|error| format!("projection name: {error:?}"))?;
         OrchestrationReadModelUpdater::<
             JournalReaderImpl,
             SteeringReadModelUpdater<SteeringPlanDaoImpl, SteeringPartDaoImpl>,
+            StructuredReadModelUpdater,
         >::require_unpublished(&journal_reader, &legacy)
         .await
         .map_err(|error| format!("projection: {error}"))?;
@@ -3141,8 +3152,14 @@ async fn update_read_models_with(layout: &Layout, restore_missing: bool) -> Resu
         SteeringSource::new(layout.memory_dir()).relative_to(layout.project_dir().to_path_buf()),
     )
     .map_err(|error| format!("projection: {error}"))?;
-    let updater = OrchestrationReadModelUpdater::new(journal_reader, projection, targets, steering)
-        .with_pipeline_handoff(store.as_path(), pipeline_link::current(layout));
+    let updater = OrchestrationReadModelUpdater::new(
+        journal_reader,
+        projection,
+        targets,
+        steering,
+        structured,
+    )
+    .with_pipeline_handoff(store.as_path(), pipeline_link::current(layout));
     let mut updater = match execution_id {
         Some(id) => updater.for_execution(id),
         None => updater,

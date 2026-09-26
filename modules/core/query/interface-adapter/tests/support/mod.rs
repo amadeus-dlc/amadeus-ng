@@ -33,8 +33,9 @@ use core_command_domain::workflow_definition::{
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
     DefinitionEntry, GlobalSeqNr, IntentEventDto, IntentExecutionEventDto, JournalBatch,
-    JournalEntry, JournalReader, JournalReaderImpl, ProjectionName, SteeringPartDao as _,
-    SteeringPartDaoImpl, SteeringPlanDao as _, SteeringPlanDaoImpl, WorkflowDefinitionEventDto,
+    JournalEntry, JournalReader, JournalReaderImpl, ProjectionName, ReadModelUpdater as _,
+    SteeringPartDao as _, SteeringPartDaoImpl, SteeringPlanDao as _, SteeringPlanDaoImpl,
+    StructuredReadModelUpdater, WorkflowDefinitionEventDto,
 };
 use core_read_model_updater::read_tables::{MemoryRules, ReadTables, RuleContent, SteeringTables};
 use tempfile::TempDir;
@@ -369,7 +370,7 @@ impl Fixture {
         let tables = ReadTables::project(batch).expect("健全な履歴は投影できる");
         let steering = SteeringTables::pack(&memory_rules()).expect("規則束は分割できる");
         let projection = ProjectionName::parse("read-model").expect("投影名は kebab");
-        let mut reader = JournalReaderImpl::open(&path).expect("Reader は開ける");
+        let reader = JournalReaderImpl::open(&path).expect("Reader は開ける");
         tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("current_thread ランタイム")
@@ -383,10 +384,14 @@ impl Fixture {
                     tables,
                     "保存履歴と投影の断面が一致"
                 );
-                reader
-                    .advance_checkpoint(&projection, batch.scanned_to().expect("履歴あり"), &tables)
+                // 構造化面の更新器が、開く段で読み面の表を用意し、保存履歴の全体から描いた
+                // 20 表と処理したシーケンス番号を 1 つのトランザクションで確定する。
+                StructuredReadModelUpdater::open(path.as_path())
+                    .expect("読み面の表を用意する")
+                    .for_projection(projection)
+                    .update_read_models()
                     .await
-                    .expect("ジャーナル由来 15 表の差し替え");
+                    .expect("ジャーナル由来の表の差し替え");
             });
         // 参照入力由来の 2 表は RMU の表の DAO が書く (steering の更新器と同じ書き方 —
         // 更新器は規則ファイルを読むが、ここでは同じ投影 `SteeringTables::pack` の結果を渡す)。

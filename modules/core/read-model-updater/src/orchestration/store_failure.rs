@@ -13,7 +13,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use super::JournalReadError;
+use super::{JournalReadError, ReadModelUpdateError};
 
 use rusqlite::{Connection, ErrorCode};
 
@@ -48,6 +48,45 @@ impl<T> SqliteResultExt<T> for rusqlite::Result<T> {
                 .filter(|path| !path.is_empty())
                 .map(PathBuf::from),
         })
+    }
+}
+
+/// 表の DAO・ジャーナルの読み手が接続から添えた場所を、呼び手が開いたストアの場所へ揃える。
+///
+/// 表の DAO は接続を持たないので、失敗には接続自身が知っている場所 (SQLite が解決した実パス —
+/// 例えば macOS では `/var` ではなく `/private/var`) を添える。更新器はどのストアを開いたかを
+/// 知っているので、利用者へ出す場所をその綴りに揃える (構造化面の書込を
+/// `JournalReaderImpl` が持っていた頃と同じ所在を出す)。分類 (`kind`) と `Corrupt` の材料は
+/// 変えない。
+pub(super) trait InStore {
+    /// `Io` の場所を `path` に揃える。
+    #[must_use]
+    fn in_store(self, path: &Path) -> Self;
+}
+
+impl<T> InStore for Result<T, JournalReadError> {
+    fn in_store(self, path: &Path) -> Self {
+        self.map_err(|error| located(error, path))
+    }
+}
+
+impl<T> InStore for Result<T, ReadModelUpdateError> {
+    fn in_store(self, path: &Path) -> Self {
+        self.map_err(|error| match error {
+            ReadModelUpdateError::Read(inner) => ReadModelUpdateError::Read(located(inner, path)),
+            other => other,
+        })
+    }
+}
+
+/// `Io` の場所だけを `path` に置き換える。
+fn located(error: JournalReadError, path: &Path) -> JournalReadError {
+    match error {
+        JournalReadError::Io { kind, .. } => JournalReadError::Io {
+            kind,
+            path: Some(path.to_path_buf()),
+        },
+        other => other,
     }
 }
 

@@ -22,6 +22,14 @@ pub trait PipelineProgressDao {
     /// 表を作れない場合 (`Io`)。
     fn create_table(&self, transaction: &mut Transaction<'_>) -> Result<(), JournalReadError>;
 
+    /// 表を落とす (索引も一緒に落ちる)。読み面の版が動いたときの作り直し
+    /// (`read_model_schema::prepare`) だけが呼ぶ。
+    ///
+    /// # Errors
+    ///
+    /// 落とせない場合 (`Io`)。
+    fn drop_table(&self, transaction: &mut Transaction<'_>) -> Result<(), JournalReadError>;
+
     /// 表が在るか (`sqlite_master` の読取だけで、書込ロックを取らない)。
     ///
     /// 更新器は開く段でこれを見て、表が在れば書込トランザクションを開かない。

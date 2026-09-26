@@ -42,6 +42,9 @@ const INSERT: &str = "INSERT INTO read_code_generation_approval
      (id, execution_id, target_id, ok, reason, unit, contract_hash, source_digest, as_of)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
 
+/// 表を落とす (索引も一緒に落ちる)。
+const DROP_TABLE: &str = "DROP TABLE IF EXISTS read_code_generation_approval";
+
 /// 表が在るか (`sqlite_master` を引くだけ — 書込ロックを取らない)。
 const TABLE_EXISTS: &str = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'read_code_generation_approval'";
 
@@ -53,6 +56,12 @@ impl CodeGenerationApprovalDao for CodeGenerationApprovalDaoImpl {
     fn create_table(&self, transaction: &mut Transaction<'_>) -> Result<(), JournalReadError> {
         transaction
             .execute_batch(CREATE_TABLE)
+            .at_connection(transaction)
+    }
+
+    fn drop_table(&self, transaction: &mut Transaction<'_>) -> Result<(), JournalReadError> {
+        transaction
+            .execute_batch(DROP_TABLE)
             .at_connection(transaction)
     }
 

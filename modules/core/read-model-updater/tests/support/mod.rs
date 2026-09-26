@@ -305,6 +305,41 @@ pub(crate) async fn seed(store: &mut UpstreamStore) {
         .await;
 }
 
+/// 読み面の表 (構造化面の 20 表・処理したシーケンス番号・共有面の記録・参照入力由来の表) を
+/// 用意する — 本番でこの用意を持つのは構造化面の更新器の開く段である (Issue #153 の PR4)。
+///
+/// # Panics
+///
+/// ストアを開けない・表を用意できない場合 (試験の前提が崩れている)。
+pub(crate) fn prepare_read_model(path: &StorePath) {
+    drop(
+        core_read_model_updater::orchestration::StructuredReadModelUpdater::open(path.as_path())
+            .expect("読み面の表を用意する"),
+    );
+}
+
+/// 構造化面を投影 `projection` の番号まで進める (処理したシーケンス番号より後に事実が
+/// あれば、全履歴から描いた 20 表と番号を 1 つのトランザクションで確定する)。
+///
+/// PR4 以前の `JournalReader::advance_checkpoint(projection, last, &ReadTables::project(全履歴))`
+/// の置き換えである。
+///
+/// # Errors
+///
+/// 構造化面の更新器の失敗をそのまま返す。
+pub(crate) async fn advance_structured(
+    path: &StorePath,
+    projection: &core_read_model_updater::orchestration::ProjectionName,
+) -> Result<(), core_read_model_updater::orchestration::ReadModelUpdateError> {
+    use core_read_model_updater::orchestration::{
+        ReadModelUpdater as _, StructuredReadModelUpdater,
+    };
+    StructuredReadModelUpdater::open(path.as_path())?
+        .for_projection(projection.clone())
+        .update_read_models()
+        .await
+}
+
 /// ストアファイルを開く (存在しなければ本家が表ごと作る)。
 #[must_use]
 pub(crate) fn open_store(path: &StorePath) -> UpstreamStore {

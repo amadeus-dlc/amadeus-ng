@@ -32,6 +32,9 @@ const INSERT: &str = "INSERT INTO read_steering_part
      (id, steering_plan_id, phase, part_index, rules_content)
      VALUES (?1, ?2, ?3, ?4, ?5)";
 
+/// 表を落とす (索引も一緒に落ちる)。
+const DROP_TABLE: &str = "DROP TABLE IF EXISTS read_steering_part";
+
 /// 表が在るか (`sqlite_master` を引くだけ — 書込ロックを取らない)。
 const TABLE_EXISTS: &str =
     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'read_steering_part'";
@@ -44,6 +47,12 @@ impl SteeringPartDao for SteeringPartDaoImpl {
     fn create_table(&self, transaction: &mut Transaction<'_>) -> Result<(), JournalReadError> {
         transaction
             .execute_batch(CREATE_TABLE)
+            .at_connection(transaction)
+    }
+
+    fn drop_table(&self, transaction: &mut Transaction<'_>) -> Result<(), JournalReadError> {
+        transaction
+            .execute_batch(DROP_TABLE)
             .at_connection(transaction)
     }
 

@@ -81,8 +81,8 @@ impl Fixture {
             path,
             memory,
         };
-        // 開く段で読み面と参照入力由来の表が揃う (本番と同じ順)。
-        drop(fixture.journal_reader());
+        // 構造化面の更新器の開く段で読み面と参照入力由来の表が揃う (本番と同じ順)。
+        support::prepare_read_model(&fixture.path);
         fixture
     }
 
@@ -218,7 +218,7 @@ async fn opening_each_updater_does_not_wait_for_a_write_lock_when_its_tables_exi
     // 読取だけの動詞も開く段を通る。表が在るのに書込ロックを取りに行くと、別の書き手が
     // いる間は busy timeout まで待たされ、最後は `WouldBlock` で落ちる (CodeRabbit の指摘)。
     let fixture = Fixture::seeded().await;
-    let mut reader = fixture.journal_reader();
+    let reader = fixture.journal_reader();
     let source = fixture.source();
     let execution = execution_id();
     let input = plan_input("# Plan\n");
@@ -227,12 +227,12 @@ async fn opening_each_updater_does_not_wait_for_a_write_lock_when_its_tables_exi
 
     let started = Instant::now();
     let steering = SteeringReadModelUpdater::open(fixture.store(), fixture.source()).map(drop);
-    let testing = TestingReadModelUpdater::open(&mut reader, fixture.store(), &source).map(drop);
+    let testing = TestingReadModelUpdater::open(&reader, fixture.store(), &source).map(drop);
     let fingerprint =
-        PlanFingerprintReadModelUpdater::open(&mut reader, fixture.store(), &execution, &input)
+        PlanFingerprintReadModelUpdater::open(&reader, fixture.store(), &execution, &input)
             .map(drop);
     let approval = CodeGenerationApprovalReadModelUpdater::open(
-        &mut reader,
+        &reader,
         fixture.store(),
         &execution,
         &input,
@@ -258,17 +258,17 @@ async fn opening_each_updater_does_not_wait_for_a_write_lock_when_its_tables_exi
 
 #[tokio::test]
 async fn opening_an_updater_creates_its_table_again_when_it_is_missing() {
-    // 読み手は落とす前に開く (開く段の JournalReaderImpl も表を作り直すので、更新器が
-    // 自分で作ることを見るには、落とした後に読み手を開かない)。
+    // 表を落とした後に構造化面の更新器を開かない (その開く段も表を作り直すので、面ごとの
+    // 更新器が自分で作ることを見るには、落とした後に開かない)。
     let fixture = Fixture::seeded().await;
-    let mut reader = fixture.journal_reader();
+    let reader = fixture.journal_reader();
     fixture.execute(
         "DROP TABLE read_testing_contract; DROP TABLE read_steering_part;
          DROP TABLE read_pipeline_progress",
     );
     let source = fixture.source();
     let execution = execution_id();
-    drop(TestingReadModelUpdater::open(&mut reader, fixture.store(), &source).unwrap());
+    drop(TestingReadModelUpdater::open(&reader, fixture.store(), &source).unwrap());
     drop(SteeringReadModelUpdater::open(fixture.store(), fixture.source()).unwrap());
     drop(
         PipelineProgressReadModelUpdater::open(&reader, fixture.store(), &execution, None).unwrap(),
@@ -475,9 +475,9 @@ async fn the_steering_update_waits_for_a_write_lock_held_by_another_connection()
 // ---- テスト契約 (`read_testing_contract`) ----
 
 async fn update_testing(fixture: &Fixture) -> Result<(), ReadModelUpdateError> {
-    let mut reader = fixture.journal_reader();
+    let reader = fixture.journal_reader();
     let source = fixture.source();
-    TestingReadModelUpdater::open(&mut reader, fixture.store(), &source)?
+    TestingReadModelUpdater::open(&reader, fixture.store(), &source)?
         .update_read_models()
         .await
 }
@@ -605,9 +605,9 @@ async fn the_testing_update_waits_for_a_write_lock_held_by_another_connection() 
         "org.md",
         "# Org\n\n## Testing Posture\n\n- Methodology: tdd\n",
     );
-    let mut reader = fixture.journal_reader();
+    let reader = fixture.journal_reader();
     let source = fixture.source();
-    let mut updater = TestingReadModelUpdater::open(&mut reader, fixture.store(), &source).unwrap();
+    let mut updater = TestingReadModelUpdater::open(&reader, fixture.store(), &source).unwrap();
 
     let holder = LockHolder::hold(fixture.store());
     let (waited, result) = holder.measure(updater.update_read_models()).await;
@@ -626,10 +626,10 @@ async fn the_testing_update_waits_for_a_write_lock_held_by_another_connection() 
 // ---- 計画指紋 (`read_plan_fingerprint`) ----
 
 async fn update_fingerprint(fixture: &Fixture, plan: &str) -> Result<(), ReadModelUpdateError> {
-    let mut reader = fixture.journal_reader();
+    let reader = fixture.journal_reader();
     let execution = execution_id();
     let input = plan_input(plan);
-    PlanFingerprintReadModelUpdater::open(&mut reader, fixture.store(), &execution, &input)?
+    PlanFingerprintReadModelUpdater::open(&reader, fixture.store(), &execution, &input)?
         .update_read_models()
         .await
 }
@@ -773,11 +773,11 @@ async fn the_fingerprint_update_waits_for_a_write_lock_held_by_another_connectio
     let fixture = Fixture::seeded().await;
     update_fingerprint(&fixture, "# Plan\n").await.unwrap();
     let before = fixture.text("SELECT source_digest FROM read_plan_fingerprint");
-    let mut reader = fixture.journal_reader();
+    let reader = fixture.journal_reader();
     let execution = execution_id();
     let input = plan_input("# Plan\n\n- [ ] Step 1\n");
     let mut updater =
-        PlanFingerprintReadModelUpdater::open(&mut reader, fixture.store(), &execution, &input)
+        PlanFingerprintReadModelUpdater::open(&reader, fixture.store(), &execution, &input)
             .unwrap();
 
     let holder = LockHolder::hold(fixture.store());
@@ -797,12 +797,12 @@ async fn the_fingerprint_update_waits_for_a_write_lock_held_by_another_connectio
 // ---- Code Generation 開始可否 (`read_code_generation_approval`) ----
 
 async fn update_approval(fixture: &Fixture, plan: &str) -> Result<(), ReadModelUpdateError> {
-    let mut reader = fixture.journal_reader();
+    let reader = fixture.journal_reader();
     let execution = execution_id();
     let input = plan_input(plan);
     let receipts = PlanReceipts::default();
     CodeGenerationApprovalReadModelUpdater::open(
-        &mut reader,
+        &reader,
         fixture.store(),
         &execution,
         &input,
@@ -969,12 +969,12 @@ async fn the_approval_update_waits_for_a_write_lock_held_by_another_connection()
     let fixture = Fixture::seeded().await;
     update_approval(&fixture, "# Plan\n").await.unwrap();
     let before = fixture.text("SELECT source_digest FROM read_code_generation_approval");
-    let mut reader = fixture.journal_reader();
+    let reader = fixture.journal_reader();
     let execution = execution_id();
     let input = plan_input("# Plan\n\n- [ ] Step 1\n");
     let receipts = PlanReceipts::default();
     let mut updater = CodeGenerationApprovalReadModelUpdater::open(
-        &mut reader,
+        &reader,
         fixture.store(),
         &execution,
         &input,

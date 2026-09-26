@@ -1142,8 +1142,9 @@ mod tests {
     /// 射程内だが `/tests/` を含むパス (is_test_path の免除を単独で確かめる)。
     const QUERY_ADAPTER_TEST_PATH: &str =
         "modules/core/query/interface-adapter/src/tests/dao_fixtures.rs";
-    /// 射程外 — RMU は 15 表を 1 バッチで差し替えるのが仕事。
-    const RMU_PATH: &str = "modules/core/read-model-updater/src/read_tables/sql.rs";
+    /// 射程外 — RMU の表の DAO は書く DAO であり、クエリ側の「1 表 1 引当」の対象ではない
+    /// (RMU 側の 1 表の規則はレビュー基準 — `read-model-updater-structure.md` 原則 3)。
+    const RMU_PATH: &str = "modules/core/read-model-updater/src/orchestration/execution_dao_impl.rs";
     /// R6 の射程 (コマンド側 use-case)。
     const COMMAND_USE_CASE_PATH: &str =
         "modules/core/command/use-case/src/orchestration/port/intent_repository.rs";
