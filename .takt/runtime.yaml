@@ -1,4 +1,9 @@
 version: 1
+# レビュー companion を使う（下の targets.companions で割り当てている）。~/.takt/runtime.yaml の値に頼らず、
+# プロジェクト側で明記する。ただし takt 0.66.0 は global / project のどちらかが enabled: false なら無効にするので、
+# ~/.takt/runtime.yaml に enabled: false と書かれた場合はこの行でも止められない。
+companion:
+  enabled: true
 provider:
   profiles:
     opus:

@@ -1,3 +1,6 @@
+# 出力言語。~/.takt/config.yaml の値に頼らず、プロジェクト側で明記する（project の値が global より優先される）。
+language: ja
+
 # レート制限で拒否されたステップだけ、現在と異なる最初の候補で再実行する。
 # Claude Fable 5.1 のステップが制限に当たったら Claude Opus 5 で再実行し、
 # Claude Opus 5 のステップには切り替え先が無いので従来どおり中断する。
