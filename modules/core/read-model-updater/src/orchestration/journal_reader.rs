@@ -112,17 +112,4 @@ pub trait JournalReader {
         to: GlobalSeqNr,
         tables: &ReadTables,
     ) -> Result<(), JournalReadError>;
-
-    /// Pipelineの参照入力面を原子的に置き換える。
-    /// # Errors
-    /// この参照投影を提供しない実装または保存失敗。
-    async fn replace_pipeline(
-        &mut self,
-        _tables: &crate::read_tables::PipelineTables,
-    ) -> Result<(), JournalReadError> {
-        Err(JournalReadError::Io {
-            kind: std::io::ErrorKind::Unsupported,
-            path: None,
-        })
-    }
 }

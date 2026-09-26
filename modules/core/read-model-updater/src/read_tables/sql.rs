@@ -43,9 +43,9 @@ fn optional_integer(value: Option<usize>) -> Result<Option<i64>, rusqlite::Error
 /// ジャーナル由来の表の DDL。
 ///
 /// 参照入力由来の表 (`read_steering_plan` / `read_steering_part` / `read_testing_contract` /
-/// `read_plan_fingerprint` / `read_code_generation_approval`) の DDL はここに無い — 表の DDL は
-/// その表の DAO が持つ (`coding-rules/read-model-updater-structure.md` 原則 3。
-/// `orchestration::SteeringPlanDaoImpl` ほか)。開く段でそれらを作るのは
+/// `read_plan_fingerprint` / `read_code_generation_approval` / `read_pipeline_progress`) の DDL は
+/// ここに無い — 表の DDL はその表の DAO が持つ (`coding-rules/read-model-updater-structure.md`
+/// 原則 3。`orchestration::SteeringPlanDaoImpl` ほか)。開く段でそれらを作るのは
 /// `JournalReaderImpl` がそれぞれの DAO を呼んで行う。
 ///
 /// **主キーはどの表も 1 列 `id`** である (オーナー裁定 2026-09-03 — 基本的な関係
@@ -264,11 +264,6 @@ CREATE TABLE IF NOT EXISTS read_next_jump_phase (
   target_index INTEGER NOT NULL,
   target_slug  TEXT,
   as_of        INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS read_pipeline_progress (
- id TEXT PRIMARY KEY, execution_id TEXT NOT NULL, stage TEXT NOT NULL, single INTEGER NOT NULL,
- completed TEXT NOT NULL, source_digest TEXT NOT NULL, event_position INTEGER NOT NULL,
- UNIQUE(execution_id, stage, single)
 );
 CREATE TABLE IF NOT EXISTS read_run_stage (
   id                       TEXT    PRIMARY KEY,

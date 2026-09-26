@@ -3142,7 +3142,7 @@ async fn update_read_models_with(layout: &Layout, restore_missing: bool) -> Resu
     )
     .map_err(|error| format!("projection: {error}"))?;
     let updater = OrchestrationReadModelUpdater::new(journal_reader, projection, targets, steering)
-        .with_pipeline_handoff(pipeline_link::current(layout));
+        .with_pipeline_handoff(store.as_path(), pipeline_link::current(layout));
     let mut updater = match execution_id {
         Some(id) => updater.for_execution(id),
         None => updater,

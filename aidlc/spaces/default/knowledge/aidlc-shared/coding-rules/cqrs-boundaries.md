@@ -71,7 +71,7 @@ SQLite の `read_*` 表）。規則 3 と規則 6 に追記。b26 / b27 が `nex
    表の DAO で更新する」だけである。`JournalReader` はジャーナルの要素（ある位置より後／までの事実を読む）だけを
    持ち、リードモデルへの書込は単一テーブルの DAO が担う。処理したシーケンス番号はリードモデル側の状態で、
    表と同じ IMMEDIATE トランザクションで確定する。詳細は [read-model-updater-structure.md](read-model-updater-structure.md)。
-   **移行中**（PR1 = 自己診断、PR2 = 参照入力由来の単独面（steering・テスト契約・計画指紋・Code Generation 開始可否）。上の「取得ループ（`JournalReader` で差分を引き、チェックポイントを進める）」は
+   **移行中**（PR1 = 自己診断、PR2 = 参照入力由来の単独面（steering・テスト契約・計画指紋・Code Generation 開始可否）、PR3 = Pipeline 面。上の「取得ループ（`JournalReader` で差分を引き、チェックポイントを進める）」は
    移行前の形の記述であり、`advance_checkpoint` はチェックポイントの表の DAO へ移る）。
 4. **コマンド側は最新状態を常に集約から判断する。**
 

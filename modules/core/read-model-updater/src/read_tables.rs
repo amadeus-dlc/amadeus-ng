@@ -24,9 +24,10 @@
 //! | [`TestingTables`] | memory と依頼条件 | 1 表 | `source_digest` | 別 Tx |
 //! | [`PlanFingerprintTables`] | 計画文書・規則・現在の発行 | 1 表 | `source_digest` | 別 Tx |
 //! | [`CodeGenerationApprovalTables`] | 計画文書・規則・共有側の受領 | 1 表 | `source_digest` | 別 Tx |
+//! | [`PipelineTables`] | 全履歴と外部 handoff の観測 | 1 表 | `source_digest` | 別 Tx |
 //!
 //! 参照入力由来の表の**行の型**は、表の DAO が運ぶ値として RMU のポート
-//! ([`crate::orchestration`] の `SteeringPlanRow` ほか) に置く。ここに在るのは材料から
+//! ([`crate::orchestration`] の `SteeringPlanRow`・`PipelineProgressRow` ほか) に置く。ここに在るのは材料から
 //! 行を組む投影だけである。
 //!
 //! 分けるのは、規則ファイルの編集がイベントを 1 件も伴わないからである。ジャーナルの走査
@@ -625,8 +626,6 @@ pub use plan_generation_row::PlanGenerationRow;
 mod session_audit_row;
 pub use session_audit_row::SessionAuditRow;
 
-mod pipeline_progress_row;
-pub use pipeline_progress_row::PipelineProgressRow;
 mod pipeline_tables;
 pub use pipeline_tables::PipelineTables;
 

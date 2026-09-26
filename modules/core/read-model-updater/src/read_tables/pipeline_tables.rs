@@ -1,6 +1,6 @@
 //! Pipeline履歴と外部handoffを合わせた純粋な参照投影。
-use super::{PipelineProgressRow, ReadTablesError};
-use crate::orchestration::JournalBatch;
+use super::ReadTablesError;
+use crate::orchestration::{GlobalSeqNr, JournalBatch, PipelineProgressRow};
 use core_command_domain::orchestration::{IntentExecutionId, PipelineHandoff};
 use core_command_domain::workflow_definition::StageMode;
 use core_infrastructure::canon_json::{JsonValue, hash_compact};
@@ -22,9 +22,9 @@ impl PipelineTables {
         let definitions = super::replay_definitions(history)?;
         let executions = super::replay_executions(history)?;
         let mut rows = Vec::new();
-        let position = history.scanned_to().map_or(0, |v| v.to_u64());
+        let position = history.scanned_to().unwrap_or(GlobalSeqNr::ZERO);
         let source = hash_compact(&JsonValue::Array(vec![
-            JsonValue::String(position.to_string()),
+            JsonValue::String(position.to_u64().to_string()),
             JsonValue::String(id.as_str().into()),
             JsonValue::String(current.map_or("", PipelineHandoff::path).into()),
             JsonValue::String(current.map_or("", PipelineHandoff::sha256).into()),
@@ -58,6 +58,7 @@ impl PipelineTables {
                         },
                     );
                     rows.push(PipelineProgressRow::new(
+                        Self::row_id(id, node.slug().as_str(), single),
                         id.as_str().into(),
                         node.slug().as_str().into(),
                         single,
@@ -72,6 +73,10 @@ impl PipelineTables {
             execution_id: id.as_str().into(),
             rows,
         })
+    }
+    /// 行の代理主キー (実行・ステージ・単独実行の別から導く)。
+    fn row_id(execution_id: &IntentExecutionId, stage: &str, single: bool) -> String {
+        format!("pipeline:{}:{stage}:{single}", execution_id.as_str())
     }
     /// 対象の実行。
     #[must_use]
