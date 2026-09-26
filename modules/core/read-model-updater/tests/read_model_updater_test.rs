@@ -31,7 +31,7 @@ use core_read_model_updater::orchestration::{
     OrchestrationReadModelUpdater, ProjectionName, ProjectionTargets, PublicationBatch,
     ReadModelUpdateError, ReadModelUpdater, SteeringSource, StructuredReadModelUpdater,
 };
-use core_read_model_updater::read_tables::{ReadTables, SteeringTables};
+use core_read_model_updater::read_tables::ReadTables;
 use tempfile::TempDir;
 
 /// b40 のテスト用固定イベント識別子 (同じ材料から組んだイベントを同値に保つため)。
@@ -186,10 +186,6 @@ fn journal() -> Vec<JournalEntry> {
 /// ループだけを孤立させるための読み手。
 #[derive(Debug, Default)]
 struct FakeReader {
-    plan_fingerprints: BTreeMap<String, core_read_model_updater::read_tables::PlanFingerprintRow>,
-    code_generation_approvals:
-        BTreeMap<String, core_read_model_updater::read_tables::CodeGenerationApprovalRow>,
-    testing: Option<core_read_model_updater::read_tables::TestingTables>,
     publications: Rc<RefCell<BTreeMap<ProjectionName, (PublicationBatch, bool)>>>,
     journal: Vec<JournalEntry>,
     intents: Vec<(u64, Intent)>,
@@ -208,10 +204,6 @@ struct FakeReader {
     late_row: Rc<RefCell<Option<JournalEntry>>>,
     reads: Rc<RefCell<usize>>,
     lose_history_after_probe: bool,
-    /// 保存済みの steering 面 (差し替えのたびに丸ごと入れ替わる — 実装と同じ約束)。
-    steering: Rc<RefCell<Option<SteeringTables>>>,
-    /// steering 面を差し替えた回数 (再投影が走ったかどうかの観測点)。
-    steering_writes: Rc<RefCell<usize>>,
     /// 同居する成果物監査の行 (global 通番付き)。
     artifacts: Vec<core_read_model_updater::orchestration::ArtifactJournalEntry>,
     /// 同居するセッション監査の行 (global 通番付き)。
@@ -390,48 +382,24 @@ impl JournalReader for FakeReader {
         *self.tables.borrow_mut() = Some(tables.clone());
         Ok(())
     }
+}
 
-    async fn replace_plan_fingerprint(
-        &mut self,
-        row: &core_read_model_updater::read_tables::PlanFingerprintRow,
-    ) -> Result<(), JournalReadError> {
-        self.plan_fingerprints
-            .insert(row.id().to_string(), row.clone());
-        Ok(())
-    }
-    async fn replace_code_generation_approval(
-        &mut self,
-        row: &core_read_model_updater::read_tables::CodeGenerationApprovalRow,
-    ) -> Result<(), JournalReadError> {
-        self.code_generation_approvals
-            .insert(row.id().to_string(), row.clone());
-        Ok(())
-    }
-    async fn testing_source_digest(&self) -> Result<Option<String>, JournalReadError> {
-        Ok(self
-            .testing
-            .as_ref()
-            .map(|tables| tables.source_digest().to_string()))
-    }
-    async fn replace_testing(
-        &mut self,
-        tables: &core_read_model_updater::read_tables::TestingTables,
-    ) -> Result<(), JournalReadError> {
-        self.testing = Some(tables.clone());
-        Ok(())
-    }
-    async fn steering_source_digest(&self) -> Result<Option<String>, JournalReadError> {
-        Ok(self
-            .steering
-            .borrow()
-            .as_ref()
-            .map(|tables| tables.source_digest().to_string()))
-    }
+/// 起動回数を数えるだけの steering の更新器 (取得ループを孤立させるためのスパイ)。
+///
+/// 回数の器が共有ハンドルなのは FakeReader の `tables` と同じ理由である — 更新器は
+/// steering の更新器を所有したまま返す口を持たないので、観測する側の器をテストが持つ。
+#[derive(Debug, Default)]
+struct SpySteering {
+    calls: Rc<RefCell<usize>>,
+    failure: Option<ReadModelUpdateError>,
+}
 
-    async fn replace_steering(&mut self, tables: &SteeringTables) -> Result<(), JournalReadError> {
-        *self.steering.borrow_mut() = Some(tables.clone());
-        *self.steering_writes.borrow_mut() += 1;
-        Ok(())
+impl ReadModelUpdater for SpySteering {
+    type Error = ReadModelUpdateError;
+
+    async fn update_read_models(&mut self) -> Result<(), ReadModelUpdateError> {
+        *self.calls.borrow_mut() += 1;
+        self.failure.clone().map_or(Ok(()), Err)
     }
 }
 
@@ -446,8 +414,10 @@ struct Fixture {
     state_file: PathBuf,
     audit_shard: PathBuf,
     memory_dir: PathBuf,
-    steering: Rc<RefCell<Option<SteeringTables>>>,
-    steering_writes: Rc<RefCell<usize>>,
+    /// steering の更新器が起動された回数 (取得ループがどの時点で起動するかの観測点)。
+    steering_calls: Rc<RefCell<usize>>,
+    /// 次に組む steering の更新器が返す失敗 (無ければ成功する)。
+    steering_failure: RefCell<Option<ReadModelUpdateError>>,
 }
 
 impl Fixture {
@@ -469,8 +439,8 @@ impl Fixture {
             state_file,
             audit_shard,
             memory_dir,
-            steering: Rc::new(RefCell::new(None)),
-            steering_writes: Rc::new(RefCell::new(0)),
+            steering_calls: Rc::new(RefCell::new(0)),
+            steering_failure: RefCell::new(None),
         }
     }
 
@@ -484,23 +454,17 @@ impl Fixture {
         std::fs::read_to_string(self.memory_dir.join(relative)).expect("規則は読める")
     }
 
-    /// memory 層のファイルを 1 本消す。
-    fn remove_rule(&self, relative: &str) {
-        std::fs::remove_file(self.memory_dir.join(relative)).expect("規則を消す");
+    /// 起動回数を数える steering の更新器 (取得ループから見た steering の面)。
+    fn steering(&self) -> SpySteering {
+        SpySteering {
+            calls: Rc::clone(&self.steering_calls),
+            failure: self.steering_failure.borrow().clone(),
+        }
     }
 
-    fn steering_source(&self) -> SteeringSource {
-        SteeringSource::new(self.memory_dir.clone())
-    }
-
-    /// steering 面を差し替えた回数。
-    fn steering_writes(&self) -> usize {
-        *self.steering_writes.borrow()
-    }
-
-    /// 保存済みの steering 面。
-    fn steering(&self) -> Option<SteeringTables> {
-        self.steering.borrow().clone()
+    /// steering の更新器が起動された回数。
+    fn steering_calls(&self) -> usize {
+        *self.steering_calls.borrow()
     }
 
     fn targets(&self) -> ProjectionTargets {
@@ -515,7 +479,7 @@ impl Fixture {
         &self,
         journal: Vec<JournalEntry>,
         intents: Vec<(u64, Intent)>,
-    ) -> OrchestrationReadModelUpdater<FakeReader> {
+    ) -> OrchestrationReadModelUpdater<FakeReader, SpySteering> {
         self.spied_updater(journal, intents).0
     }
 
@@ -525,7 +489,7 @@ impl Fixture {
         journal: Vec<JournalEntry>,
         intents: Vec<(u64, Intent)>,
     ) -> (
-        OrchestrationReadModelUpdater<FakeReader>,
+        OrchestrationReadModelUpdater<FakeReader, SpySteering>,
         Rc<RefCell<Option<ReadTables>>>,
     ) {
         // genesis を投影せずに済むよう、チェックポイントはその直後から始める。
@@ -536,9 +500,6 @@ impl Fixture {
         let spy = Rc::new(RefCell::new(None));
         let updater = OrchestrationReadModelUpdater::new(
             FakeReader {
-                plan_fingerprints: BTreeMap::new(),
-                code_generation_approvals: BTreeMap::new(),
-                testing: None,
                 journal,
                 intents,
                 checkpoints,
@@ -546,56 +507,15 @@ impl Fixture {
                 late_row: Rc::new(RefCell::new(None)),
                 reads: Rc::new(RefCell::new(0)),
                 lose_history_after_probe: false,
-                steering: Rc::clone(&self.steering),
-                steering_writes: Rc::clone(&self.steering_writes),
                 publications: Rc::clone(&self.publications),
                 artifacts: Vec::new(),
                 sessions: Vec::new(),
             },
             projection(),
             self.targets(),
-            self.steering_source(),
+            self.steering(),
         );
         (updater, spy)
-    }
-
-    /// 参照入力 (steering) を**別のディレクトリ**に向けて組む。
-    ///
-    /// 取得ループは投影面 (`ProjectionTargets`) と参照入力 (`SteeringSource`) を別の引数で
-    /// 受け取る。両者が同じ memory ディレクトリを指すのは合成ルートの配線であって、ループの
-    /// 契約ではない — 投影面の読取失敗だけを孤立させて観測するにはここを分ける。
-    fn updater_with_isolated_steering(
-        &self,
-        journal: Vec<JournalEntry>,
-        intents: Vec<(u64, Intent)>,
-        steering_dir: PathBuf,
-    ) -> OrchestrationReadModelUpdater<FakeReader> {
-        let mut checkpoints = BTreeMap::new();
-        if !journal.is_empty() {
-            checkpoints.insert(projection(), GlobalSeqNr::new(2));
-        }
-        OrchestrationReadModelUpdater::new(
-            FakeReader {
-                plan_fingerprints: BTreeMap::new(),
-                code_generation_approvals: BTreeMap::new(),
-                testing: None,
-                journal,
-                intents,
-                checkpoints,
-                tables: Rc::new(RefCell::new(None)),
-                late_row: Rc::new(RefCell::new(None)),
-                reads: Rc::new(RefCell::new(0)),
-                lose_history_after_probe: false,
-                steering: Rc::clone(&self.steering),
-                steering_writes: Rc::clone(&self.steering_writes),
-                publications: Rc::clone(&self.publications),
-                artifacts: Vec::new(),
-                sessions: Vec::new(),
-            },
-            projection(),
-            self.targets(),
-            SteeringSource::new(steering_dir),
-        )
     }
 
     /// 1 回目の読取の後に 1 行だけ届く読み手で組む (書込との競合の再現)。
@@ -605,7 +525,7 @@ impl Fixture {
         intents: Vec<(u64, Intent)>,
         late_row: JournalEntry,
     ) -> (
-        OrchestrationReadModelUpdater<FakeReader>,
+        OrchestrationReadModelUpdater<FakeReader, SpySteering>,
         Rc<RefCell<Option<ReadTables>>>,
     ) {
         let mut checkpoints = BTreeMap::new();
@@ -615,9 +535,6 @@ impl Fixture {
         let spy = Rc::new(RefCell::new(None));
         let updater = OrchestrationReadModelUpdater::new(
             FakeReader {
-                plan_fingerprints: BTreeMap::new(),
-                code_generation_approvals: BTreeMap::new(),
-                testing: None,
                 journal,
                 intents,
                 checkpoints,
@@ -625,15 +542,13 @@ impl Fixture {
                 late_row: Rc::new(RefCell::new(Some(late_row))),
                 reads: Rc::new(RefCell::new(0)),
                 lose_history_after_probe: false,
-                steering: Rc::clone(&self.steering),
-                steering_writes: Rc::clone(&self.steering_writes),
                 publications: Rc::clone(&self.publications),
                 artifacts: Vec::new(),
                 sessions: Vec::new(),
             },
             projection(),
             self.targets(),
-            self.steering_source(),
+            self.steering(),
         );
         (updater, spy)
     }
@@ -950,20 +865,17 @@ async fn a_update_that_touches_no_memory_face_leaves_both_files_untouched() {
 
 /// 在るのに読めないメモリ層は blocking である（不在と混ぜない）。
 ///
-/// 参照入力 (steering) は別のディレクトリへ向けてある — 同じ memory ディレクトリを指すと
-/// `update_steering` が先に同じファイルで倒れ、投影面の読取失敗だけを観測できない。
+/// steering の面はスパイなので memory ディレクトリを読まない — 投影面の読取失敗だけを
+/// 観測できる（steering の規則ファイルの読取失敗は `reference_surface_updater_contract.rs`）。
 #[tokio::test]
 async fn a_memory_file_that_exists_but_cannot_be_read_stops_the_update() {
     let fixture = Fixture::new();
     // `team.md` の位置にディレクトリを置く — `exists()` は真だが `read_to_string` は失敗する。
     std::fs::create_dir(fixture.memory_dir.join("team.md")).expect("ディレクトリを置く");
     fixture.write_rule("project.md", PROJECT_MD);
-    let isolated = fixture.memory_dir.join("isolated");
-    std::fs::create_dir_all(&isolated).expect("参照入力の置き場");
-    let mut updater = fixture.updater_with_isolated_steering(
+    let mut updater = fixture.updater(
         vec![entry(2, 1, genesis()), entry(3, 2, practices_affirmed())],
         intents(),
-        isolated,
     );
 
     let error = updater
@@ -1218,91 +1130,10 @@ async fn a_second_update_leaves_the_rows_as_the_first_one_left_them() {
 }
 
 // ---- 参照入力 (steering) ----
-
-#[tokio::test]
-async fn the_first_update_projects_the_memory_layer_it_finds() {
-    let fixture = Fixture::new();
-    fixture.write_rule(
-        "phases/inception.md",
-        "# Inception\n\nALWAYS confirm the scope.\n",
-    );
-    let mut updater = fixture.updater(journal(), intents());
-    updater.update_read_models().await.expect("更新");
-
-    assert_eq!(fixture.steering_writes(), 1);
-    let steering = fixture.steering().expect("steering 面が書かれている");
-    assert_eq!(steering.plans().len(), 5, "束は phase の関数 (5 フェーズ)");
-    let inception = steering
-        .plans()
-        .iter()
-        .find(|row| row.phase() == "inception")
-        .expect("inception の行");
-    assert_eq!(inception.part_count(), 1);
-    assert!(
-        inception.delivered_paths().contains("org.md")
-            && inception.delivered_paths().contains("phases/inception.md"),
-        "実際: {}",
-        inception.delivered_paths()
-    );
-}
-
-#[tokio::test]
-async fn an_unchanged_memory_layer_is_not_reprojected() {
-    // 参照入力を読み直すのは毎回だが、**書き替えるのはダイジェストが動いたときだけ**である。
-    // 毎回書き替えると、規則を 1 文字も触っていないのに束のバイトが動きうる。
-    let fixture = Fixture::new();
-    let mut updater = fixture.updater(journal(), intents());
-    updater.update_read_models().await.expect("1 回目");
-    assert_eq!(fixture.steering_writes(), 1);
-    updater.update_read_models().await.expect("2 回目");
-    assert_eq!(fixture.steering_writes(), 1, "同じ参照入力では書き替えない");
-}
-
-#[tokio::test]
-async fn an_edited_rule_file_is_reprojected_even_when_the_journal_has_not_moved() {
-    // ジャーナル差分が空でも参照入力は見る — 規則は人が編集するので、イベントを伴わない。
-    let fixture = Fixture::new();
-    let mut updater = fixture.updater(journal(), intents());
-    updater.update_read_models().await.expect("1 回目");
-    let before = fixture.steering().expect("1 回目の面");
-
-    fixture.write_rule("org.md", "# Org\n\n変更した規則\n");
-    updater
-        .update_read_models()
-        .await
-        .expect("2 回目 — ジャーナル差分は空");
-
-    assert_eq!(fixture.steering_writes(), 2);
-    let after = fixture.steering().expect("2 回目の面");
-    assert_ne!(before.source_digest(), after.source_digest());
-    assert_ne!(
-        before
-            .plans()
-            .first()
-            .map(|row| row.bundle_digest().to_string()),
-        after
-            .plans()
-            .first()
-            .map(|row| row.bundle_digest().to_string()),
-        "束のダイジェストも動く"
-    );
-}
-
-#[tokio::test]
-async fn a_rule_file_that_disappears_is_normal_and_shrinks_the_bundle() {
-    let fixture = Fixture::new();
-    let mut updater = fixture.updater(journal(), intents());
-    updater.update_read_models().await.expect("1 回目");
-    fixture.remove_rule("org.md");
-    updater.update_read_models().await.expect("欠損は正常");
-
-    let steering = fixture.steering().expect("steering 面");
-    assert_eq!(fixture.steering_writes(), 2);
-    for row in steering.plans() {
-        assert_eq!(row.part_count(), 0, "配る規則が 1 本も無い");
-        assert_eq!(row.delivered_paths(), "[]");
-    }
-}
+//
+// steering の面を描くのは `SteeringReadModelUpdater` である（読み比べ・差し替え・冪等は
+// `reference_surface_updater_contract.rs` が実 SQLite で固定する）。ここが見るのは取得ループが
+// **いつ**それを起動し、失敗をどう扱うかだけである。
 
 #[tokio::test]
 async fn a_missing_memory_directory_is_normal_too() {
@@ -1314,27 +1145,21 @@ async fn a_missing_memory_directory_is_normal_too() {
 }
 
 #[tokio::test]
-async fn a_rule_file_that_exists_but_cannot_be_read_stops_the_update() {
-    // 「在るのに読めない」は blocking である — 規則を落として進むと、届く steering が
-    // 静かに痩せる。
+async fn a_steering_failure_stops_the_update_before_anything_is_published() {
+    // 「在るのに読めない」規則は blocking である — 規則を落として進むと、届く steering が
+    // 静かに痩せる。取得ループはその失敗で止まり、Markdown 面も構造化面も公開しない。
     let fixture = Fixture::new();
-    fixture.write_rule("team.md", "# Team\n");
-    let path = fixture.memory_dir.join("team.md");
-    std::fs::write(&path, [0x80_u8, 0x81]).expect("UTF-8 として不正なバイトを置く");
-
-    let mut updater = fixture.updater(journal(), intents());
-    let error = updater
-        .update_read_models()
-        .await
-        .expect_err("読めない規則は止める");
-    match error {
-        ReadModelUpdateError::SteeringRead { path: named, kind } => {
-            assert!(named.ends_with("team.md"), "実際: {named}");
-            assert_eq!(kind, std::io::ErrorKind::InvalidData);
-        }
-        other => panic!("読取の失敗として上がる (実際: {other:?})"),
-    }
-    assert_eq!(fixture.steering_writes(), 0, "1 行も書かない");
+    let failure = ReadModelUpdateError::SteeringRead {
+        path: "memory/team.md".to_string(),
+        kind: std::io::ErrorKind::InvalidData,
+    };
+    *fixture.steering_failure.borrow_mut() = Some(failure.clone());
+    let (mut updater, published_tables) = fixture.spied_updater(journal(), intents());
+    assert_eq!(updater.update_read_models().await, Err(failure));
+    assert_eq!(fixture.steering_calls(), 1);
+    assert_eq!(fixture.state(), STATE, "状態ファイルに触らない");
+    assert!(fixture.publications.borrow().is_empty());
+    assert!(published_tables.borrow().is_none());
 }
 
 #[tokio::test]
@@ -1352,13 +1177,14 @@ async fn the_steering_failure_renders_its_material() {
 
 #[tokio::test]
 async fn the_memory_layer_is_read_before_the_journal_difference_is_probed() {
-    // 空のジャーナルでも steering は投影される — 参照入力の比較は早期 return の**前**に
-    // 行われる (ジャーナルが動くまで規則が届かない、という穴を塞ぐ)。
+    // 空のジャーナルでも steering の更新器は起動される — 参照入力の比較は早期 return の
+    // **前**に行われる (ジャーナルが動くまで規則が届かない、という穴を塞ぐ)。
     let fixture = Fixture::new();
     let mut updater = fixture.updater(Vec::new(), Vec::new());
     updater.update_read_models().await.expect("空のジャーナル");
-    assert_eq!(fixture.steering_writes(), 1);
-    assert_eq!(fixture.steering().expect("steering 面").plans().len(), 5);
+    assert_eq!(fixture.steering_calls(), 1);
+    updater.update_read_models().await.expect("2 回目も空");
+    assert_eq!(fixture.steering_calls(), 2, "更新のたびに参照入力を見る");
 }
 
 /// 計画の材料を安全に読めなければ、公開要求すら作らず全ファイルを保持する。
@@ -1415,7 +1241,7 @@ async fn a_disappeared_history_is_not_a_successful_update() {
                 reader,
                 projection(),
                 fixture.targets(),
-                fixture.steering_source(),
+                fixture.steering(),
             );
             updater.update_read_models().await
         };
@@ -1551,9 +1377,6 @@ async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
     checkpoints.insert(projection(), GlobalSeqNr::new(2));
     let mut updater = OrchestrationReadModelUpdater::new(
         FakeReader {
-            plan_fingerprints: BTreeMap::new(),
-            code_generation_approvals: BTreeMap::new(),
-            testing: None,
             journal: journal(),
             intents: intents(),
             checkpoints,
@@ -1561,8 +1384,6 @@ async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
             late_row: Rc::new(RefCell::new(None)),
             reads: Rc::new(RefCell::new(0)),
             lose_history_after_probe: false,
-            steering: Rc::clone(&fixture.steering),
-            steering_writes: Rc::clone(&fixture.steering_writes),
             publications: Rc::clone(&fixture.publications),
             artifacts: Vec::new(),
             sessions: Vec::new(),
@@ -1573,7 +1394,7 @@ async fn a_record_directory_that_is_a_file_is_refused_as_a_state_file_read() {
             blocker.join("audit/host.md"),
             fixture.memory_dir.clone(),
         ),
-        fixture.steering_source(),
+        fixture.steering(),
     );
     let error = updater
         .update_read_models()
@@ -1650,14 +1471,11 @@ impl RegistryFixture {
     fn registry(&self) -> PathBuf {
         self.fixture._dir.path().join("intents.json")
     }
-    fn updater(&self) -> OrchestrationReadModelUpdater<FakeReader> {
+    fn updater(&self) -> OrchestrationReadModelUpdater<FakeReader, SpySteering> {
         let mut checkpoints = BTreeMap::new();
         checkpoints.insert(projection(), GlobalSeqNr::new(2));
         OrchestrationReadModelUpdater::new(
             FakeReader {
-                plan_fingerprints: BTreeMap::new(),
-                code_generation_approvals: BTreeMap::new(),
-                testing: None,
                 journal: journal(),
                 intents: vec![(1, named_intent())],
                 checkpoints,
@@ -1665,8 +1483,6 @@ impl RegistryFixture {
                 late_row: Rc::new(RefCell::new(None)),
                 reads: Rc::new(RefCell::new(0)),
                 lose_history_after_probe: false,
-                steering: Rc::clone(&self.fixture.steering),
-                steering_writes: Rc::clone(&self.fixture.steering_writes),
                 publications: Rc::clone(&self.fixture.publications),
                 artifacts: Vec::new(),
                 sessions: Vec::new(),
@@ -1677,7 +1493,7 @@ impl RegistryFixture {
                 self.record.join("audit/host-abcd1234.md"),
                 self.fixture.memory_dir.clone(),
             ),
-            self.fixture.steering_source(),
+            self.fixture.steering(),
         )
     }
 }
@@ -1881,19 +1697,17 @@ fn updater_from_zero(
     fixture: &Fixture,
     journal: Vec<JournalEntry>,
     intents: Vec<(u64, Intent)>,
-) -> OrchestrationReadModelUpdater<FakeReader> {
+) -> OrchestrationReadModelUpdater<FakeReader, SpySteering> {
     OrchestrationReadModelUpdater::new(
         FakeReader {
             journal,
             intents,
             publications: Rc::clone(&fixture.publications),
-            steering: Rc::clone(&fixture.steering),
-            steering_writes: Rc::clone(&fixture.steering_writes),
             ..FakeReader::default()
         },
         projection(),
         fixture.targets(),
-        fixture.steering_source(),
+        fixture.steering(),
     )
 }
 
@@ -2010,13 +1824,11 @@ async fn a_state_or_description_path_that_cannot_be_probed_stops_the_update() {
             journal: journal(),
             intents: intents(),
             publications: Rc::clone(&fixture.publications),
-            steering: Rc::clone(&fixture.steering),
-            steering_writes: Rc::clone(&fixture.steering_writes),
             ..FakeReader::default()
         },
         projection(),
         targets,
-        fixture.steering_source(),
+        fixture.steering(),
     );
     let error = updater
         .update_read_models()
@@ -2044,13 +1856,11 @@ async fn a_state_or_description_path_that_cannot_be_probed_stops_the_update() {
             journal: journal(),
             intents: intents(),
             publications: Rc::clone(&fixture.publications),
-            steering: Rc::clone(&fixture.steering),
-            steering_writes: Rc::clone(&fixture.steering_writes),
             ..FakeReader::default()
         },
         projection(),
         nested,
-        fixture.steering_source(),
+        fixture.steering(),
     );
     let error = updater
         .update_read_models()
@@ -2202,7 +2012,7 @@ impl RecordFixture {
         intents: Vec<(u64, Intent)>,
         artifacts: Vec<core_read_model_updater::orchestration::ArtifactJournalEntry>,
         sessions: Vec<core_read_model_updater::orchestration::SessionJournalEntry>,
-    ) -> OrchestrationReadModelUpdater<FakeReader> {
+    ) -> OrchestrationReadModelUpdater<FakeReader, SpySteering> {
         let mut checkpoints = BTreeMap::new();
         if checkpoint > 0 {
             checkpoints.insert(projection(), GlobalSeqNr::new(checkpoint));
@@ -2219,7 +2029,7 @@ impl RecordFixture {
             },
             projection(),
             self.targets(),
-            SteeringSource::new(self.record.join("memory")),
+            SpySteering::default(),
         )
     }
 }

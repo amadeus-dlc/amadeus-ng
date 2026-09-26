@@ -33,7 +33,8 @@ use core_command_domain::workflow_definition::{
 use core_command_domain::workspace::{SpaceName, StorePath};
 use core_read_model_updater::orchestration::{
     DefinitionEntry, GlobalSeqNr, IntentEventDto, IntentExecutionEventDto, JournalBatch,
-    JournalEntry, JournalReader, JournalReaderImpl, ProjectionName, WorkflowDefinitionEventDto,
+    JournalEntry, JournalReader, JournalReaderImpl, ProjectionName, SteeringPartDao as _,
+    SteeringPartDaoImpl, SteeringPlanDao as _, SteeringPlanDaoImpl, WorkflowDefinitionEventDto,
 };
 use core_read_model_updater::read_tables::{MemoryRules, ReadTables, RuleContent, SteeringTables};
 use tempfile::TempDir;
@@ -386,11 +387,18 @@ impl Fixture {
                     .advance_checkpoint(&projection, batch.scanned_to().expect("履歴あり"), &tables)
                     .await
                     .expect("ジャーナル由来 15 表の差し替え");
-                reader
-                    .replace_steering(&steering)
-                    .await
-                    .expect("参照入力由来 2 表の差し替え");
             });
+        // 参照入力由来の 2 表は RMU の表の DAO が書く (steering の更新器と同じ書き方 —
+        // 更新器は規則ファイルを読むが、ここでは同じ投影 `SteeringTables::pack` の結果を渡す)。
+        let mut connection = rusqlite::Connection::open(path.as_path()).expect("書込の接続");
+        let mut transaction = connection.transaction().expect("Tx は張れる");
+        SteeringPlanDaoImpl
+            .replace(&mut transaction, steering.plans(), steering.source_digest())
+            .expect("計画の表の差し替え");
+        SteeringPartDaoImpl
+            .replace(&mut transaction, steering.parts())
+            .expect("部の表の差し替え");
+        transaction.commit().expect("参照入力由来 2 表の確定");
         Fixture { _dir: dir, path }
     }
 

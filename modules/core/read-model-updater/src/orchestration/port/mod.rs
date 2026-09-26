@@ -23,9 +23,11 @@
 //!
 //! # 移行中である
 //!
-//! 2026-09-26 時点でこの形へ移したのは自己診断 (`WorkspaceDoctorReadModelUpdater`) だけで
-//! ある (Issue #153 の PR1)。残りの更新器の移行順は
-//! `aidlc/spaces/default/knowledge/rmu-dao-migration-plan-20260926.md` にある。
+//! 2026-09-26 時点でこの形へ移したのは、自己診断 (`WorkspaceDoctorReadModelUpdater` —
+//! Issue #153 の PR1) と、参照入力由来の単独面 (steering・テスト契約・計画指紋・
+//! Code Generation 開始可否 — PR2) である。参照入力由来の面はジャーナル上の位置ではなく
+//! 行の `source_digest` で冪等を取るので、処理したシーケンス番号の表を持たない。残りの
+//! 更新器の移行順は `aidlc/spaces/default/knowledge/rmu-dao-migration-plan-20260926.md` にある。
 //!
 //! 型ファイルの mod も本モジュール自身も private。公開 API は親 (`orchestration`) の
 //! `pub use` ファサードが唯一の宣言 (`coding-rules/module-visibility.md`)。
@@ -41,10 +43,24 @@ mod doctor_report_dao;
 mod doctor_report_row;
 mod workspace_doctor_projection_checkpoint_dao;
 
+// 参照入力由来の面の表の DAO と、それが読む出所 (行そのものは `read_tables` の投影の値)
+mod code_generation_approval_dao;
+mod plan_fingerprint_dao;
+mod source_stamp;
+mod steering_part_dao;
+mod steering_plan_dao;
+mod testing_contract_dao;
+
+pub use code_generation_approval_dao::CodeGenerationApprovalDao;
 pub use doctor_check_dao::DoctorCheckDao;
 pub use doctor_check_row::DoctorCheckRow;
 pub use doctor_report_dao::DoctorReportDao;
 pub use doctor_report_row::DoctorReportRow;
+pub use plan_fingerprint_dao::PlanFingerprintDao;
+pub use source_stamp::SourceStamp;
+pub use steering_part_dao::SteeringPartDao;
+pub use steering_plan_dao::SteeringPlanDao;
+pub use testing_contract_dao::TestingContractDao;
 pub use workspace_doctor_journal_entry::WorkspaceDoctorJournalEntry;
 pub use workspace_doctor_journal_reader::WorkspaceDoctorJournalReader;
 pub use workspace_doctor_projection_checkpoint_dao::WorkspaceDoctorProjectionCheckpointDao;

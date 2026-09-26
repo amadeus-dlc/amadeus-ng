@@ -123,7 +123,7 @@ pub(crate) use row_id::doctor_check;
 
 pub(crate) use sql::{
     READ_SCHEMA_VERSION, content_digest, ensure_tables, matches_rows, read_schema_version,
-    recreate_tables, replace_all, replace_steering, set_schema_version,
+    recreate_tables, replace_all, set_schema_version,
 };
 
 /// 1 回の投影で作った `read_*` 表の全行。
@@ -601,14 +601,11 @@ pub use testing_contract_row::TestingContractRow;
 mod testing_tables;
 pub use testing_tables::TestingTables;
 
-pub(crate) use sql::replace_testing;
 mod plan_fingerprint_row;
 pub use plan_fingerprint_row::PlanFingerprintRow;
-pub(crate) use sql::replace_plan_fingerprint;
 
 mod code_generation_approval_row;
 pub use code_generation_approval_row::CodeGenerationApprovalRow;
-pub(crate) use sql::replace_code_generation_approval;
 
 mod plan_approval_tables;
 pub use plan_approval_tables::PlanApprovalTables;

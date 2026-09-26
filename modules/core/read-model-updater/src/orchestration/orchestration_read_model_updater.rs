@@ -1,7 +1,7 @@
 //! **取得ループ** — RMU の上側の層（2026-08-28 裁定 / `coding-rules/cqrs-boundaries.md`）。
 //!
 //! ```text
-//! 参照入力の読取 → source_digest 比較 → (変化時のみ) replace_steering   ← 別 Tx
+//! steering の更新器 (参照入力の読取 → source_digest 比較 → 変化時のみ 2 表を DAO で差し替え) ← 別 Tx
 //! checkpoint 読取 → 差分の探り → 全履歴 1 回の読取 → 純粋投影核 → リードモデルを書く → advance_checkpoint
 //! ```
 //!
@@ -22,7 +22,7 @@
 use core_command_domain::orchestration::IntentExecutionEvent;
 use core_command_domain::workspace::EventType;
 
-use crate::read_tables::{ReadTables, SteeringTables};
+use crate::read_tables::ReadTables;
 use crate::workspace::{ReadModel, ResolvedPlan};
 
 use super::global_seq_nr::GlobalSeqNr;
@@ -32,7 +32,6 @@ use super::projection_name::ProjectionName;
 use super::projection_targets::ProjectionTargets;
 use super::read_model_update_error::ReadModelUpdateError;
 use super::read_model_updater::ReadModelUpdater;
-use super::steering_source::SteeringSource;
 use super::{PublicationBatch, PublicationFile};
 
 /// 取得ループ — チェックポイント以降のイベントを Markdown 面と構造化面の両方へ流し込む。
@@ -40,20 +39,24 @@ use super::{PublicationBatch, PublicationFile};
 /// 名前に `Orchestration` を冠するのは、orchestration コンテキストの本体（状態ファイル・
 /// 監査シャード・`read_*` 表を 1 回で描く更新器）であることを、同じ契約を実装する他の
 /// 更新器（構造化面だけ・runtime-graph・心拍 …）と区別するためである。
+///
+/// 型引数 `S` は steering の面を描く更新器である（実物は [`super::SteeringReadModelUpdater`]）。
+/// steering の面は参照入力由来で、自分の表の DAO と自分のトランザクションで書く。取得ループは
+/// その更新を**どの時点で起動するか**（ジャーナル差分の探りより前）だけを持つ。
 #[derive(Debug)]
-pub struct OrchestrationReadModelUpdater<R> {
+pub struct OrchestrationReadModelUpdater<R, S> {
     pipeline_handoff: Option<Option<core_command_domain::orchestration::PipelineHandoff>>,
     journal_reader: R,
     projection: ProjectionName,
     targets: ProjectionTargets,
-    /// 参照入力 (memory 層) の読取先。ジャーナルとは別の入口である。
-    steering: SteeringSource,
+    /// 参照入力 (memory 層) から steering の面を描く更新器。ジャーナルとは別の入口である。
+    steering: S,
     /// 解決済み計画の控え。`Started` は 1 度しか書かれないので、一度引けば以後は使い回す。
     plan: Option<ResolvedPlan>,
     execution_id: Option<core_command_domain::orchestration::IntentExecutionId>,
 }
 
-impl<R: JournalReader> OrchestrationReadModelUpdater<R> {
+impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
     /// 現在のhandoffを参照入力として受け取り、イベントなしの変更も再投影する。
     #[must_use]
     pub fn with_pipeline_handoff(
@@ -92,13 +95,13 @@ impl<R: JournalReader> OrchestrationReadModelUpdater<R> {
         Ok(())
     }
 
-    /// 読み手・投影名・書込先・参照入力の読取先から組む。
+    /// 読み手・投影名・書込先・steering の面の更新器から組む。
     pub const fn new(
         journal_reader: R,
         projection: ProjectionName,
         targets: ProjectionTargets,
-        steering: SteeringSource,
-    ) -> OrchestrationReadModelUpdater<R> {
+        steering: S,
+    ) -> OrchestrationReadModelUpdater<R, S> {
         OrchestrationReadModelUpdater {
             pipeline_handoff: None,
             journal_reader,
@@ -142,7 +145,11 @@ impl<R: JournalReader> OrchestrationReadModelUpdater<R> {
     }
 }
 
-impl<R: JournalReader> ReadModelUpdater for OrchestrationReadModelUpdater<R> {
+impl<R, S> ReadModelUpdater for OrchestrationReadModelUpdater<R, S>
+where
+    R: JournalReader,
+    S: ReadModelUpdater<Error = ReadModelUpdateError>,
+{
     type Error = ReadModelUpdateError;
 
     /// チェックポイント以降を読んで描き、チェックポイントを進める。
@@ -172,9 +179,10 @@ impl<R: JournalReader> ReadModelUpdater for OrchestrationReadModelUpdater<R> {
     ///
     /// steering の面（`read_steering_*`）の材料は**人が編集するファイル**であって
     /// ジャーナルではない。規則を直してもイベントは 1 件も増えないので、ジャーナル差分が
-    /// 空でも参照入力は見る — したがって差分の探りより**前**に置く。読むのは毎回だが、
-    /// 書き替えるのは `source_digest` が動いたときだけであり、その比較と差し替えは
-    /// チェックポイントとは別のトランザクションである（設計 §3）。
+    /// 空でも参照入力は見る — したがって差分の探りより**前**に steering の更新器を起動する。
+    /// 読むのは毎回だが、書き替えるのは `source_digest` が動いたときだけであり、その比較と
+    /// 差し替えはチェックポイントとは別のトランザクションである（設計 §3 —
+    /// [`super::SteeringReadModelUpdater`]）。
     ///
     /// # Errors
     ///
@@ -206,7 +214,7 @@ impl<R: JournalReader> ReadModelUpdater for OrchestrationReadModelUpdater<R> {
             // 保存済みの断面はここで確定した。追加イベントはその計画へ混ぜず、
             // 下の通常処理で別の計画として公開してから呼出元へ戻る。
         }
-        self.update_steering().await?;
+        self.steering.update_read_models().await?;
         self.update_pipeline().await?;
 
         let checkpoint = self.journal_reader.checkpoint(&self.projection).await?;
@@ -505,7 +513,7 @@ impl<R: JournalReader> ReadModelUpdater for OrchestrationReadModelUpdater<R> {
     }
 }
 
-impl<R: JournalReader> OrchestrationReadModelUpdater<R> {
+impl<R: JournalReader, S> OrchestrationReadModelUpdater<R, S> {
     /// メモリ層 2 本の本文（**両方在るときだけ**）。
     ///
     /// 2 本が揃っていないのは正常である — 昇格を 1 度も打っていない workspace には
@@ -518,25 +526,6 @@ impl<R: JournalReader> OrchestrationReadModelUpdater<R> {
             return Ok(None);
         }
         Ok(Some((read_memory_file(team)?, read_memory_file(project)?)))
-    }
-
-    /// 参照入力が動いていれば steering の面を作り直す。
-    ///
-    /// 読むのは毎回である — 規則ファイルの編集はイベントを伴わないので、「動いたかどうか」を
-    /// 読まずに知る手立てが無い。読んだうえで [`MemoryRules::source_digest`] を保存済みの値と
-    /// 比べ、**同じなら 1 行も書かない**。毎回書き替えると、規則を 1 文字も触っていないのに
-    /// 束のバイトが動きうる。
-    ///
-    /// [`MemoryRules::source_digest`]: crate::read_tables::MemoryRules::source_digest
-    async fn update_steering(&mut self) -> Result<(), ReadModelUpdateError> {
-        let rules = self.steering.read()?;
-        let source_digest = rules.source_digest();
-        if self.journal_reader.steering_source_digest().await? == Some(source_digest) {
-            return Ok(());
-        }
-        let tables = SteeringTables::pack(&rules)?;
-        self.journal_reader.replace_steering(&tables).await?;
-        Ok(())
     }
 
     /// 解決済み計画を得る（初回だけ履歴から引く）。

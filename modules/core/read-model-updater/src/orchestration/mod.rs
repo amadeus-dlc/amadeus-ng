@@ -124,12 +124,31 @@ pub use dto::SingleStageRunStartedDto;
 
 // 更新器の構造 — ジャーナルを読む → 投影 → 表の DAO で更新する
 // (`coding-rules/read-model-updater-structure.md`)。ポート (trait と、それが運ぶ値) は
-// `port/`、実装は `…Impl` としてこの階層に置く。移行済みは自己診断だけ (Issue #153 の PR1)。
+// `port/`、実装は `…Impl` としてこの階層に置く。移行済みは自己診断 (Issue #153 の PR1) と、
+// 参照入力由来の単独面 — steering・テスト契約・計画指紋・Code Generation 開始可否 (PR2)。
 mod port;
 pub use port::{
-    DoctorCheckDao, DoctorCheckRow, DoctorReportDao, DoctorReportRow, WorkspaceDoctorJournalEntry,
-    WorkspaceDoctorJournalReader, WorkspaceDoctorProjectionCheckpointDao,
+    CodeGenerationApprovalDao, DoctorCheckDao, DoctorCheckRow, DoctorReportDao, DoctorReportRow,
+    PlanFingerprintDao, SourceStamp, SteeringPartDao, SteeringPlanDao, TestingContractDao,
+    WorkspaceDoctorJournalEntry, WorkspaceDoctorJournalReader,
+    WorkspaceDoctorProjectionCheckpointDao,
 };
+
+mod updater_connection;
+
+mod code_generation_approval_dao_impl;
+mod plan_fingerprint_dao_impl;
+mod steering_part_dao_impl;
+mod steering_plan_dao_impl;
+mod testing_contract_dao_impl;
+pub use code_generation_approval_dao_impl::CodeGenerationApprovalDaoImpl;
+pub use plan_fingerprint_dao_impl::PlanFingerprintDaoImpl;
+pub use steering_part_dao_impl::SteeringPartDaoImpl;
+pub use steering_plan_dao_impl::SteeringPlanDaoImpl;
+pub use testing_contract_dao_impl::TestingContractDaoImpl;
+
+mod steering_read_model_updater;
+pub use steering_read_model_updater::SteeringReadModelUpdater;
 
 mod doctor_check_dao_impl;
 mod doctor_report_dao_impl;

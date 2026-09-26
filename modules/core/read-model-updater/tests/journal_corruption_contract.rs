@@ -598,83 +598,57 @@ async fn a_read_table_missing_its_columns_fails_the_insert_of_that_table() {
     }
 }
 
-/// 参照入力（steering）の読取表の列が欠けていれば、その表の INSERT で失敗として上がる。
+/// 参照入力（steering）の読取表の列が欠けていれば、その表の INSERT で失敗として上がり、
+/// 2 表のどちらにも行を残さない（同じトランザクションで差し替えるため）。
 #[tokio::test]
 async fn a_steering_table_missing_its_columns_fails_the_replacement() {
-    use core_read_model_updater::read_tables::{MemoryRules, RuleContent, SteeringTables};
+    use core_read_model_updater::orchestration::{
+        ReadModelUpdateError, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
+    };
     for table in ["read_steering_plan", "read_steering_part"] {
         let fixture = Fixture::new();
         let mut store = open_store(&fixture.path);
         seed(&mut store).await;
         drop(store);
-        let mut reader = fixture.journal_reader();
-        let tables = SteeringTables::pack(&MemoryRules::new(
-            vec![RuleContent::new(
-                "org.md".to_string(),
-                "# Organization\nALWAYS keep the audit record.\n".to_string(),
-            )],
-            std::collections::BTreeMap::new(),
-        ))
+        let _reader = fixture.journal_reader();
+        let memory = fixture._dir.path().join("memory");
+        std::fs::create_dir_all(&memory).unwrap();
+        std::fs::write(
+            memory.join("org.md"),
+            "# Organization\nALWAYS keep the audit record.\n",
+        )
         .unwrap();
+        let mut steering =
+            SteeringReadModelUpdater::open(fixture.path.as_path(), SteeringSource::new(memory))
+                .unwrap();
         fixture
             .raw()
             .execute_batch(&format!(
                 "DROP TABLE {table}; CREATE TABLE {table} (id TEXT)"
             ))
             .expect("列の欠けた形へ作り替える");
-        let error = reader
-            .replace_steering(&tables)
+        let error = steering
+            .update_read_models()
             .await
             .expect_err("列の欠けた表への INSERT は失敗する");
         assert!(
-            matches!(error, JournalReadError::Io { .. }),
+            matches!(
+                error,
+                ReadModelUpdateError::Read(JournalReadError::Io { .. })
+            ),
             "{table}: 実際 {error:?}"
         );
-        let rows: i64 = fixture
-            .raw()
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(rows, 0, "{table}: 失敗した差し替えは行を残さない");
+        for written in ["read_steering_plan", "read_steering_part"] {
+            let rows: i64 = fixture
+                .raw()
+                .query_row(&format!("SELECT COUNT(*) FROM {written}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(
+                rows, 0,
+                "{table}: 失敗した差し替えは {written} に行を残さない"
+            );
+        }
     }
-}
-
-/// 古い履歴位置で組んだテスト契約の面は、より新しい面を上書きしない。
-#[tokio::test]
-async fn an_older_testing_snapshot_does_not_overwrite_a_newer_one() {
-    use core_command_domain::orchestration::TestingSections;
-    use core_read_model_updater::orchestration::JournalBatch;
-    use core_read_model_updater::read_tables::TestingTables;
-    let fixture = Fixture::new();
-    let mut store = open_store(&fixture.path);
-    seed_intent(&fixture.path).await;
-    seed(&mut store).await;
-    drop(store);
-    let mut reader = fixture.journal_reader();
-    let full = reader.events_after(GlobalSeqNr::ZERO).await.unwrap();
-    let newer = TestingTables::project(
-        &full,
-        &TestingSections::from_documents("## Testing Posture\n\n- Methodology: tdd\n", "", ""),
-    );
-    let older = TestingTables::project(
-        &JournalBatch::empty(),
-        &TestingSections::from_documents("", "", ""),
-    );
-    assert!(older.as_of() < newer.as_of());
-    assert_ne!(older.source_digest(), newer.source_digest());
-    reader.replace_testing(&newer).await.unwrap();
-    reader.replace_testing(&older).await.unwrap();
-    assert_eq!(
-        reader.testing_source_digest().await.unwrap(),
-        Some(newer.source_digest().to_string()),
-        "古い断面は無視され、新しい断面が残る"
-    );
-    let rows: i64 = fixture
-        .raw()
-        .query_row("SELECT COUNT(*) FROM read_testing_contract", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(rows, newer.rows().len() as i64);
 }

@@ -83,7 +83,7 @@ use core_read_model_updater::orchestration::IntentExecutionEventDto as Projectio
 use core_read_model_updater::orchestration::WorkflowDefinitionEventDto as ProjectionDefinitionEventDto;
 use core_read_model_updater::orchestration::{
     GlobalSeqNr, JournalReader, JournalReaderImpl, OrchestrationReadModelUpdater, ProjectionName,
-    ProjectionTargets, ReadModelUpdater, SteeringSource,
+    ProjectionTargets, ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
 };
 use event_store_adapter_rs::types::EventStore;
 use serde_json::Value;
@@ -418,7 +418,11 @@ impl RealProjection {
             store.journal_reader(),
             projection_name(),
             self.targets.clone(),
-            SteeringSource::new(self.memory_dir.clone()),
+            SteeringReadModelUpdater::open(
+                store.path.as_path(),
+                SteeringSource::new(self.memory_dir.clone()),
+            )
+            .expect("steering の更新器を開ける"),
         );
         updater.update_read_models().await.expect("更新は通る");
         let reached = updater

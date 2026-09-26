@@ -609,7 +609,7 @@ async fn a_rebuild_retains_its_high_watermark_even_when_checkpoints_lag() {
 async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
     use core_read_model_updater::orchestration::{
         OrchestrationReadModelUpdater, ProjectionTargets, PublicationBatch, PublicationFile,
-        ReadModelUpdater, SteeringSource,
+        ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     let fixture = Fixture::new();
     let _store = fixture.store();
@@ -644,7 +644,11 @@ async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
         fixture.journal_reader(),
         projection(),
         targets,
-        SteeringSource::new(fixture._dir.path().join("memory")),
+        SteeringReadModelUpdater::open(
+            fixture.path.as_path(),
+            SteeringSource::new(fixture._dir.path().join("memory")),
+        )
+        .unwrap(),
     );
     updater.update_read_models().await.unwrap();
     assert_eq!(updater.checkpoint().await.unwrap(), GlobalSeqNr::ZERO);
@@ -656,7 +660,7 @@ async fn an_empty_history_rebuild_resumes_after_its_files_were_written() {
 async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
     use core_read_model_updater::orchestration::{
         OrchestrationReadModelUpdater, ProjectionTargets, PublicationBatch, PublicationFile,
-        ReadModelUpdater, SteeringSource,
+        ReadModelUpdater, SteeringReadModelUpdater, SteeringSource,
     };
     for interrupt_tail in [false, true] {
         let fixture = Fixture::new();
@@ -697,7 +701,11 @@ async fn recovery_finishes_the_saved_cut_before_consuming_new_events() {
             fixture.journal_reader(),
             projection(),
             targets,
-            SteeringSource::new(fixture._dir.path().join("memory")),
+            SteeringReadModelUpdater::open(
+                fixture.path.as_path(),
+                SteeringSource::new(fixture._dir.path().join("memory")),
+            )
+            .unwrap(),
         );
         // 定義のseedは鋳造と取込の2イベントを追記する。
         let latest = GlobalSeqNr::new(cut.to_u64() + 2);
@@ -2180,14 +2188,38 @@ async fn a_rebuild_that_cannot_read_the_history_stops_without_bumping_the_versio
     assert_eq!(version, 0, "描き直せていないなら版も上げない");
 }
 
-/// 参照入力をまだ投影していない実ストアは、出典を捏造しない。
+/// 開いたばかりの実ストアには参照入力由来の表が揃っており、出典を捏造しない。
+///
+/// 表を書くのは面ごとの更新器だが、クエリ側はその更新器がまだ走っていないストアでも表を
+/// 引く。開く段で表 (DDL の正本は各表の DAO) だけは揃える。
 #[tokio::test]
 async fn an_unprojected_steering_face_has_no_source_yet() {
+    use core_read_model_updater::orchestration::{SteeringPlanDao as _, SteeringPlanDaoImpl};
     let fixture = Fixture::new();
     let _store = fixture.store();
     let reader = fixture.journal_reader();
 
-    assert_eq!(reader.steering_source_digest().await.unwrap(), None);
+    assert_eq!(
+        SteeringPlanDaoImpl
+            .find_source_digest(&fixture.raw())
+            .unwrap(),
+        None
+    );
+    for table in [
+        "read_steering_plan",
+        "read_steering_part",
+        "read_testing_contract",
+        "read_plan_fingerprint",
+        "read_code_generation_approval",
+    ] {
+        let rows: i64 = fixture
+            .raw()
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("開く段で作られている");
+        assert_eq!(rows, 0, "{table}");
+    }
     assert_eq!(
         reader.checkpoint(&projection()).await.unwrap(),
         GlobalSeqNr::ZERO
@@ -2197,7 +2229,10 @@ async fn an_unprojected_steering_face_has_no_source_yet() {
 /// steering の更新は実 SQLite へ確定するが、ジャーナルの確定位置は動かさない。
 #[tokio::test]
 async fn the_steering_face_is_replaced_on_its_own_and_names_its_source() {
-    use core_read_model_updater::read_tables::{MemoryRules, RuleContent, SteeringTables};
+    use core_read_model_updater::orchestration::{
+        ReadModelUpdater, SteeringPlanDao as _, SteeringPlanDaoImpl, SteeringReadModelUpdater,
+        SteeringSource,
+    };
     let fixture = Fixture::new();
     seed(&mut fixture.store()).await;
     let mut reader = fixture.journal_reader();
@@ -2205,28 +2240,31 @@ async fn the_steering_face_is_replaced_on_its_own_and_names_its_source() {
         .advance_checkpoint(&projection(), GlobalSeqNr::new(2), &empty_tables())
         .await
         .unwrap();
-    let first = SteeringTables::pack(&MemoryRules::default()).unwrap();
-    reader.replace_steering(&first).await.unwrap();
-    let second = SteeringTables::pack(&MemoryRules::new(
-        vec![RuleContent::new(
-            "org.md".to_string(),
-            "# Organization\nChanged rule\n".to_string(),
-        )],
-        std::collections::BTreeMap::new(),
-    ))
-    .unwrap();
-    assert_ne!(first.source_digest(), second.source_digest());
-
-    reader.replace_steering(&second).await.unwrap();
+    let memory = fixture._dir.path().join("memory");
+    std::fs::create_dir_all(&memory).unwrap();
+    let mut steering =
+        SteeringReadModelUpdater::open(fixture.path.as_path(), SteeringSource::new(memory.clone()))
+            .unwrap();
+    steering.update_read_models().await.unwrap();
+    let first = SteeringPlanDaoImpl
+        .find_source_digest(&fixture.raw())
+        .unwrap();
+    std::fs::write(memory.join("org.md"), "# Organization\nChanged rule\n").unwrap();
+    steering.update_read_models().await.unwrap();
+    drop(steering);
     drop(reader);
 
-    let reopened = fixture.journal_reader();
+    let second = SteeringPlanDaoImpl
+        .find_source_digest(&fixture.raw())
+        .unwrap();
+    assert!(first.is_some() && second.is_some());
+    assert_ne!(first, second, "参照入力が動けば出所も動く");
     assert_eq!(
-        reopened.steering_source_digest().await.unwrap(),
-        Some(second.source_digest().to_string())
-    );
-    assert_eq!(
-        reopened.checkpoint(&projection()).await.unwrap(),
+        fixture
+            .journal_reader()
+            .checkpoint(&projection())
+            .await
+            .unwrap(),
         GlobalSeqNr::new(2)
     );
 }
