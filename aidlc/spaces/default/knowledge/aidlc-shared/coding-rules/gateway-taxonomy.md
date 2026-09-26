@@ -138,7 +138,7 @@ ADR-001 でイベントソーシングを採用した結果、Repository でも�
 （`publish` / `advance_checkpoint` / `replace_*`）と投影チェックポイントの保存は、RMU クレートの `orchestration/port/` に
 置く**表の DAO**（`<表名>Dao` / `…DaoImpl`、単一テーブルの I/O だけ）へ移す。`ReadModelWriter` のような書込ポートは
 作らないので、本節の例外（`EventStore` / `JournalReader` の 2 本）は増えない。詳細は
-[read-model-updater-structure.md](read-model-updater-structure.md)。**移行中**（PR1 = 自己診断のみ。上の表の
+[read-model-updater-structure.md](read-model-updater-structure.md)。**移行中**（PR1 = 自己診断、PR2 = 参照入力由来の単独面。上の表の
 「投影チェックポイント」は移行前の形の記述）。
 
 ### 1d. コマンド側で外界に触るのは Repository 実装だけ（2026-09-04 機械強制、#47）
