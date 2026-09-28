@@ -54,6 +54,7 @@ with open(os.environ["TEST_CALLS"], "a") as stream:
     stream.write(json.dumps({"args": sys.argv[1:],
         "config": os.environ.get("CLAUDE_CONFIG_DIR"),
         "token": "CLAUDE_CODE_OAUTH_TOKEN" in os.environ,
+        "guard": os.environ.get("AMADEUS_TAKT_GUARD"),
         "inherited": os.path.exists(os.environ["TEST_TRANSCRIPT"])}) + "\\n")
 if sys.argv[1:] == ["list", "--non-interactive", "--format", "json"]:
     print(os.environ["TEST_TASKS"])
@@ -150,6 +151,14 @@ sys.exit(int(os.environ.get("TEST_EXIT", "0")))
         self.assertEqual(result.returncode, 9)
         self.assertEqual([c["args"] for c in calls], [["run"]])
         self.assertFalse(calls[0]["token"])
+
+    def test_takt_read_guard_is_enabled_for_every_command(self):
+        for args in (["--no-inherit"], ["--no-inherit", "list"], ["--inherit-from", "account A", "run"]):
+            self.calls.unlink(missing_ok=True)
+            result, calls = self.run_script(*args, AMADEUS_TAKT_GUARD="")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(calls)
+            self.assertTrue(all(c["guard"] == "1" for c in calls), calls)
 
     def test_invalid_source_and_empty_value_do_not_call_takt(self):
         for value in ("missing", ""):

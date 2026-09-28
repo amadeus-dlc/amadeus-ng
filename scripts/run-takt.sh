@@ -26,6 +26,11 @@
 # --inherit-from で引き継ぎ元を固定し、--no-inherit でコピーを無効にできる。
 # list で Requeue を選ぶ手順は従来どおり。コピー中は両アカウントの対象作業を停止する。
 #
+# takt が起動した Claude には .takt/ を読ませない (今のランの context/ と reports/ を除く)。
+# .takt/ の過去のランや設定をソースコードとして読まれないよう、AMADEUS_TAKT_GUARD=1 を立てて
+# .claude/settings.json の PreToolUse フック (scripts/takt-read-guard.py) を有効にする。
+# takt を直接起動したときはこのフックは働かない。
+#
 # bash 3.2 (macOS 標準) 互換のため、配列は使用しない。
 #
 set -euo pipefail
@@ -57,6 +62,9 @@ list/run/resume の前に ~/.claude* と指定アカウントの兄弟ディレ�
 自動探索ではプロジェクトの memory/ と sessions-index.json はコピーしない。
 同じ作業パスの承認済み信頼設定のみ追加する (変更前の .claude.json はバックアップ)。
 コピー中は両アカウントの対象作業を停止しておくこと。
+
+takt が起動した Claude は .takt/ を読めない (今のランの context/ と reports/ を除く)。
+この制限には Python 3 が必要。無いときは警告を出し、制限なしで起動する。
 EOF
 }
 
@@ -139,11 +147,17 @@ fi
 
 unset CLAUDE_CODE_OAUTH_TOKEN
 export CLAUDE_CONFIG_DIR="${CONFIG_DIR}"
+# .claude/settings.json の scripts/takt-read-guard.py を有効にする。
+export AMADEUS_TAKT_GUARD=1
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'warning: python3 が無いため、.takt/ の読み取り制限は働きません\n' >&2
+fi
 
 cd "${REPO_ROOT}"
 if [ -n "${INHERIT_FROM}" ]; then
   python3 "${SCRIPT_DIR}/takt-inherit.py" "${INHERIT_FROM}" "${CONFIG_DIR}" "${REPO_ROOT}"
 fi
 printf '==> CLAUDE_CONFIG_DIR=%s (CLAUDE_CODE_OAUTH_TOKEN は unset 済み)\n' "${CLAUDE_CONFIG_DIR}"
+printf '==> AMADEUS_TAKT_GUARD=1 (.takt/ は今のランの context/ と reports/ だけ読める)\n'
 printf '==> takt %s\n' "$*"
 exec takt "$@"
