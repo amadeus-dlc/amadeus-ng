@@ -26,6 +26,13 @@
 # --inherit-from で引き継ぎ元を固定し、--no-inherit でコピーを無効にできる。
 # list で Requeue を選ぶ手順は従来どおり。コピー中は両アカウントの対象作業を停止する。
 #
+# takt が起動した Claude には .takt/ を読ませない (今のランの context/ と reports/ を除く)。
+# .takt/ の過去のランや設定をソースコードとして読まれないよう、TAKT_CLAUDE_CLI_PATH に
+# scripts/takt-claude.sh を指定し、読み取り制限のフック (scripts/takt-read-guard.py) を足した
+# Claude を起動させる。本来の実行ファイルは、呼び出し元の TAKT_CLAUDE_CLI_PATH か、takt に
+# 同梱の SDK のもの (~/.takt/config.yaml の claude_cli_path は環境変数に負けるので使われない)。
+# takt を直接起動したときはこの制限は働かない。
+#
 # bash 3.2 (macOS 標準) 互換のため、配列は使用しない。
 #
 set -euo pipefail
@@ -57,6 +64,9 @@ list/run/resume の前に ~/.claude* と指定アカウントの兄弟ディレ�
 自動探索ではプロジェクトの memory/ と sessions-index.json はコピーしない。
 同じ作業パスの承認済み信頼設定のみ追加する (変更前の .claude.json はバックアップ)。
 コピー中は両アカウントの対象作業を停止しておくこと。
+
+takt が起動した Claude は .takt/ を読めない (今のランの context/ と reports/ を除く)。
+この制限には Node.js と Python 3 が必要。使えないときは警告を出し、制限なしで起動する。
 EOF
 }
 
@@ -140,10 +150,38 @@ fi
 unset CLAUDE_CODE_OAUTH_TOKEN
 export CLAUDE_CONFIG_DIR="${CONFIG_DIR}"
 
+# takt が起動する Claude を scripts/takt-claude.sh 経由にして、.takt/ の読み取り制限を足す。
+WRAPPER="${SCRIPT_DIR}/takt-claude.sh"
+REAL_CLAUDE="${TAKT_CLAUDE_CLI_PATH:-}"
+if [ "${REAL_CLAUDE}" = "${WRAPPER}" ]; then
+  REAL_CLAUDE="${AMADEUS_TAKT_CLAUDE_BIN:-}"
+fi
+if [ -z "${REAL_CLAUDE}" ] && command -v node >/dev/null 2>&1; then
+  # takt の claude プロバイダー (Agent SDK) が既定で使う、同梱の実行ファイル。
+  REAL_CLAUDE="$(node -e '
+const { realpathSync } = require("fs");
+const { createRequire } = require("module");
+const bin = realpathSync(process.argv[1]);
+const name = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`;
+process.stdout.write(createRequire(bin).resolve(name));
+' "$(command -v takt)" 2>/dev/null || true)"
+fi
+GUARD="無効"
+if [ -z "${REAL_CLAUDE}" ] || [ ! -x "${REAL_CLAUDE}" ]; then
+  printf 'warning: takt が使う Claude の実行ファイルが見つからないため、.takt/ の読み取り制限は働きません\n' >&2
+elif ! command -v python3 >/dev/null 2>&1; then
+  printf 'warning: python3 が無いため、.takt/ の読み取り制限は働きません\n' >&2
+else
+  export AMADEUS_TAKT_CLAUDE_BIN="${REAL_CLAUDE}"
+  export TAKT_CLAUDE_CLI_PATH="${WRAPPER}"
+  GUARD="有効 (今のランの context/ と reports/ だけ読める)"
+fi
+
 cd "${REPO_ROOT}"
 if [ -n "${INHERIT_FROM}" ]; then
   python3 "${SCRIPT_DIR}/takt-inherit.py" "${INHERIT_FROM}" "${CONFIG_DIR}" "${REPO_ROOT}"
 fi
 printf '==> CLAUDE_CONFIG_DIR=%s (CLAUDE_CODE_OAUTH_TOKEN は unset 済み)\n' "${CLAUDE_CONFIG_DIR}"
+printf '==> .takt/ の読み取り制限: %s\n' "${GUARD}"
 printf '==> takt %s\n' "$*"
 exec takt "$@"
