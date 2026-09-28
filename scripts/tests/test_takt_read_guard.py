@@ -116,6 +116,17 @@ with open(os.environ["TEST_LAUNCH"], "w") as stream:
         for command in ("cargo test", "rg foo src", "cat foo.takt/x", "ls .takt-report-internal"):
             self.assert_allowed("Bash", {"command": command})
 
+    def test_bash_paths_are_resolved_from_the_directory_changed_into(self):
+        for command in (f"cd .takt/runs/{CURRENT}/context && cat ../../{OLD}/reports/plan.md",
+                        f"cd .takt/runs/{CURRENT}/context; ls ..",
+                        f"pushd .takt/runs/{CURRENT}/reports >/dev/null && cat ../meta.json",
+                        f"cd .takt/runs/{CURRENT} && cd context && cat ../logs/log.jsonl"):
+            self.assert_blocked("Bash", {"command": command})
+        for command in (f"cd .takt/runs/{CURRENT}/reports && cat plan.md",
+                        f"cd .takt/runs/{CURRENT}/context && cat task/order.md ../reports/plan.md",
+                        "cd src && cat ../README.md"):
+            self.assert_allowed("Bash", {"command": command})
+
     def test_search_tools_are_checked_by_path_and_glob(self):
         self.assert_blocked("Grep", {"pattern": "x", "path": ".takt"})
         self.assert_blocked("Grep", {"pattern": "x", "glob": ".takt/runs/**"})

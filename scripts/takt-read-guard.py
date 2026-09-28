@@ -59,7 +59,25 @@ def joined(base, pattern):
     return pattern if not base else os.path.join(base, pattern)
 
 
-def candidates(tool, arguments):
+def bash_paths(command, cwd):
+    """コマンドの語を先頭から見て、cd / pushd で移った先を基準に読み取り先として解決する。
+
+    `cd .takt/runs/<今のラン>/context && cat ../../<別のラン>/reports/x` の後ろの語は
+    .takt を含まないが、移った先から解決すると別のランを指す。
+    """
+    here = cwd
+    paths = []
+    words = [word for word in BASH_SEPARATORS.split(command) if word]
+    for index, word in enumerate(words):
+        path = os.path.join(here, os.path.expanduser(word))
+        paths.append(path)
+        # 変数やコマンド置換を含む移動先は展開できないので、移動を追わない。
+        if index > 0 and words[index - 1] in ("cd", "pushd") and not set(word) & set("$`"):
+            here = path
+    return paths
+
+
+def candidates(tool, arguments, cwd):
     """ツール入力のうち、読み取り先を表す値を返す。"""
     if tool == "Read":
         return [arguments.get("file_path")]
@@ -74,8 +92,7 @@ def candidates(tool, arguments):
         base = arguments.get("path")
         return [base] + ([joined(base, arguments["glob"])] if arguments.get("glob") else [])
     if tool == "Bash":
-        return [token for token in BASH_SEPARATORS.split(arguments.get("command") or "")
-                if TAKT_DIR in token.split("/")]
+        return bash_paths(arguments.get("command") or "", cwd)
     return []
 
 
@@ -87,7 +104,7 @@ def main():
         cwd = event.get("cwd") or os.getcwd()
     except (ValueError, KeyError, TypeError):
         return 0
-    for path in candidates(tool, arguments):
+    for path in candidates(tool, arguments, cwd):
         if isinstance(path, str) and path and blocked(path, cwd):
             slugs = running_slugs(Path(cwd) / TAKT_DIR)
             readable = "、".join(f"{TAKT_DIR}/runs/{slug}/{name}/"
