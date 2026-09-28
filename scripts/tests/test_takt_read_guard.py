@@ -1,4 +1,4 @@
-"""takt が起動した Claude に .takt/ を読ませないフックを、settings.json の登録ごと検証する。"""
+"""takt が起動した Claude に .takt/ を読ませないフックを、ラッパーが渡す登録ごと検証する。"""
 
 import json
 import os
@@ -10,17 +10,8 @@ import unittest
 
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-SETTINGS = SCRIPTS.parent / ".claude/settings.json"
 CURRENT = "20260928-100000-current"
 OLD = "20260927-100000-old"
-
-
-def guard_command():
-    settings = json.loads(SETTINGS.read_text())
-    commands = [hook["command"] for entry in settings["hooks"]["PreToolUse"]
-                for hook in entry["hooks"] if "takt-read-guard.py" in hook["command"]]
-    assert len(commands) == 1, commands
-    return commands[0]
 
 
 class TaktReadGuardTest(unittest.TestCase):
@@ -30,7 +21,17 @@ class TaktReadGuardTest(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.project = self.root / "project"
         (self.project / "scripts").mkdir(parents=True)
-        shutil.copyfile(SCRIPTS / "takt-read-guard.py", self.project / "scripts/takt-read-guard.py")
+        for name in ("takt-claude.sh", "takt-read-guard.py"):
+            shutil.copy2(SCRIPTS / name, self.project / "scripts" / name)
+        self.launch = self.root / "launch.json"
+        self.claude = self.root / "bin/claude"
+        self.claude.parent.mkdir()
+        self.claude.write_text('''#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ["TEST_LAUNCH"], "w") as stream:
+    json.dump({"args": sys.argv[1:], "script": os.environ.get("AMADEUS_TAKT_GUARD_SCRIPT")}, stream)
+''')
+        self.claude.chmod(0o755)
         for slug, status in ((CURRENT, "running"), (OLD, "completed")):
             run = self.project / ".takt/runs" / slug
             self.write(run / "meta.json", json.dumps({"status": status}))
@@ -45,17 +46,33 @@ class TaktReadGuardTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
 
-    def run_hook(self, tool, arguments, guard="1"):
-        env = {**os.environ, "CLAUDE_PROJECT_DIR": str(self.project), "HOME": str(self.root / "home")}
-        env.pop("AMADEUS_TAKT_GUARD", None)
-        if guard is not None:
-            env["AMADEUS_TAKT_GUARD"] = guard
+    def start_claude(self, *args, **env):
+        """ラッパー経由で偽の Claude を起動し、渡された引数と環境を返す。"""
+        env = {**os.environ, "AMADEUS_TAKT_CLAUDE_BIN": str(self.claude),
+               "TEST_LAUNCH": str(self.launch), **env}
+        result = subprocess.run([str(self.project / "scripts/takt-claude.sh"), *args],
+                                env=env, text=True, capture_output=True)
+        launch = json.loads(self.launch.read_text()) if self.launch.exists() else None
+        return result, launch
+
+    def guard_hook(self):
+        result, launch = self.start_claude()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        settings = json.loads(launch["args"][launch["args"].index("--settings") + 1])
+        [entry] = settings["hooks"]["PreToolUse"]
+        [hook] = entry["hooks"]
+        return entry["matcher"], hook["command"], launch["script"]
+
+    def run_hook(self, tool, arguments):
+        matcher, command, script = self.guard_hook()
+        self.assertIn(tool, matcher.split("|"))
+        env = {**os.environ, "AMADEUS_TAKT_GUARD_SCRIPT": script, "HOME": str(self.root / "home")}
         event = {"tool_name": tool, "tool_input": arguments, "cwd": str(self.project)}
-        return subprocess.run(["/bin/bash", "-c", guard_command()], cwd=self.project, env=env,
+        return subprocess.run(["/bin/sh", "-c", command], cwd=self.project, env=env,
                               input=json.dumps(event), text=True, capture_output=True)
 
-    def assert_allowed(self, tool, arguments, **options):
-        result = self.run_hook(tool, arguments, **options)
+    def assert_allowed(self, tool, arguments):
+        result = self.run_hook(tool, arguments)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def assert_blocked(self, tool, arguments):
@@ -107,18 +124,25 @@ class TaktReadGuardTest(unittest.TestCase):
         self.assert_allowed("Grep", {"pattern": r"\.takt", "path": "src"})
         self.assert_allowed("Glob", {"pattern": "**/*.rs"})
 
-    def test_inactive_without_takt_guard_variable(self):
-        for guard in (None, ""):
-            self.assert_allowed("Read", {"file_path": ".takt/config.yaml"}, guard=guard)
+    def test_wrapper_adds_the_hook_and_keeps_takt_arguments(self):
+        result, launch = self.start_claude("--output-format", "stream-json", "--model", "x")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(launch["args"][0], "--settings")
+        self.assertEqual(launch["args"][2:], ["--output-format", "stream-json", "--model", "x"])
+        self.assertEqual(launch["script"], str(self.project / "scripts/takt-read-guard.py"))
+
+    def test_wrapper_refuses_to_start_without_the_real_claude(self):
+        result, launch = self.start_claude(AMADEUS_TAKT_CLAUDE_BIN="")
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(launch)
 
     def test_broken_meta_does_not_unlock_a_run(self):
         self.write(self.project / f".takt/runs/{OLD}/meta.json", "{broken")
         self.assert_blocked("Read", {"file_path": f".takt/runs/{OLD}/reports/plan.md"})
 
     def test_missing_script_or_malformed_input_never_blocks(self):
-        env = {**os.environ, "AMADEUS_TAKT_GUARD": "1", "CLAUDE_PROJECT_DIR": str(self.project)}
         result = subprocess.run(["python3", str(self.project / "scripts/takt-read-guard.py")],
-                                env=env, input="not json", text=True, capture_output=True)
+                                input="not json", text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         (self.project / "scripts/takt-read-guard.py").unlink()
         self.assert_allowed("Read", {"file_path": ".takt/config.yaml"})

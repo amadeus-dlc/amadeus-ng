@@ -63,15 +63,6 @@
             "command": "aidlc engine hook plan-approval-guard"
           }
         ]
-      },
-      {
-        "matcher": "Read|NotebookRead|LS|Glob|Grep|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -z \"${AMADEUS_TAKT_GUARD:-}\" ] || [ ! -f \"$CLAUDE_PROJECT_DIR/scripts/takt-read-guard.py\" ] || python3 \"$CLAUDE_PROJECT_DIR/scripts/takt-read-guard.py\""
-          }
-        ]
       }
     ],
     "UserPromptSubmit": [

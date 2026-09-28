@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """takt が起動したエージェントに、.takt/ の中身をソースコードとして読ませない。
 
-Claude Code の PreToolUse フック。scripts/run-takt.sh が AMADEUS_TAKT_GUARD=1 を立てて
-takt を起動したときだけ、.claude/settings.json から呼ばれる。
+Claude Code の PreToolUse フック。scripts/run-takt.sh から起動した takt の Claude にだけ、
+scripts/takt-claude.sh が --settings で登録する。
 
 .takt/ は takt の作業領域で、過去のランの記録・ほかのタスクの指示書・takt の設定が
 入っている。読んでよいのは今のラン (meta.json が running) の context/ と reports/ だけで、

@@ -19,9 +19,9 @@ class RunTaktTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         (self.root / "scripts").mkdir()
-        for name in ("run-takt.sh", "takt-inherit.py"):
+        for name in ("run-takt.sh", "takt-inherit.py", "takt-claude.sh", "takt-read-guard.py"):
             if (SCRIPTS / name).exists():
-                shutil.copyfile(SCRIPTS / name, self.root / "scripts" / name)
+                shutil.copy2(SCRIPTS / name, self.root / "scripts" / name)
         self.source = self.root / "account A"
         self.target = self.root / "account B"
         self.source.mkdir()
@@ -54,7 +54,8 @@ with open(os.environ["TEST_CALLS"], "a") as stream:
     stream.write(json.dumps({"args": sys.argv[1:],
         "config": os.environ.get("CLAUDE_CONFIG_DIR"),
         "token": "CLAUDE_CODE_OAUTH_TOKEN" in os.environ,
-        "guard": os.environ.get("AMADEUS_TAKT_GUARD"),
+        "cli": os.environ.get("TAKT_CLAUDE_CLI_PATH"),
+        "claude": os.environ.get("AMADEUS_TAKT_CLAUDE_BIN"),
         "inherited": os.path.exists(os.environ["TEST_TRANSCRIPT"])}) + "\\n")
 if sys.argv[1:] == ["list", "--non-interactive", "--format", "json"]:
     print(os.environ["TEST_TASKS"])
@@ -69,6 +70,11 @@ sys.exit(int(os.environ.get("TEST_EXIT", "0")))
             "TEST_CALLS": str(self.calls), "TEST_TRANSCRIPT": str(self.target / self.transcript),
             "TEST_TASKS": json.dumps({"tasks": [{"kind": "failed", "worktreePath": str(self.worktree)}]}),
         }
+        for name in ("TAKT_CLAUDE_CLI_PATH", "AMADEUS_TAKT_CLAUDE_BIN"):
+            self.env.pop(name, None)
+        self.claude = self.root / "claude"
+        self.claude.write_text("#!/bin/sh\n")
+        self.claude.chmod(0o755)
 
     def write(self, root, path, text):
         file = root / path
@@ -152,13 +158,41 @@ sys.exit(int(os.environ.get("TEST_EXIT", "0")))
         self.assertEqual([c["args"] for c in calls], [["run"]])
         self.assertFalse(calls[0]["token"])
 
-    def test_takt_read_guard_is_enabled_for_every_command(self):
+    def test_takt_starts_claude_through_the_read_guard_wrapper(self):
+        wrapper = str(self.root / "scripts/takt-claude.sh")
         for args in (["--no-inherit"], ["--no-inherit", "list"], ["--inherit-from", "account A", "run"]):
             self.calls.unlink(missing_ok=True)
-            result, calls = self.run_script(*args, AMADEUS_TAKT_GUARD="")
+            result, calls = self.run_script(*args, TAKT_CLAUDE_CLI_PATH=str(self.claude))
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("読み取り制限: 有効", result.stdout)
             self.assertTrue(calls)
-            self.assertTrue(all(c["guard"] == "1" for c in calls), calls)
+            self.assertTrue(all(c["cli"] == wrapper and c["claude"] == str(self.claude)
+                                for c in calls), calls)
+
+    def test_rerun_through_wrapper_keeps_the_real_claude(self):
+        wrapper = str(self.root / "scripts/takt-claude.sh")
+        result, calls = self.run_script("--no-inherit", TAKT_CLAUDE_CLI_PATH=wrapper,
+                                        AMADEUS_TAKT_CLAUDE_BIN=str(self.claude))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((calls[0]["cli"], calls[0]["claude"]), (wrapper, str(self.claude)))
+
+    @unittest.skipUnless(shutil.which("node"), "node が必要")
+    def test_bundled_claude_of_takt_is_the_default(self):
+        platform = subprocess.run(["node", "-p", "process.platform + '-' + process.arch"],
+                                  text=True, capture_output=True, check=True).stdout.strip()
+        bundled = self.root / "node_modules/@anthropic-ai" / f"claude-agent-sdk-{platform}" / "claude"
+        bundled.parent.mkdir(parents=True)
+        shutil.copy2(self.claude, bundled)
+        result, calls = self.run_script("--no-inherit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls[0]["claude"], str(bundled))
+        self.assertEqual(calls[0]["cli"], str(self.root / "scripts/takt-claude.sh"))
+
+    def test_takt_runs_without_the_guard_when_claude_is_not_found(self):
+        result, calls = self.run_script("--no-inherit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("読み取り制限は働きません", result.stderr)
+        self.assertEqual((calls[0]["cli"], calls[0]["claude"]), (None, None))
 
     def test_invalid_source_and_empty_value_do_not_call_takt(self):
         for value in ("missing", ""):
