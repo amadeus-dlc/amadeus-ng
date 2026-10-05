@@ -591,7 +591,7 @@ fn native_intent_create_then_artifact_hook_uses_the_event_pipeline() {
         .unwrap();
     }
     fs::copy(
-        repo.join(".claude/scopes/aidlc-bugfix.md"),
+        repo.join("tests/golden/distribution-2.8.2/claude/scopes/aidlc-bugfix.md"),
         project.join(".claude/scopes/aidlc-bugfix.md"),
     )
     .unwrap();

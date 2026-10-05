@@ -203,7 +203,7 @@ impl Workspace {
         }
         fs::create_dir_all(project.join(".claude/scopes")).unwrap();
         fs::copy(
-            repo.join(".claude/scopes/aidlc-bugfix.md"),
+            repo.join("tests/golden/distribution-2.8.2/claude/scopes/aidlc-bugfix.md"),
             project.join(".claude/scopes/aidlc-bugfix.md"),
         )
         .unwrap();
