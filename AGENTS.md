@@ -96,9 +96,10 @@ This is the same AI-DLC core that ships to every harness, rendered onto Codex CL
 On startup, resolve the active intent (the `aidlc/spaces/<active-space>/intents/active-intent` cursor) and check for its `<record>/aidlc-state.md`. If found, load prior context and offer to resume from last checkpoint. (A brand-new project has no work recorded yet; the first `$aidlc` creates that record for you.)
 ## Git Integration
 
-Commit the `aidlc/` workspace tree — the record (state, the per-clone audit shards under `<record>/audit/`, `intents.json`), memory, codekb, and knowledge are all version-controlled. The shipped `.gitignore` excludes the per-user cursors and machine-local runtime (these may be per-clone or contain sensitive data):
+Commit the `aidlc/` workspace tree — the record (state, `intents.json`), memory, codekb, and knowledge are all version-controlled. The shipped `.gitignore` excludes the per-user cursors, machine-local runtime, and the per-clone audit shards under `<record>/audit/` (2026-10-2 の裁定で機械ごとに追記される派生物として git 管理から外した; these may be per-clone or contain sensitive data):
 - `aidlc/active-space` and `aidlc/spaces/*/intents/active-intent` (per-user cursors)
 - `aidlc/.aidlc-clone-id` (per-clone audit-shard token) and `aidlc/.aidlc-sessions/`
+- `aidlc/spaces/*/intents/*/audit/` (per-clone audit shards — appended per machine, not shared truth)
 - `aidlc/spaces/*/intents/.aidlc-*` (pre-intent hooks-health scratch)
 - `**/aidlc/spaces/*/intents/**/.aidlc-sensors/` (engine-shaped sensor caches at any depth, including legacy package-local trees)
 - `aidlc/spaces/*/intents/*/runtime-graph.json` (also covers per-Bolt worktree fragments by relative-path glob)
