@@ -1,5 +1,6 @@
 """別アカウントへの履歴引き継ぎを、実際のラッパーと偽の TAKT で検証する。"""
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -19,7 +20,7 @@ class RunTaktTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         (self.root / "scripts").mkdir()
-        for name in ("run-takt.sh", "takt-inherit.py", "takt-claude.sh", "takt-read-guard.py"):
+        for name in ("run-takt.sh", "takt-inherit.py", "takt-trust.py", "takt-claude.sh", "takt-read-guard.py"):
             if (SCRIPTS / name).exists():
                 shutil.copy2(SCRIPTS / name, self.root / "scripts" / name)
         self.source = self.root / "account A"
@@ -232,6 +233,61 @@ sys.exit(int(os.environ.get("TEST_EXIT", "0")))
         backups = list(self.target.glob(".claude.json.before-takt-*"))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_bytes(), original)
+
+    def test_trust_workspace_accepts_this_checkout_with_backup(self):
+        original = (self.target / ".claude.json").read_bytes()
+        result, calls = self.run_script("--no-inherit", "--trust-workspace", "--", "--pipeline", "-t", "task")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = json.loads((self.target / ".claude.json").read_text())
+        self.assertTrue(config["projects"][str(self.root)]["hasTrustDialogAccepted"])
+        self.assertEqual(config["oauthAccount"], "B")
+        backups = list(self.target.glob(".claude.json.before-takt-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), original)
+        self.assertEqual([c["args"] for c in calls], [["--pipeline", "-t", "task"]])
+
+    def test_trust_workspace_leaves_an_accepted_checkout_unchanged(self):
+        original = json.dumps({"oauthAccount": "B", "projects": {
+            str(self.root): {"hasTrustDialogAccepted": True, "other": 123}}})
+        self.write(self.target, ".claude.json", original)
+        result, calls = self.run_script("--no-inherit", "--trust-workspace")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.target / ".claude.json").read_text(), original)
+        self.assertEqual(list(self.target.glob(".claude.json.before-takt-*")), [])
+        self.assertEqual([c["args"] for c in calls], [["run"]])
+
+    def test_trust_workspace_does_not_override_an_explicit_denial(self):
+        original = json.dumps({"oauthAccount": "B", "projects": {
+            str(self.root): {"hasTrustDialogAccepted": False}}})
+        self.write(self.target, ".claude.json", original)
+        result, calls = self.run_script("--no-inherit", "--trust-workspace")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("明示的に拒否", result.stderr)
+        self.assertEqual(calls, [])
+        self.assertEqual((self.target / ".claude.json").read_text(), original)
+
+    def test_trust_leaves_no_backup_when_the_write_fails(self):
+        spec = importlib.util.spec_from_file_location("takt_trust", self.root / "scripts/takt-trust.py")
+        trust = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(trust)
+        inherit = trust.load_inherit()
+
+        def fail(path, data):
+            raise OSError("disk full")
+
+        inherit.atomic_write = fail
+        trust.load_inherit = lambda: inherit
+        original = (self.target / ".claude.json").read_bytes()
+        with self.assertRaises(OSError):
+            trust.trust(self.target, self.root)
+        self.assertEqual(list(self.target.glob(".claude.json.before-takt-*")), [])
+        self.assertEqual((self.target / ".claude.json").read_bytes(), original)
+
+    def test_trust_is_untouched_without_the_flag(self):
+        original = (self.target / ".claude.json").read_bytes()
+        result, _ = self.run_script("--no-inherit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.target / ".claude.json").read_bytes(), original)
 
     def test_source_without_matching_history_stops(self):
         shutil.rmtree(self.source / "projects")
