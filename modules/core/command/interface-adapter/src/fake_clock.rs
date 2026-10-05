@@ -14,7 +14,7 @@ use crate::clock::Clock;
 /// 閉じている**ことである。ロックではなく `Cell` を選ぶのは、施錠の失敗という
 /// panic 経路を作らないためである (NFR4.3)。
 ///
-/// [interior-mutability]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/interior-mutability.md
+/// [interior-mutability]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/docs/coding-rules/interior-mutability.md
 #[derive(Debug)]
 pub struct FakeClock {
     now: Cell<DateTime<Utc>>,

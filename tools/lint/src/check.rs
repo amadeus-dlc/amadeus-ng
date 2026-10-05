@@ -31,7 +31,7 @@ use syn::visit::Visit;
 /// R1: 分類語彙 (`CheckboxState` の変種集合) を所有者の外で再実装している。
 pub(crate) const RULE_CHECKBOX_VOCABULARY: &str = "checkbox-vocabulary";
 /// R3: struct が内部構造を `pub` フィールドとしてそのまま公開している
-/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/field-visibility.md`)。
+/// (`docs/coding-rules/field-visibility.md`)。
 ///
 /// 検出境界: **無制限の `pub` だけ**を検出する。`pub(crate)` / `pub(super)` /
 /// `pub(in path)` といった制限付き可視性は検出しない — ルール文書が
@@ -40,7 +40,7 @@ pub(crate) const RULE_CHECKBOX_VOCABULARY: &str = "checkbox-vocabulary";
 /// (syn 上も可視性を持たない) 対象外。
 pub(crate) const RULE_NO_PUBLIC_FIELDS: &str = "no-public-fields";
 /// R4: 1 ファイルに公開型 (`pub struct` / `pub enum` / `pub trait`) が 2 つ以上ある
-/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md` — 1 ファイル 1 公開型、
+/// (`docs/coding-rules/abstract-data-type.md` — 1 ファイル 1 公開型、
 /// オーナー裁定 2026-09-01)。
 ///
 /// 検出境界: **ファイルのトップレベル**の**無制限 `pub`** に限る。`pub(crate)` 以下
@@ -49,7 +49,7 @@ pub(crate) const RULE_NO_PUBLIC_FIELDS: &str = "no-public-fields";
 /// 公開型ゼロの自由関数モジュール (`codec.rs` 等) は正当。
 pub(crate) const RULE_ONE_PUBLIC_TYPE: &str = "one-public-type";
 /// R9: 公開型が 1 つだけのファイルで、ファイル名がその型名の snake_case ではない
-/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md` —
+/// (`docs/coding-rules/abstract-data-type.md` —
 /// 「ファイル名は型名の snake_case」、オーナー裁定 2026-09-01。R4 は数だけを見ていた)。
 ///
 /// 検出境界: R4 と同じ — ファイルのトップレベルの無制限 `pub` の struct / enum / trait が
@@ -60,7 +60,7 @@ pub(crate) const RULE_ONE_PUBLIC_TYPE: &str = "one-public-type";
 /// の形なので鳴らさない。
 pub(crate) const RULE_PUBLIC_TYPE_FILE_NAME: &str = "public-type-file-name";
 /// R5: クエリ側 DAO の SQL が 1 文で 2 つ以上の `read_*` 表を読んでいる
-/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md` 規則 6 — DAO は 1 表 1 引当、
+/// (`docs/coding-rules/cqrs-boundaries.md` 規則 6 — DAO は 1 表 1 引当、
 /// オーナー裁定 2026-09-03)。
 ///
 /// 検出境界: **クエリ側インターフェイスアダプタ** ([`QUERY_ADAPTER_SCOPE`]) の非テストコードに
@@ -69,7 +69,7 @@ pub(crate) const RULE_PUBLIC_TYPE_FILE_NAME: &str = "public-type-file-name";
 /// 書いただけで鳴らないようにするため。
 pub(crate) const RULE_DAO_SINGLE_TABLE: &str = "dao-single-table";
 /// R6: use-case 層の公開ポート名が側の規約から外れている
-/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md` §1/§3/§5 —
+/// (`docs/coding-rules/gateway-taxonomy.md` §1/§3/§5 —
 /// コマンド側は `XxxRepository`、クエリ側は `XxxDao`。造語ポート (`Store` / `Reader` /
 /// `Writer` / `Source` / `Provider`) の禁止、オーナー裁定 2026-08-22・改訂 2026-08-31)。
 ///
@@ -81,7 +81,7 @@ pub(crate) const RULE_DAO_SINGLE_TABLE: &str = "dao-single-table";
 /// (`XxxClient`) のような正当な非 Repository ポートは理由付き allow で通す。
 pub(crate) const RULE_PORT_NAMING: &str = "port-naming";
 /// R7: コマンド側の Repository 実装以外に fs / 乱数 / プロセス / ネットワークの I/O がある
-/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md` §1d —
+/// (`docs/coding-rules/gateway-taxonomy.md` §1d —
 /// コマンド側で外界に触るのは Repository 実装だけ、GitHub #47・オーナー示唆 2026-08-30)。
 ///
 /// 検出境界: **コマンド側 3 クレート** ([`COMMAND_SCOPE`]) の非テストコードのうち、
@@ -91,7 +91,7 @@ pub(crate) const RULE_PORT_NAMING: &str = "port-naming";
 /// `uuid` (集約内採番はオーナー裁定 2026-09-02 で正当) は鳴らない。
 pub(crate) const RULE_COMMAND_SIDE_IO: &str = "command-side-io";
 /// R10: RMU の更新器の名前と共通契約 `ReadModelUpdater` の実装が対応していない
-/// (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md` 規則 3 —
+/// (`docs/coding-rules/cqrs-boundaries.md` 規則 3 —
 /// RMU の更新入口は共通契約 `ReadModelUpdater::update_read_models` 1 つに揃える、
 /// オーナー承認 2026-09-25)。
 ///
@@ -142,27 +142,27 @@ const CHECKBOX_HELP: &str = "CheckboxState の述語 (is_in_flight / is_finished
 集約が所有する遷移前提集合 (I7 / I13 等) であれば \
 `// amadeus-lint: allow(checkbox-vocabulary) — 理由` で理由を明示する";
 const NO_PUBLIC_FIELDS_HELP: &str = "フィールドは private にし、アクセサ \
-(as_str / message / フィールド名) と必要なら new() を公開する — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/field-visibility.md";
+(as_str / message / フィールド名) と必要なら new() を公開する — docs/coding-rules/field-visibility.md";
 const ONE_PUBLIC_TYPE_HELP: &str = "公開型ごとに型名の snake_case のファイルへ分け、\
 ファサード (mod.rs) の pub use で公開する — \
-aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md (1 ファイル 1 公開型)";
+docs/coding-rules/abstract-data-type.md (1 ファイル 1 公開型)";
 const PUBLIC_TYPE_FILE_NAME_HELP: &str = "ファイル名を公開型名の snake_case にする (呼出側の mod / pub use も一斉に直す)。\
 自由関数が主役のモジュールに同居する型は、自分のファイルへ出す — \
-aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/abstract-data-type.md (ファイル名は型名の snake_case)";
+docs/coding-rules/abstract-data-type.md (ファイル名は型名の snake_case)";
 const DAO_SINGLE_TABLE_HELP: &str = "表ごとに DAO を分け、FK はユースケースがたどる — \
-aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md (規則 6: DAO は 1 表 1 引当)";
+docs/coding-rules/cqrs-boundaries.md (規則 6: DAO は 1 表 1 引当)";
 const PORT_NAMING_HELP: &str = "ポートは集約名 + Repository (コマンド側) / リードモデル名 + Dao \
 (クエリ側) で名付ける。外部システムクライアント (XxxClient) のような正当な非 Repository ポートは \
 `// amadeus-lint: allow(port-naming) — 理由` で理由を明示する — \
-aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md";
+docs/coding-rules/gateway-taxonomy.md";
 const COMMAND_SIDE_IO_HELP: &str = "I/O は Repository 実装 (*_repository_impl.rs) へ移す。\
 正当な例外は `// amadeus-lint: allow(command-side-io) — 理由` で理由を明示する — \
-aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md";
+docs/coding-rules/gateway-taxonomy.md";
 const READ_MODEL_UPDATER_CONTRACT_HELP: &str = "RMU の更新器は共通契約 ReadModelUpdater を実装し \
 (`impl ReadModelUpdater for XxxReadModelUpdater`)、更新の入口は update_read_models 1 つにする。\
 対象は構築時に束ね、契約の外に catch_up* 等の更新メソッドを並べない。契約を実装する型は \
 …ReadModelUpdater を名乗る。正当な例外は `// amadeus-lint: allow(read-model-updater-contract) — 理由` \
-で理由を明示する — aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/cqrs-boundaries.md (規則 3)";
+で理由を明示する — docs/coding-rules/cqrs-boundaries.md (規則 3)";
 
 /// 1 件の所見。`line` は 1 始まり。
 #[derive(Debug, Clone, PartialEq, Eq)]

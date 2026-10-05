@@ -42,6 +42,14 @@ ln -s "$ENGINE" "$OUT/bin/aidlc"
 # 持ち込まない。ディレクトリ名は両実体で同じ `repo` にする（codekb/<repo> の名前が揃う）。
 git clone --quiet --local --no-hardlinks "$REPO" "$OUT/repo"
 cd "$OUT/repo" || exit 2
+# AI-DLC はこのリポジトリからアンインストールした（2026-10-05）。砂場の `.claude/` と memory 層は、
+# 2.8.2 配布物の写し（`.claude/` を `claude/` と綴って置いている）から組み立てる。
+FIXTURE="tests/golden/distribution-2.8.2"
+[ -d "$FIXTURE/claude" ] || { echo "2.8.2 配布物の写しが無い: $FIXTURE" >&2; exit 2; }
+rm -rf .claude
+cp -R "$FIXTURE/claude" .claude
+mkdir -p aidlc/spaces/default
+cp -R "$FIXTURE/aidlc/spaces/default/memory" aidlc/spaces/default/memory
 export PATH="$OUT/bin:$PATH"
 export CLAUDE_PROJECT_DIR="$PWD"
 SESSION="replay-1"

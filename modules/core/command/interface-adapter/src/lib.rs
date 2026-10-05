@@ -9,11 +9,11 @@
 //! 境界づけられたコンテキスト (`orchestration`) 直下に Gateway (= Repository 実装と外部
 //! システムクライアント) を置く。時計は Gateway ではなく**横断機構**なので、コンテキストに
 //! 属さないクレート root の機構モジュール (`clock`) に置く
-//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
+//! (docs/coding-rules/gateway-taxonomy.md)。
 //!
 //! 機構モジュールの mod は private。公開 API は下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_command_interface_adapter::<型>` で安定する
-//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
+//! (docs/coding-rules/module-visibility.md)。
 
 #![forbid(unsafe_code)]
 

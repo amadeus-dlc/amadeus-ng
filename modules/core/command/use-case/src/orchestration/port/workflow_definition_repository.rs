@@ -24,7 +24,7 @@
 //! オーナー裁定 2026-08-31、b27)。両者は側ごと専用の別実装であり、一方が他方の読取結果を
 //! 受け取ることはない (同規則 6)。
 //!
-//! 名前は「集約名＋Repository」規則に従う (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。格納形式
+//! 名前は「集約名＋Repository」規則に従う (docs/coding-rules/gateway-taxonomy.md)。格納形式
 //! (イベントストアであること) は Repository **実装**の内部詳細であり、ポート名に現れない。
 //!
 //! # 失敗はジェネリック 1 本 (オーナー裁定 2026-08-31)

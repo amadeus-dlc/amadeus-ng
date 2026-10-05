@@ -95,7 +95,7 @@
 
 // 型ファイルの mod は private。公開 API は下の `pub use` 列挙が唯一の宣言であり、
 // 消費側のパスは `canon_json::<型>` で安定する。利便性のための再エクスポートは置かない
-// (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
+// (docs/coding-rules/module-visibility.md)。
 mod canonical;
 mod digest;
 mod digest_family;

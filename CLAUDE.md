@@ -6,7 +6,7 @@ Project documents are kept AI-DLC-natively under `aidlc/spaces/default/`
 records); there is no hand-maintained `docs/` tree (removed 2026-09-07).
 
 Owner-ruled coding rules shared by humans and all agents live in
-`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/` (one rule per file; see its README). Read them before
+`docs/coding-rules/` (one rule per file; see its README). Read them before
 writing code — they are enforced by review and, where marked, by
 `cargo lint`.
 
