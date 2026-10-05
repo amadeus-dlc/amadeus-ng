@@ -14,15 +14,23 @@ Coding rules and design notes currently live under `aidlc/spaces/default/knowled
   the installed 2.8.2 shell under `.claude/` and `aidlc/spaces/default/memory/`
   are also read by Rust contract tests as the upstream reference, so they must be
   relocated into test fixtures before they are deleted — never delete them piecemeal.
-- **Implement with takt**, using the project workflow `amadeus-ng`
-  (`.takt/workflows/amadeus-ng.yaml`). If it falls short, extend that workflow
-  rather than improvising another flow.
-- **Launch takt from Orca orchestration** so the owner can see what is running:
-  one supervised worker per task in its own worktree
-  (`orca orchestration worker-start --worktree new-top-level ...`), which runs
-  `scripts/run-takt.sh --config-dir <account> --trust-workspace -- --pipeline -w amadeus-ng --auto-pr ...`.
-- **Discard after each task.** When the worker settles, release its session
-  (`orca orchestration worker-release`) and remove its worktree (`orca worktree rm`).
+- **Work runs through takt, launched from Orca** (the owner's global orchestration
+  rules apply). Record the work as an Orca Run and Task, create an Orca worktree
+  for the task, and start takt in that worktree's terminal in pipeline mode:
+  `scripts/run-takt.sh --config-dir <account> --trust-workspace -- --pipeline -w backend-cqrs --auto-pr -t "<brief>"`.
+  Do not start worker agents (claude, codex, …) directly from Orca.
+  `--trust-workspace` marks the new worktree as trusted for the takt account;
+  without it takt's Claude ignores `permissions.allow` and fails.
+- **Workflow:** start from takt's builtin `backend-cqrs`. Add a custom workflow
+  under `.takt/workflows/` only when the builtin one is too heavy. Model choices
+  follow `.takt/runtime.yaml`.
+- **Every brief carries the project rules**: the coding rules (below), the checks
+  CI runs (`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo lint`, `cargo test --workspace`), and a write scope that does not
+  overlap any other brief.
+- **Close after each task.** Once its PR is merged and nothing is left
+  uncommitted or unpushed, close the terminal and remove the worktree
+  (`orca worktree rm`).
 - **Milestones are handed to Claude Code's `/goal`.** Keep the text within
   4,000 characters, and phrase every completion condition as something the
   session prints (the judge reads only the session output).
