@@ -10,7 +10,7 @@
 #   2. CLAUDE_CONFIG_DIR を、使いたいアカウントの設定ディレクトリに設定する
 #
 # 使い方:
-#   scripts/run-takt.sh [--config-dir <dir>] [--inherit-from <dir> | --no-inherit] [--] [takt の引数...]
+#   scripts/run-takt.sh [--config-dir <dir>] [--inherit-from <dir> | --no-inherit] [--trust-workspace] [--] [takt の引数...]
 #
 #   --config-dir を省略したときは、呼び出し元の CLAUDE_CONFIG_DIR を使う。どちらも無いときは
 #   既定の ~/.claude がどのアカウントかを確かめずに走らせることになるので、エラーで止める。
@@ -25,6 +25,11 @@
 # list/run/resume の前に別アカウントの再開用データを自動探索してコピーする。
 # --inherit-from で引き継ぎ元を固定し、--no-inherit でコピーを無効にできる。
 # list で Requeue を選ぶ手順は従来どおり。コピー中は両アカウントの対象作業を停止する。
+#
+# --trust-workspace を付けると、起動前にこの checkout を指定アカウントの信頼済みプロジェクトに加える
+# (scripts/takt-trust.py)。takt が起動する Claude は、信頼されていない作業ディレクトリでは
+# .claude/settings.json の permissions.allow を無視して失敗するため。Orca などで新しく作った
+# worktree で --pipeline を使うときに付ける。明示的に拒否された設定は上書きせず、起動前に止める。
 #
 # takt が起動した Claude には .takt/ を読ませない (今のランの context/ と reports/ を除く)。
 # .takt/ の過去のランや設定をソースコードとして読まれないよう、TAKT_CLAUDE_CLI_PATH に
@@ -42,11 +47,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 usage() {
   cat <<'EOF'
-usage: scripts/run-takt.sh [--config-dir <dir>] [--inherit-from <dir> | --no-inherit] [--] [takt の引数...]
+usage: scripts/run-takt.sh [--config-dir <dir>] [--inherit-from <dir> | --no-inherit] [--trust-workspace] [--] [takt の引数...]
 
   --config-dir <dir>  使う Claude アカウントの設定ディレクトリ (省略時は呼び出し元の CLAUDE_CONFIG_DIR)
   --inherit-from <dir> 切り替え前の Claude 設定ディレクトリから再開用データをコピー (Python 3 が必要)
   --no-inherit        自動探索・コピーを無効にする
+  --trust-workspace   この checkout を指定アカウントの信頼済みプロジェクトに加えてから起動する (Python 3 が必要)
   -h, --help          この説明を表示する
 
 takt の引数を省略したときは `takt run` を実行する。
@@ -78,6 +84,7 @@ die() {
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-}"
 INHERIT_FROM=""
 NO_INHERIT=0
+TRUST_WORKSPACE=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --config-dir)
@@ -102,6 +109,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --no-inherit)
       NO_INHERIT=1
+      shift
+      ;;
+    --trust-workspace)
+      TRUST_WORKSPACE=1
       shift
       ;;
     -h|--help)
@@ -146,6 +157,9 @@ fi
 if [ -n "${INHERIT_FROM}" ]; then
   command -v python3 >/dev/null 2>&1 || die "履歴の引き継ぎには Python 3 が必要です (--no-inherit で無効化できます)"
 fi
+if [ "${TRUST_WORKSPACE}" -eq 1 ]; then
+  command -v python3 >/dev/null 2>&1 || die "--trust-workspace には Python 3 が必要です"
+fi
 
 unset CLAUDE_CODE_OAUTH_TOKEN
 export CLAUDE_CONFIG_DIR="${CONFIG_DIR}"
@@ -180,6 +194,9 @@ fi
 cd "${REPO_ROOT}"
 if [ -n "${INHERIT_FROM}" ]; then
   python3 "${SCRIPT_DIR}/takt-inherit.py" "${INHERIT_FROM}" "${CONFIG_DIR}" "${REPO_ROOT}"
+fi
+if [ "${TRUST_WORKSPACE}" -eq 1 ]; then
+  python3 "${SCRIPT_DIR}/takt-trust.py" "${CONFIG_DIR}" "${REPO_ROOT}"
 fi
 printf '==> CLAUDE_CONFIG_DIR=%s (CLAUDE_CODE_OAUTH_TOKEN は unset 済み)\n' "${CLAUDE_CONFIG_DIR}"
 printf '==> .takt/ の読み取り制限: %s\n' "${GUARD}"
