@@ -59,7 +59,8 @@ struct Registration {
 }
 
 fn settings_text() -> String {
-    fs::read_to_string(repo_root().join(".claude/settings.json")).expect("配布 settings.json")
+    fs::read_to_string(repo_root().join("tests/golden/distribution-2.8.2/claude/settings.json"))
+        .expect("配布 settings.json")
 }
 
 /// `aidlc engine hook <name>` の登録をすべて拾う (登録の重複は畳まない)。

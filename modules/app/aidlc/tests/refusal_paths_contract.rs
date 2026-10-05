@@ -39,7 +39,9 @@ impl Workspace {
         fs::create_dir_all(root.join(".claude/scopes")).unwrap();
         for scope in ["bugfix", "classic"] {
             fs::copy(
-                repository.join(format!(".claude/scopes/aidlc-{scope}.md")),
+                repository.join(format!(
+                    "tests/golden/distribution-2.8.2/claude/scopes/aidlc-{scope}.md"
+                )),
                 root.join(format!(".claude/scopes/aidlc-{scope}.md")),
             )
             .unwrap();

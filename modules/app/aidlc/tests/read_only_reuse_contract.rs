@@ -36,6 +36,20 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
 
+/// 2.8.2 配布物と memory 層の写し（リポジトリから AI-DLC を外したので、テストの参照物として固定した）。
+fn distribution_root() -> PathBuf {
+    repo_root().join("tests/golden/distribution-2.8.2")
+}
+
+/// 2.8.2 配布物の写しの中のファイル。写しは Claude Code に入れ子の設定ディレクトリとして読まれない
+/// よう、`.claude/` を `claude/` と綴って置いている。
+fn distribution_path(relative: &str) -> PathBuf {
+    match relative.strip_prefix(".claude/") {
+        Some(rest) => distribution_root().join("claude").join(rest),
+        None => distribution_root().join(relative),
+    }
+}
+
 /// 実際に配布 TypeScript を回せる一時ワークスペース。
 struct Workspace {
     temp: tempfile::TempDir,
@@ -55,10 +69,10 @@ impl Workspace {
             ".claude/aidlc-common",
             "aidlc/spaces/default/memory",
         ] {
-            copy_tree(&repo_root().join(relative), &root.join(relative));
+            copy_tree(&distribution_path(relative), &root.join(relative));
         }
         fs::copy(
-            repo_root().join(".claude/settings.json"),
+            distribution_path(".claude/settings.json"),
             root.join(".claude/settings.json"),
         )
         .unwrap();
@@ -183,7 +197,7 @@ fn drift(before: &BTreeMap<String, Vec<u8>>, after: &BTreeMap<String, Vec<u8>>) 
 /// 再利用する `aidlc-review-brief` の本体には、書込みの呼出しが 1 つも無い。
 #[test]
 fn the_reused_review_brief_tool_calls_no_write_api() {
-    let raw = fs::read_to_string(repo_root().join(".claude/tools/aidlc-review-brief.ts")).unwrap();
+    let raw = fs::read_to_string(distribution_path(".claude/tools/aidlc-review-brief.ts")).unwrap();
     for api in [
         "writeFileSync",
         "appendFileSync",
@@ -201,7 +215,7 @@ fn the_reused_review_brief_tool_calls_no_write_api() {
 #[test]
 fn the_tool_that_also_owns_an_excluded_operation_really_writes() {
     let raw =
-        fs::read_to_string(repo_root().join(".claude/tools/aidlc-testing-posture.ts")).unwrap();
+        fs::read_to_string(distribution_path(".claude/tools/aidlc-testing-posture.ts")).unwrap();
     assert!(
         raw.contains("writeFileSync") && raw.contains("withAuditLock"),
         "承認開始を持つ側に書込みが無い — ファイル名だけの判定になっている"

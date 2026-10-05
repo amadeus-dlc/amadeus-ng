@@ -31,10 +31,10 @@
 //! - 配布本文の出典（`sources[]` / `provenance.json` の `files[]`）は、配布物をこのリポジトリの
 //!   `tests/golden/selfhost-stage1/required-surface-sources/` へ写した複製である。
 //! - 実行時の指示の出典（`runtime_directive_sources[]` / `provenance.json` の
-//!   `runtime_directive_files[]`）は複製を作らず、リポジトリ直下に commit 済みの同じ 2.8.2
-//!   配布物（`.claude/**`）をその場で指す。`upstream_site` の行番号と文言はこの実バイトから
-//!   測っており、測定元を直接指すほうが記録が正確である。配布物が更新されれば sha256 照合が
-//!   落ち、実行時の指示を測り直す合図になる。
+//!   `runtime_directive_files[]`）は、2.8.2 配布物の写し `tests/golden/distribution-2.8.2/`
+//!   （`.claude/**` を `claude/**` と綴って置く）を指す。`upstream_site` の行番号と文言は、
+//!   以前リポジトリ直下にインストールされていた同じ実バイトから測った。写しが入れ替われば
+//!   sha256 照合が落ち、実行時の指示を測り直す合図になる。
 //!
 //! 解けない行・指紋の合わない行を、もう一方の根へ読み替えたり読み飛ばしたりはしない。
 //!
@@ -308,6 +308,30 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
 
+/// 2.8.2 配布物の写し（リポジトリから AI-DLC を外したので、テストの参照物として固定した）。
+fn distribution_root() -> PathBuf {
+    repo_root().join("tests/golden/distribution-2.8.2")
+}
+
+/// 2.8.2 配布物の写しの中のファイル。写しは Claude Code に入れ子の設定ディレクトリとして読まれない
+/// よう、`.claude/` を `claude/` と綴って置いている。
+fn distribution_path(relative: &str) -> PathBuf {
+    match relative.strip_prefix(".claude/") {
+        Some(rest) => distribution_root().join("claude").join(rest),
+        None => distribution_root().join(relative),
+    }
+}
+
+/// 出典のパスが指す実ファイル。配布物（`.claude/` と `aidlc/`）は写しを、それ以外（本番ソース）は
+/// リポジトリを指す。
+fn source_file(path: &str) -> PathBuf {
+    if path.starts_with(".claude/") || path.starts_with("aidlc/") {
+        distribution_path(path)
+    } else {
+        repo_root().join(path)
+    }
+}
+
 fn surface_path() -> PathBuf {
     repo_root().join("scripts/aidlc-selfhost/required-surface.json")
 }
@@ -445,7 +469,7 @@ fn provenance() -> serde_json::Value {
 fn cited_line(cite: &str) -> String {
     let (path, number) = cite.rsplit_once(':').expect("出典は path:line");
     let line: usize = number.parse().expect("行番号");
-    let raw = fs::read_to_string(repo_root().join(path))
+    let raw = fs::read_to_string(source_file(path))
         .unwrap_or_else(|error| panic!("出典が読めない ({path}): {error}"));
     raw.lines()
         .nth(line - 1)
@@ -461,7 +485,12 @@ fn cited_line(cite: &str) -> String {
 ///
 /// 解決根はこの引数で 1 つに決まる。読めない行・指紋の合わない行をもう一方の根へ読み替える
 /// 回復経路は持たない（持てば、実体の無い記録が黙って通る）。
-fn recorded_bytes_match(provenance: &serde_json::Value, key: &str, root: &Path, required: &[&str]) {
+fn recorded_bytes_match(
+    provenance: &serde_json::Value,
+    key: &str,
+    resolve: impl Fn(&str) -> PathBuf,
+    required: &[&str],
+) {
     let files = provenance[key]
         .as_array()
         .unwrap_or_else(|| panic!("{key}: 採取記録が配列として無い"));
@@ -479,7 +508,7 @@ fn recorded_bytes_match(provenance: &serde_json::Value, key: &str, root: &Path, 
     }
     for file in files {
         let relative = text(file, "path");
-        let path = root.join(&relative);
+        let path = resolve(&relative);
         let bytes = fs::read(&path)
             .unwrap_or_else(|error| panic!("{key} の出典が読めない ({}): {error}", path.display()));
         assert_eq!(
@@ -494,7 +523,7 @@ fn recorded_bytes_match(provenance: &serde_json::Value, key: &str, root: &Path, 
 /// 出典は 2.8.2 配布物の実バイトであり、指紋つきで採取元が記録されている。
 ///
 /// 群ごとに解決根が違う（モジュール doc の「出典の解決根」）。配布本文の複製は
-/// `frozen_root()`、実行時の指示の正本はリポジトリ直下の `.claude/**` をそのまま指す。
+/// `frozen_root()`、実行時の指示の正本は 2.8.2 配布物の写し（`distribution_path`）を指す。
 #[test]
 fn the_frozen_sources_are_the_2_8_2_distribution_bytes() {
     let provenance = provenance();
@@ -519,15 +548,15 @@ fn the_frozen_sources_are_the_2_8_2_distribution_bytes() {
     recorded_bytes_match(
         &provenance,
         "files",
-        &frozen_root(),
+        |path| frozen_root().join(path),
         &[".claude/settings.json", ".claude/tools/aidlc.ts"],
     );
     // 実行時の指示の正本 — 綴り規則の定義、エンジン側の呼び出し箇所、Stop フックと
-    // SessionStart フックの案内文。複製ではなくリポジトリ直下の実バイトを指す。
+    // SessionStart フックの案内文。2.8.2 配布物の写しの実バイトを指す。
     recorded_bytes_match(
         &provenance,
         "runtime_directive_files",
-        &repo_root(),
+        distribution_path,
         &[
             ".claude/tools/aidlc-runtime-paths.ts",
             ".claude/tools/aidlc-orchestrate.ts",
@@ -660,7 +689,7 @@ fn the_enumeration_matches_the_launch_forms_in_the_frozen_sources() {
         .collect();
     let mut found: BTreeSet<String> = BTreeSet::new();
     for path in sources(&surface) {
-        let raw = fs::read_to_string(repo_root().join(&path))
+        let raw = fs::read_to_string(source_file(&path))
             .unwrap_or_else(|error| panic!("出典が読めない ({path}): {error}"));
         found.extend(labels(&raw));
     }

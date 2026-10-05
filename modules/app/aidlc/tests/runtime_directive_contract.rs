@@ -66,6 +66,20 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
 
+/// 2.8.2 配布物の写し（リポジトリから AI-DLC を外したので、テストの参照物として固定した）。
+fn distribution_root() -> PathBuf {
+    repo_root().join("tests/golden/distribution-2.8.2")
+}
+
+/// 2.8.2 配布物の写しの中のファイル。写しは Claude Code に入れ子の設定ディレクトリとして読まれない
+/// よう、`.claude/` を `claude/` と綴って置いている。
+fn distribution_path(relative: &str) -> PathBuf {
+    match relative.strip_prefix(".claude/") {
+        Some(rest) => distribution_root().join("claude").join(rest),
+        None => distribution_root().join(relative),
+    }
+}
+
 /// 綴り規則の定義（`aidlcInvocation` / `aidlcDispatcherInvocation` / `aidlcToolInvocation`）。
 const UPSTREAM_RUNTIME_PATHS: &str = ".claude/tools/aidlc-runtime-paths.ts";
 /// エンジン側 directive の呼び出し箇所。
@@ -75,9 +89,9 @@ const UPSTREAM_CONTINUE_HOOK: &str = ".claude/hooks/aidlc-continue-workflow.ts";
 /// 状態面の拒否文言（レビュー受領証の記録を求める案内）。
 const UPSTREAM_STATE: &str = ".claude/tools/aidlc-state.ts";
 
-/// 2.8.2 配布物のファイル本文（リポジトリ直下の実バイト）。無ければ、その旨で落とす。
+/// 2.8.2 配布物のファイル本文（写しの実バイト）。無ければ、その旨で落とす。
 fn upstream(relative: &str) -> String {
-    let path = repo_root().join(relative);
+    let path = distribution_path(relative);
     fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!(
             "実行時の指示の出典が読めない（{relative}: {error}）— \
@@ -596,7 +610,7 @@ impl Workspace {
         }
         fs::create_dir_all(root.join(".claude/scopes")).expect("scopes");
         fs::copy(
-            repository.join(".claude/scopes/aidlc-bugfix.md"),
+            repository.join("tests/golden/distribution-2.8.2/claude/scopes/aidlc-bugfix.md"),
             root.join(".claude/scopes/aidlc-bugfix.md"),
         )
         .expect("scope 定義");
