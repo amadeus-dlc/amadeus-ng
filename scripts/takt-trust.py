@@ -6,6 +6,7 @@ permissions.allow を無視して失敗する。Orca などで新しく作った
 まだ承認されていないので、起動前に hasTrustDialogAccepted を立てる。明示的な false は上書きしない。
 """
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -39,11 +40,19 @@ def trust(target, workspace):
     if accepted is not None:
         raise ValueError(f"{workspace} の信頼設定は明示的に拒否されています。上書きしません")
     projects[str(workspace)] = {**current, "hasTrustDialogAccepted": True}
-    if config_path.exists():
-        fd, backup = tempfile.mkstemp(prefix=".claude.json.before-takt-", dir=config_path.parent)
-        os.close(fd)
-        shutil.copyfile(config_path, backup)
-    inherit.atomic_write(config_path, (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode())
+    backup = None
+    try:
+        if config_path.exists():
+            fd, backup = tempfile.mkstemp(prefix=".claude.json.before-takt-", dir=config_path.parent)
+            os.close(fd)
+            shutil.copyfile(config_path, backup)
+        inherit.atomic_write(config_path, (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode())
+    except BaseException:
+        # 書けなかったときは設定は変わっていないので、バックアップを残さない（再実行のたびに増えるため）。
+        if backup is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(backup)
+        raise
     print(f"==> 信頼設定: {workspace} を承認済みにしました (変更前の設定はバックアップ済み)")
 
 

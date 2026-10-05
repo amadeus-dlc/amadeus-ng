@@ -1,5 +1,6 @@
 """別アカウントへの履歴引き継ぎを、実際のラッパーと偽の TAKT で検証する。"""
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -264,6 +265,23 @@ sys.exit(int(os.environ.get("TEST_EXIT", "0")))
         self.assertIn("明示的に拒否", result.stderr)
         self.assertEqual(calls, [])
         self.assertEqual((self.target / ".claude.json").read_text(), original)
+
+    def test_trust_leaves_no_backup_when_the_write_fails(self):
+        spec = importlib.util.spec_from_file_location("takt_trust", self.root / "scripts/takt-trust.py")
+        trust = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(trust)
+        inherit = trust.load_inherit()
+
+        def fail(path, data):
+            raise OSError("disk full")
+
+        inherit.atomic_write = fail
+        trust.load_inherit = lambda: inherit
+        original = (self.target / ".claude.json").read_bytes()
+        with self.assertRaises(OSError):
+            trust.trust(self.target, self.root)
+        self.assertEqual(list(self.target.glob(".claude.json.before-takt-*")), [])
+        self.assertEqual((self.target / ".claude.json").read_bytes(), original)
 
     def test_trust_is_untouched_without_the_flag(self):
         original = (self.target / ".claude.json").read_bytes()
