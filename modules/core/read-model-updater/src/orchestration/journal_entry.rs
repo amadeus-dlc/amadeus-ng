@@ -23,7 +23,7 @@ use super::global_seq_nr::GlobalSeqNr;
 /// フィールドは private。読取は境界越えのアクセサで公開する (field-visibility.md)。
 ///
 /// [`JournalReader`]: super::journal_reader::JournalReader
-/// [`upstream-contracts.md`]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/upstream-contracts.md
+/// [`upstream-contracts.md`]: https://github.com/amadeus-dlc/amadeus-ng/blob/main/docs/coding-rules/upstream-contracts.md
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JournalEntry {
     global_seq: GlobalSeqNr,

@@ -99,7 +99,7 @@ const KNOWN_PER_UNIT_STAGES: [&str; 5] = [
 /// 等価は**内容と識別子の両方**で決まる (derive)。「同じ系譜の同じ内容」を 1 つの等価関係で
 /// 表すのが自然だからである。id だけの同一性比較が要るのは `IntentExecution` 側の定義照合で、
 /// そちらは `id()` 同士を突き合わせる
-/// (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md)。
+/// (docs/coding-rules/domain-equality.md)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDefinition {
     id: WorkflowDefinitionId,

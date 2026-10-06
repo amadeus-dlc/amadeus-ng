@@ -1,6 +1,6 @@
 //! orchestration コンテキストの**コマンド側**実 Gateway (10-orchestration §4)。ポート (trait)
 //! は core-command-use-case が所有し、ここでは実 I/O 実装 (`...RepositoryImpl`) を提供する
-//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
+//! (docs/coding-rules/gateway-taxonomy.md)。
 //!
 //! **インメモリ形も同じ `...RepositoryImpl`** である — 本家の `EventStoreForMemory` を内包した
 //! `in_memory()` が格納先だけを替える。自作 HashMap ダブルは 2026-08-31 のオーナー裁定
@@ -23,7 +23,7 @@
 //!
 //! 実装ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_command_interface_adapter::orchestration::<型>` で安定する
-//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
+//! (docs/coding-rules/module-visibility.md)。
 
 mod compiled_definition_repository_impl;
 mod dto;

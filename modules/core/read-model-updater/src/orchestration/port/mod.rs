@@ -41,7 +41,7 @@
 //! `ReadModelHeadDao`) のは、`read_` を除くのと同じ理由である — 本家の表と衝突しないための
 //! 接頭辞であって、表の意味ではない。
 //!
-//! 残りの更新器の移行順は `aidlc/spaces/default/knowledge/rmu-dao-migration-plan-20260926.md` にある。
+//! 残りの更新器の移行順は `docs/rmu-dao-migration-plan-20260926.md` にある。
 //!
 //! 型ファイルの mod も本モジュール自身も private。公開 API は親 (`orchestration`) の
 //! `pub use` ファサードが唯一の宣言 (`coding-rules/module-visibility.md`)。

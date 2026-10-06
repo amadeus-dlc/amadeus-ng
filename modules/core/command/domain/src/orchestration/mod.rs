@@ -64,7 +64,7 @@
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_command_domain::orchestration::<型>` で安定する
-//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
+//! (docs/coding-rules/module-visibility.md)。
 
 mod apply_error;
 mod artifact_paths;

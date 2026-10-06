@@ -1,5 +1,5 @@
 //! 時計 — **横断機構の注入シームであって Gateway ではない** (clean-architecture: 時計は
-//! Infrastructure が所有する機構。aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
+//! Infrastructure が所有する機構。docs/coding-rules/gateway-taxonomy.md)。
 //!
 //! どのユースケースもこの trait を消費しない。存在理由は、時刻に依存する Gateway の挙動
 //! (イベント記録時刻の押印など) を、実時間の経過に頼らず決定的に検証できるようにすること

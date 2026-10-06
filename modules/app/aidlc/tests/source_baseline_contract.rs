@@ -27,7 +27,7 @@ impl Workspace {
         }
         fs::create_dir_all(root.join(".claude/scopes")).unwrap();
         fs::copy(
-            repository.join(".claude/scopes/aidlc-bugfix.md"),
+            repository.join("tests/golden/distribution-2.8.2/claude/scopes/aidlc-bugfix.md"),
             root.join(".claude/scopes/aidlc-bugfix.md"),
         )
         .unwrap();

@@ -203,7 +203,7 @@ impl Workspace {
         }
         fs::create_dir_all(project.join(".claude/scopes")).unwrap();
         fs::copy(
-            repo.join(".claude/scopes/aidlc-bugfix.md"),
+            repo.join("tests/golden/distribution-2.8.2/claude/scopes/aidlc-bugfix.md"),
             project.join(".claude/scopes/aidlc-bugfix.md"),
         )
         .unwrap();
@@ -2438,7 +2438,8 @@ fn different_scopes_preserve_report_results_through_another_intents_publication_
     )
     .unwrap();
     fs::copy(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../.claude/scopes/aidlc-feature.md"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../tests/golden/distribution-2.8.2/claude/scopes/aidlc-feature.md"),
         workspace.path().join(".claude/scopes/aidlc-feature.md"),
     )
     .unwrap();

@@ -1,5 +1,5 @@
 //! R11: ドメイン層の技術駆動パッケージングの禁止
-//! (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-packaging.md`、
+//! (`docs/coding-rules/domain-packaging.md`、
 //! オーナー裁定 2026-09-25)。
 //!
 //! ドメイン層は境界づけられたコンテキストと、型が所有するサブツリーで分ける。
@@ -47,7 +47,7 @@ const TECHNICAL_NAMES: [&str; 26] = [
 
 const HELP: &str = "ドメイン層は境界づけられたコンテキスト → 型が所有するサブツリー (所有者の型名の snake_case) で分け、\
 種類・役割の名前で束ねない。型はその概念を所有するコンテキストへ置く — \
-aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-packaging.md";
+docs/coding-rules/domain-packaging.md";
 
 /// `path` (リポジトリルートからの相対、区切りは `/`) と構文木を検査する。
 pub(crate) fn check(path: &str, file: &syn::File) -> Vec<Finding> {

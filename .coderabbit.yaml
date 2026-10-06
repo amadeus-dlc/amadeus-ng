@@ -29,7 +29,7 @@ reviews:
         集約は FSM として設計する — 状態・状態遷移（&mut self コマンド、ガード付き Err 拒否）・
         判断（クエリメソッド）を同じ集約型に閉じ込め、ユースケースは進行管理のみでビジネス
         ロジックを持たない。導出ロジックを独立ドメインサービスやユースケースに置く設計は指摘する。
-        コーディング規則の正本は aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/ にあり、
+        コーディング規則の正本は docs/coding-rules/ にあり、
         1 ルール 1 ファイルで運用している。Repository の造語禁止・技術接頭辞禁止、フィールドと
         モジュールのデフォルト private、ドメイン同値関係は Eq/PartialEq で表現、エラーは
         モジュールごとの手実装 enum + fmt::Display 手実装（thiserror / anyhow は不使用）。
@@ -37,36 +37,11 @@ reviews:
         テストは red-green-refactor（TDD）で書き、テストピラミッドを意識した配分にする。
 
   path_filters:
-    # ハーネスのシェルは framework の配布物であり、本プロジェクトの source ではない。
-    - "!.claude/agents/**"
-    - "!.claude/aidlc-common/**"
-    - "!.claude/hooks/**"
-    - "!.claude/knowledge/**"
-    - "!.claude/scopes/**"
-    - "!.claude/sensors/**"
-    - "!.claude/skills/**"
-    - "!.claude/tools/**"
-    - "!.codex/agents/**"
-    - "!.codex/aidlc-common/**"
-    - "!.codex/knowledge/**"
-    - "!.codex/scopes/**"
-    - "!.codex/sensors/**"
-    - "!.codex/skills/**"
-    - "!.codex/tools/**"
-    - "!.codex/hooks/aidlc-*.ts"
-    - "!.agents/skills/aidlc*/**"
+    # AI-DLC 2.8.2 配布物の写し。Rust の契約テストが本家の正解として読む実バイトであり、
+    # 本プロジェクトの source ではない（手で直さない）。
+    - "!tests/golden/distribution-2.8.2/**"
     - "!vendor/**"
     - "!target/**"
-    # 監査シャードとワークフロー状態は engine が append/更新する生成物であり、
-    # 手で直すものではない（修正提案はカテゴリ誤りになる）。
-    # 一方 intent 配下の設計散文（functional-design / nfr-design / contract-design /
-    # code-generation の各 md）は**手で書き、手で直す source** である — 実際 B5 では
-    # 設計文書を 16 箇所編集した。ここを一括除外すると「設計散文が契約から乖離する」
-    # 類の欠陥がちょうど自動レビューの視界外へ落ちるため、除外は生成物だけに絞る。
-    # memory/ と knowledge/ も手書きの方針・規則なのでレビュー対象に残す。
-    - "!aidlc/spaces/*/intents/*/audit/**"
-    - "!aidlc/spaces/*/intents/*/aidlc-state.md"
-    - "!aidlc/spaces/*/intents/*/runtime-graph.json"
     # ITF フィクスチャは Quint モデルから採取した生成スナップショット（1 行 JSON、
     # #meta 正規化済み）。欠陥はモデルか採取手順で直すものであり、フィクスチャを
     # 手で編集して直すことはない。鮮度は再採取とのバイト一致で担保する。
@@ -113,8 +88,7 @@ knowledge_base:
     enabled: true
     filePatterns:
       - "CLAUDE.md"
-      - "aidlc/spaces/default/memory/**/*.md"
-      - "aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/*.md"
+      - "docs/coding-rules/*.md"
 
 chat:
   auto_reply: true

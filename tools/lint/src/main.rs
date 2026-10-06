@@ -1,6 +1,6 @@
 //! amadeus-lint — `cargo lint` で起動するリポジトリ専用リンター。
 //!
-//! 目的は `aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/` に置いたオーナー裁定の**再発防止**。Tell, Don't Ask 系のルールは
+//! 目的は `docs/coding-rules/` に置いたオーナー裁定の**再発防止**。Tell, Don't Ask 系のルールは
 //! R1 は分類語彙の再実装を検出する。R8 は use-case 層でドメイン getter を呼ぶこと自体を
 //! 禁じ、ドメインの getter 定義と interface-adapter 層の呼出しは許可する。加えて
 //! 内部構造を公開する `pub` フィールドなどを検査する。ルール本体と検査力テストは

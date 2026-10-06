@@ -44,7 +44,7 @@ fn issued_workspace() -> tempfile::TempDir {
     }
     fs::create_dir_all(root.path().join(".claude/scopes")).unwrap();
     fs::copy(
-        repo.join(".claude/scopes/aidlc-bugfix.md"),
+        repo.join("tests/golden/distribution-2.8.2/claude/scopes/aidlc-bugfix.md"),
         root.path().join(".claude/scopes/aidlc-bugfix.md"),
     )
     .unwrap();

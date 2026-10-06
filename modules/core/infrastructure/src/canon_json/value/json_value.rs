@@ -9,7 +9,7 @@ use super::to_value_error::ToValueError;
 /// メモリ上の JSON 値。オブジェクトのキー順を保持する (JS の挿入順に対応)。
 ///
 /// `Eq` は導出しない — `Number::Float` が `f64` を持ち、`NaN != NaN` により全同値関係が
-/// 成り立たないため (`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/domain-equality.md`
+/// 成り立たないため (`docs/coding-rules/domain-equality.md`
 /// の「derive の構造的等価とドメイン同値が乖離する場合はドメイン側が勝つ」の帰結)。
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {

@@ -8,7 +8,7 @@
 //!
 //! 型ファイルの mod は private。公開 API は以下の `pub use` が唯一の宣言であり、
 //! 消費側のパスは `core_command_use_case::orchestration::<型>` で安定する
-//! (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/module-visibility.md)。
+//! (docs/coding-rules/module-visibility.md)。
 
 mod autonomy_switch_request;
 mod capture_learnings_use_case;
@@ -67,7 +67,7 @@ mod switch_autonomy_use_case;
 mod test_support;
 
 // ポート (trait) — Repository は集約名＋Repository で命名する
-// (aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/gateway-taxonomy.md)。
+// (docs/coding-rules/gateway-taxonomy.md)。
 // ES 形 Repository の動詞 store / find_by_id は本家ライブラリ由来の拡張語彙 (ADR-010)。
 // 集約の永続化そのものは本家 event-store-adapter-rs が担うので、同形のローカル
 // `EventStore` trait はもう置かない (ADR-010 — 借り物の契約を二重に書かない)。

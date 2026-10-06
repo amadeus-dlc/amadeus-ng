@@ -36,7 +36,7 @@ Coding rules and design notes currently live under `aidlc/spaces/default/knowled
   session prints (the judge reads only the session output).
 
 Owner-ruled coding rules shared by humans and all agents live in
-`aidlc/spaces/default/knowledge/aidlc-shared/coding-rules/` (one rule per file; see its README). Read them before
+`docs/coding-rules/` (one rule per file; see its README). Read them before
 writing code — they are enforced by review and, where marked, by
 `cargo lint`.
 
