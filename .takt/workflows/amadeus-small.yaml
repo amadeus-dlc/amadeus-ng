@@ -1,0 +1,53 @@
+name: amadeus-small
+description: 合意済みの範囲の変更を実装し、独立レビューで受け入れ条件を確認する（owncraft の owncraft-small を基にした）。
+max_steps: 4
+initial_step: implement
+steps:
+  - name: implement
+    persona: coder
+    capabilities:
+      - edit
+    session: refresh
+    structured_output:
+      schema_ref: small-task-implementation
+    instruction: |
+      タスクに記載された目的、変更対象、受け入れ条件に従い、変更を完了してください。
+      範囲と受け入れ条件は合意済みです。対象外の探索や機能追加を広げないでください。
+      AGENTS.md と、AGENTS.md が指すコーディング規則（docs/coding-rules/）のうち変更する層に関係するファイルは、書く前に必ず読んでください。
+      それ以外のスキルや資料の探索は、今回の受け入れ条件に必要な範囲に留めてください。
+      不明点が実装を妨げる場合は推測で進めず、blocked と具体的な理由を返してください。
+      AGENTS.md の「検査」を実行し、今回の差分を確認してください。
+      前のレビュー指摘がある場合はその範囲を修正し、検査し直してください。
+      git の commit・push はしないでください（作業の終わりに takt が行います）。
+      最後に done または blocked、実施内容の要約、実行した検査を構造化出力で返してください。
+    rules:
+      - condition: when(structured.implement.status == "done")
+        next: review
+      - condition: when(structured.implement.status == "blocked")
+        next: ABORT
+  - name: review
+    tags:
+      - review
+    persona: coding-reviewer
+    capabilities:
+      - readonly
+    edit: false
+    session: refresh
+    pass_previous_response: false
+    structured_output:
+      schema_ref: small-task-review
+    instruction: |
+      タスクの変更対象と受け入れ条件を、実際のファイルと差分から独立に確認してください。
+      AGENTS.md と、AGENTS.md が指すコーディング規則（docs/coding-rules/）に照らして確認してください。
+      実装者の判断をそのまま承認せず、指定された条件、外部との境界、検査結果を確認してください。
+      不要な機能追加、対象外ファイルの変更、受け入れ条件の不足、規則への違反があれば needs_fix と具体的な指摘を返してください。
+      実行できる必要な検査を行ってください。権限上再実行できない検査は、その理由と確認できた実行記録を明記してください。
+      修正案の実装や、無関係な設計の再検討には進まないでください。
+      問題がなければ approved、修正が必要なら needs_fix、確認を進められなければ blocked を返してください。
+    rules:
+      - condition: when(structured.review.verdict == "approved")
+        next: COMPLETE
+      - condition: when(structured.review.verdict == "needs_fix")
+        next: implement
+      - condition: when(structured.review.verdict == "blocked")
+        next: ABORT

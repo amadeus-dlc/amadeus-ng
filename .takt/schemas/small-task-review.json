@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": { "type": "string", "enum": ["approved", "needs_fix", "blocked"] },
+    "summary": { "type": "string" },
+    "findings": { "type": "array", "items": { "type": "string" } },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string" },
+          "result": { "type": "string" }
+        },
+        "required": ["command", "result"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["verdict", "summary", "findings", "checks"],
+  "additionalProperties": false
+}
