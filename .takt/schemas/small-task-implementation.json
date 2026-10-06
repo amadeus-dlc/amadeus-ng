@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["done", "blocked"] },
+    "summary": { "type": "string" },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string" },
+          "result": { "type": "string" }
+        },
+        "required": ["command", "result"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["status", "summary", "checks"],
+  "additionalProperties": false
+}

@@ -7,8 +7,8 @@
 # (AMADEUS_TAKT_CLAUDE_BIN) に、scripts/takt-read-guard.py を PreToolUse フックとして
 # 登録する設定を --settings で足す。
 #
-# .claude/settings.json には書かない。そこは aidlc のフック専用で、aidlc 以外のフックがあると
-# doctor の Native hook bindings が失敗する。--settings で渡せば takt の中の Claude だけに効き、
+# .claude/settings.json には書かない。そこに書くと、指揮役の対話の Claude Code にも効いて、
+# 指揮役が .takt/runs/ の記録を読めなくなる。--settings で渡せば takt の中の Claude だけに効き、
 # 対話セッションには影響しない。
 #
 set -euo pipefail

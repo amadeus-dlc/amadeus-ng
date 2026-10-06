@@ -7,6 +7,8 @@
 # Project configuration
 !config.yaml
 !runtime.yaml
+!schemas/
+!schemas/**
 
 # Facets and workflows (version-controlled)
 !workflows/

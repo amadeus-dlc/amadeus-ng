@@ -13,7 +13,7 @@
 - **ユースケースで業務判断のためにドメインのgetterを呼ばない。Repositoryの `find_by_id` への型付きIDの直接受け渡しだけは許可する（2026-09-14）。** ドメインモデル貧血症を防ぐため、判断を状態の所有者へ委譲する。実装・是正の区切りで `cargo lint` を実行する。既存の禁止範囲と点検方法は [tell-dont-ask.md](tell-dont-ask.md) を参照する。
 - **ドメインのFCCの要素はドメイン固有型とし、プリミティブ型を使わない。** `PendingIterations` の要素は `PendingIteration` とする。既存移行とリンター追加は利用者が許可した後続Issueで管理する。詳細は [first-class-collections.md](first-class-collections.md) を参照する。
 
-記録だけで是正済みとは扱わず、コードの構築・更新経路を点検し、結果を現在のintent記録へ残す。
+記録だけで是正済みとは扱わず、コードの構築・更新経路を点検し、結果を PR 本文に書く（AI-DLC の intent 記録は 2026-10-05 にやめた）。
 
 ## 規則が衝突したら（優先順）
 
